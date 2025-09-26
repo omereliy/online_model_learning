@@ -17,9 +17,9 @@ Compare three online action model learning algorithms on PDDL domains:
 ```bash
 # Project structure and requirements
 /docs/DEVELOPMENT_RULES.md          # Updated implementation rules
-/docs/CNF_SAT_INTEGRATION.md        # CNF/SAT solver integration details
+/docs/LIFTED_SUPPORT.md             # Lifted fluents and actions documentation
 /docs/external_repos/               # Interface docs for OLAM/ModelLearner
-/README.md                          # Updated project overview
+/README.md                          # Updated project overview with lifted examples
 ```
 
 ### Critical Implementation Details
@@ -58,18 +58,23 @@ mapper.fluent_to_variable('on_a_b') → 1
 
 ### Common Tasks
 
-#### 1. CNF Formula Manipulation
+#### 1. CNF Formula Manipulation with Lifted Support
 ```python
-from src.sat_integration.cnf_builder import CNFBuilder
-from src.sat_integration.sat_solver import SATSolver
+from src.core.cnf_manager import CNFManager
+from src.core.pddl_handler import PDDLHandler
 
-# Build formula from failed action
-builder = CNFBuilder(variable_mapper)
-precond_cnf = builder.build_precondition_cnf(action, failed_states)
+# CNF with lifted fluents
+cnf = CNFManager()
+cnf.add_lifted_fluent("on", ["?x", "?y"])
+cnf.add_clause(["on(?x,?y)", "-clear(?y)"], lifted=True)
+
+# Ground for specific objects
+bindings = {"?x": "a", "?y": "b"}
+grounded = cnf.instantiate_lifted_clause(["on(?x,?y)"], bindings)
 
 # Count models for information gain
-solver = SATSolver('minisat')
-num_models = solver.count_models(precond_cnf)
+num_models = cnf.count_solutions()
+entropy = cnf.get_entropy()
 ```
 
 #### 2. Run Experiment with CNF Settings
@@ -95,8 +100,8 @@ config = {
 ```
 
 ### File Creation Priority for CNF Integration
-1. `src/sat_integration/` - CNF/SAT components
-2. `src/core/cnf_formula.py` - CNF data structure
+1. `src/core/cnf_manager.py` - CNF formulas with lifted support ✓
+2. `src/core/pddl_handler.py` - PDDL parsing with lifted actions ✓
 3. `src/algorithms/information_gain.py` - Main algorithm
 4. `src/planning/unified_planning_interface.py` - UP integration
 5. Everything else

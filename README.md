@@ -23,10 +23,11 @@ online-model-learning-framework/
 ├── src/
 │   ├── core/
 │   │   ├── __init__.py
-│   │   ├── pddl_model.py          # PDDL model representation
+│   │   ├── pddl_handler.py        # PDDL parsing with lifted support
+│   │   ├── cnf_manager.py         # CNF formulas with lifted fluents
 │   │   ├── state.py               # State representation
 │   │   ├── action.py              # Action representation
-│   │   └── cnf_formula.py         # CNF formula representation
+│   │   └── pddl_model.py          # PDDL model representation
 │   │
 │   ├── algorithms/
 │   │   ├── __init__.py
@@ -133,13 +134,49 @@ runner.visualize_results(results)
 - **Formula Minimization**: Compact representation of learned constraints
 
 ### Key Components
+
+#### Lifted Fluent and Action Support
+The framework now supports both lifted (parameterized) and grounded representations:
+
+```python
+from src.core.cnf_manager import CNFManager
+from src.core.pddl_handler import PDDLHandler
+
+# CNF Manager with lifted fluents
+cnf = CNFManager()
+cnf.add_lifted_fluent("on", ["?x", "?y"])  # Lifted predicate
+cnf.add_lifted_fluent("clear", ["?x"])
+
+# Add lifted clause: on(?x,?y) → ¬clear(?y)
+cnf.add_clause(["on(?x,?y)", "-clear(?y)"], lifted=True)
+
+# Ground the clause for specific objects
+bindings = {"?x": "a", "?y": "b"}
+grounded = cnf.instantiate_lifted_clause(["on(?x,?y)", "-clear(?y)"], bindings)
+# Result: ['on_a_b', '-clear_b']
+
+# PDDL Handler with lifted actions
+handler = PDDLHandler()
+handler.parse_domain_and_problem(domain_file, problem_file)
+
+# Get lifted action structure
+action = handler.get_lifted_action("pick-up")
+lifted_preconds = handler.get_action_preconditions("pick-up", lifted=True)
+# Returns: {'clear(?x)', 'ontable(?x)', 'handempty'}
+
+# Extract CNF representation
+cnf_clauses = handler.extract_lifted_preconditions_cnf("pick-up")
+```
+
+#### CNF-Based Uncertainty Representation
 ```python
 # CNF formula for precondition uncertainty
-precond_cnf = CNFFormula(variables=['on_a_b', 'clear_c', 'handempty'])
-precond_cnf.add_clause([1, -2])  # (on_a_b OR NOT clear_c)
+precond_cnf = CNFManager()
+precond_cnf.add_fluent('on_a_b')
+precond_cnf.add_fluent('clear_c')
+precond_cnf.add_clause(['on_a_b', '-clear_c'])  # (on_a_b OR NOT clear_c)
 
 # SAT solver for model counting
-solver = SATSolver('minisat')
-num_models = solver.count_models(precond_cnf)
-information_gain = calculate_entropy_reduction(num_models)
+num_models = precond_cnf.count_solutions()
+entropy = precond_cnf.get_entropy()
 ```

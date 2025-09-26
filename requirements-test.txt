@@ -1,0 +1,24 @@
+# Testing dependencies for Online Model Learning Framework
+
+# Core testing framework
+pytest>=7.0.0
+pytest-cov>=4.0.0  # Coverage reporting
+pytest-mock>=3.10.0  # Mocking utilities
+pytest-timeout>=2.1.0  # Test timeout handling
+pytest-xdist>=3.0.0  # Parallel test execution
+
+# Test utilities
+hypothesis>=6.70.0  # Property-based testing
+factory-boy>=3.2.0  # Test data factories (if needed)
+
+# Core dependencies (should match main requirements)
+python-sat>=1.8.dev22
+unified-planning[fast-downward,tamer]>=1.2.0
+
+# Scientific computing (for test data)
+numpy>=1.21.0
+pandas>=1.3.0
+
+# Configuration and utilities
+pyyaml>=6.0
+typing-extensions>=4.0.0
