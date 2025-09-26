@@ -5,6 +5,7 @@
 - Contains project structure, tech stack, implementation rules
 - GitHub MCP safety guidelines
 - Common pitfalls to avoid
+- **IMPORTANT**: Update IMPLEMENTATION_TASKS.md after each task (with user approval!)
 
 ## 📚 Quick Documentation Reference
 

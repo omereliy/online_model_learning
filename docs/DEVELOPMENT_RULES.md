@@ -152,6 +152,15 @@ from model_learner.parser import Parser
 - [ ] Metrics collected at each step
 - [ ] Seeds ensure reproducibility
 
+## Implementation Progress Tracking
+
+### MANDATORY: Update IMPLEMENTATION_TASKS.md After Each Task
+**Rule**: After completing ANY implementation:
+1. Update `docs/IMPLEMENTATION_TASKS.md` with completed work
+2. Ask user: "Should I update IMPLEMENTATION_TASKS.md to reflect the completed [task name]?"
+3. Wait for explicit user approval (no auto-approve)
+4. Only then update and commit the documentation
+
 ## Quick Start Commands
 
 ### Setup Environment
