@@ -53,10 +53,28 @@ Building an experiment framework to compare three online action model learning a
 - **Lifted Support Guide** for parameterized actions/fluents
 - **Information Gain Algorithm** with negative precondition examples
 
+#### Phase 2: OLAM Adapter (Completed)
+- **Base Action Model Learner** (`src/algorithms/base_learner.py`) - Abstract interface for all algorithms:
+  - Unified interface methods: `select_action()`, `observe()`, `get_learned_model()`, `has_converged()`
+  - Statistics tracking and reset functionality
+  - Helper methods for state/action conversion
+
+- **OLAM Adapter** (`src/algorithms/olam_adapter.py`) - Full integration with OLAM learner:
+  - State format conversion (UP ↔ OLAM): `clear_a` ↔ `(clear a)`
+  - Action format conversion: `('pick-up', ['a'])` ↔ `pick-up(a)`
+  - Proper grounding of actions (18 actions for 3-block world)
+  - Observation handling for success/failure learning
+  - Model export functionality
+  - Handles OLAM's directory structure requirements (PDDL/, Info/)
+
 #### Testing
 - Comprehensive tests for CNF Manager lifted fluent support
 - Tests for PDDL Handler type hierarchy and lifted actions
 - Tests validating expression tree traversal
+- **OLAM Adapter Tests**:
+  - Comprehensive test suite (`tests/test_olam_adapter.py`) with 9 test categories
+  - Simple integration tests (`tests/test_olam_simple.py`) - 5 tests all passing
+  - Validated state/action conversions and basic workflow
 
 ## Technology Stack
 - **Unified Planning Framework** - PDDL parsing and planning integration (expression trees, NOT simple sets!)
@@ -66,29 +84,207 @@ Building an experiment framework to compare three online action model learning a
 
 ## Implementation Phases
 
-### Phase 2: Information-Theoretic Algorithm ⏳ NEXT PRIORITY
+**🎯 Phase Ordering Rationale:**
+Phases are ordered to enable complete testing of OLAM before implementing other algorithms:
+1. Phase 2 (COMPLETED): OLAM adapter with BaseActionModelLearner interface
+2. Phase 3: Experiment framework for running and measuring learning
+3. Phase 4: Environment/Planning for actual PDDL execution
+4. **Full OLAM validation and baseline establishment**
+5. Phases 5-6: Other algorithms for comparison
 
-**Essential Reading Before Implementation:**
+This ensures we have a fully functional and tested baseline before adding complexity.
+
+### ✅ Phase 2: OLAM Adapter Implementation (Test-Driven Development) - COMPLETED
+
+**Context Documentation:**
+- `docs/external_repos/OLAM_interface.md` - OLAM API and usage patterns
+- `docs/external_repos/integration_guide.md` - Adapter pattern and state conversion
+- `docs/UNIFIED_PLANNING_GUIDE.md` - UP state/action formats
+
+**Test-Driven Development Approach:**
+
+1. **FIRST: Write Comprehensive Test Suite** (`tests/test_olam_adapter.py`)
+
+   **Test Categories Required:**
+
+   a) **Basic Functionality Tests**
+      - Test OLAM import and initialization
+      - Test BaseActionModelLearner interface compliance
+      - Test state format conversion (UP ↔ OLAM)
+      - Test action format conversion
+
+   b) **Action Selection Tests**
+      - Test action selection returns valid actions
+      - Test exploration vs exploitation strategies
+      - Test handling of empty action sets
+      - Test action applicability checking
+
+   c) **Learning from Observations Tests**
+      - Test successful action observation updates
+      - Test failed action precondition learning
+      - Test effect learning (add/delete effects)
+      - Test model refinement over multiple observations
+
+   d) **Edge Cases and Error Handling**
+      - Test with empty states
+      - Test with invalid actions
+      - Test with contradictory observations
+      - Test timeout and iteration limits
+      - Test convergence detection
+
+   e) **Plan Execution Tests**
+      - Test plan generation with learned model
+      - Test plan execution monitoring
+      - Test replanning on failure
+      - Test goal achievement validation
+
+   f) **Integration Tests**
+      - Test with real PDDL domains (blocksworld, gripper, rover\rovers(classical\discrete domains))
+      - Test action sequence execution
+      - Test model accuracy over time
+      - Test compatibility with UP simulator
+
+2. **THEN: Implement OLAM Adapter** (`src/algorithms/olam_adapter.py`)
+
+   **Implementation Requirements:**
+   ```python
+   import sys
+   sys.path.append('/home/omer/projects/OLAM')
+   from OLAM.Learner import Learner
+   ```
+
+   - Implement BaseActionModelLearner interface
+   - State conversion methods:
+     - `_up_state_to_olam(up_state)` → Set of strings
+     - `_olam_state_to_up(olam_state)` → UP State
+   - Action conversion methods:
+     - `_up_action_to_olam(action, objects)` → OLAM format
+     - `_olam_action_to_up(action_idx)` → (name, objects)
+   - Wrap OLAM methods:
+     - `select_action()` → Use OLAM's exploration
+     - `observe()` → Call appropriate OLAM learning method
+     - `get_learned_model()` → Export OLAM's learned operators
+     - `has_converged()` → Check OLAM's convergence flag
+
+3. **Validation Requirements:**
+
+   **All tests must pass before proceeding to experiments:**
+   - Unit tests achieve 100% code coverage
+   - Integration tests work with at least 3 PDDL domains
+   - Edge cases handled gracefully without crashes
+   - Performance benchmarks meet requirements (< 1s per action)
+   - Memory usage stays within bounds
+   - OLAM functionality correctly preserved
+
+### Phase 3: Experiment Runner and Metrics Framework ⏳ NEXT PRIORITY
+
+**Rationale:** Implementing the experiment framework first allows us to test and evaluate each algorithm as it's developed.
+
+**Test-Driven Development Approach:**
+1. Write test suite first (`tests/test_experiment_runner.py`, `tests/test_metrics.py`)
+2. Test configuration loading and validation
+3. Test metric collection and export functionality
+4. Test integration with BaseActionModelLearner interface
+5. Implement components to pass tests incrementally
+
+**Files to create:**
+- `tests/test_experiment_runner.py` - Test suite for runner (CREATE FIRST)
+- `tests/test_metrics.py` - Test suite for metrics (CREATE FIRST)
+- `src/experiments/runner.py` - Main experiment orchestrator
+- `src/experiments/metrics.py` - Performance metrics collector
+- `configs/experiment.yaml` - Experiment configuration
+
+**Implementation Requirements:**
+
+1. **Experiment Runner** (`src/experiments/runner.py`)
+   - Load experiment configuration from YAML
+   - Initialize selected algorithms (OLAM, ModelLearner, Information-Theoretic)
+   - Setup PDDL environment and planner
+   - Run learning episodes with configurable stopping criteria
+   - Collect metrics at specified intervals
+   - Save results in structured format
+
+2. **Metrics Collector** (`src/experiments/metrics.py`)
+   - **Mistake rate**: Track action failure rate over time (snapshot every x actions)
+   - **Runtime performance**: Time to select/plan actions (should decrease as hypothesis space shrinks)
+   - **Information gain metrics**: Reduction in uncertainty for preconditions/effects (from CNF entropy)
+   - **Model accuracy**: Precision/recall for learned model (evaluate at end)
+   - **Solution count evolution**: Track CNF formula solution space size
+   - Export metrics to CSV/JSON for analysis
+
+3. **Configuration Schema** (`configs/experiment.yaml`)
+   ```yaml
+   experiment:
+     name: "blocksworld_comparison"
+     algorithms: ["olam", "information_gain"]
+     domain: "benchmarks/blocksworld/domain.pddl"
+     problem: "benchmarks/blocksworld/p01.pddl"
+     metrics_interval: 10  # Collect metrics every 10 actions
+     max_iterations: 1000
+   ```
+
+### Phase 4: Environment and Planning Integration ⏳ REQUIRED FOR TESTING
+
+**Rationale:** Need environment and planning components to run actual experiments and fully test OLAM adapter.
+
+**Test-Driven Development Approach:**
+1. Write test suite first (`tests/test_pddl_environment.py`)
+2. Test environment initialization with PDDL files
+3. Test action execution and state transitions
+4. Test state observation format compatibility
+5. Test reset functionality
+6. Implement environment to pass tests incrementally
+
+**Files to create:**
+- `tests/test_pddl_environment.py` - Test suite for environment (CREATE FIRST)
+- `src/environments/pddl_environment.py` - Simulated PDDL environment
+- `src/planning/unified_planner.py` - UP planner wrapper (optional for initial testing)
+
+**Implementation Requirements:**
+
+1. **PDDL Environment** (`src/environments/pddl_environment.py`)
+   - Use UP's SequentialSimulator for action execution
+   - Track current state
+   - Execute grounded actions and return success/failure
+   - Handle action applicability checking
+   - Provide state observations in BaseActionModelLearner-compatible format
+   - Reset to initial state functionality
+
+2. **Unified Planner** (`src/planning/unified_planner.py`) - Optional for Phase 4
+   - Wrap UP's OneshotPlanner
+   - Support multiple planner backends (pyperplan, tamer, fast-downward)
+   - Handle timeout and error cases
+   - Convert between internal and UP plan formats
+   - Support both optimal and satisficing modes
+
+**Integration with Experiment Runner:**
+- Environment provides action execution for learning loop
+- State observations compatible with OLAM adapter format
+- Enables full end-to-end testing of OLAM learning
+
+### Phase 5: Information-Theoretic Algorithm Implementation
+
+**Context Documentation:**
 - `docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md` - Complete algorithm specification with negative preconditions
 - `docs/UNIFIED_PLANNING_GUIDE.md` - Critical for understanding UP's expression trees
 - `docs/LIFTED_SUPPORT.md` - For handling parameterized actions
 
+**Test-Driven Development Approach:**
+1. Write comprehensive test suite first (`tests/test_information_gain.py`)
+2. Test knowledge set management (pre, pre?, eff+, eff-, eff?+, eff?-)
+3. Test CNF formula updates for preconditions
+4. Test information gain calculations
+5. Test action selection based on expected gain
+6. Test learning from success/failure observations
+7. Implement algorithm to pass tests incrementally
+
 **Files to create:**
-- `src/algorithms/base_learner.py` - Abstract base class
+- `tests/test_information_gain.py` - Test suite for algorithm (CREATE FIRST)
 - `src/algorithms/information_gain.py` - Main algorithm implementation
 
 **Implementation Requirements:**
 
-1. **Base Learner Interface** (`src/algorithms/base_learner.py`)
-   ```python
-   class BaseActionModelLearner(ABC):
-       def select_action(self, state) -> Tuple[str, List[str]]  # (action_name, objects)
-       def observe(self, state, action, objects, success, next_state=None) -> None
-       def get_learned_model(self) -> Dict  # Export learned model
-       def has_converged(self) -> bool
-   ```
-
-2. **Information Gain Learner** (`src/algorithms/information_gain.py`)
+1. **Information Gain Learner** (`src/algorithms/information_gain.py`)
    - Initialize with domain using PDDLHandler
    - Maintain 6 knowledge sets per action (pre, pre?, eff+, eff-, eff?+, eff?-)
    - Use CNFManager for precondition constraints (pre?)
@@ -99,35 +295,28 @@ Building an experiment framework to compare three online action model learning a
      - `effPotential`: Knowledge from observed effects
    - Action selection based on expected information gain
    - Update rules for success/failure observations
+   - Integrate with experiment framework for comparison with OLAM
 
-### Phase 3: External Algorithm Integration
+### Phase 6: ModelLearner Adapter Integration
 
 **Prerequisites:**
-- Ensure external repos are accessible:
-  - `/home/omer/projects/OLAM/`
-  - `/home/omer/projects/ModelLearner/`
+- Ensure external repo is accessible: `/home/omer/projects/ModelLearner/`
+
+**Test-Driven Development Approach:**
+1. Write test suite first (`tests/test_optimistic_adapter.py`)
+2. Test ModelLearner import and initialization
+3. Test state/action format conversions
+4. Test optimistic model updates
+5. Test batch learning after plan execution
+6. Implement adapter to pass tests (following OLAM adapter pattern)
 
 **Files to create:**
-- `src/algorithms/olam_adapter.py`
+- `tests/test_optimistic_adapter.py` - Test suite for adapter (CREATE FIRST)
 - `src/algorithms/optimistic_adapter.py`
 
 **Implementation Requirements:**
 
-1. **OLAM Adapter** (`src/algorithms/olam_adapter.py`)
-   ```python
-   import sys
-   sys.path.append('/home/omer/projects/OLAM')
-   from OLAM.Learner import Learner
-   ```
-   - Implement BaseActionModelLearner interface
-   - Convert UP state format to OLAM's set-based format
-   - Handle OLAM's specific methods:
-     - `select_action()`: Use OLAM's exploration
-     - `learn()`: Process successful actions
-     - `learn_failed_action_precondition()`: Process failures
-   - State format conversion (UP objects ↔ OLAM strings)
-
-2. **ModelLearner Adapter** (`src/algorithms/optimistic_adapter.py`)
+1. **ModelLearner Adapter** (`src/algorithms/optimistic_adapter.py`)
    ```python
    import sys
    sys.path.append('/home/omer/projects/ModelLearner/src')
@@ -137,57 +326,10 @@ Building an experiment framework to compare three online action model learning a
    - Handle ModelLearner's lifted_dict YAML requirement
    - Key method: `learning_step_all_actions_updated()`
    - Manage optimistic model updates
+   - State/action format conversion similar to OLAM adapter
+   - Integrate with experiment framework for three-way comparison
 
-### Phase 4: Environment and Planning Integration
-
-**Files to create:**
-- `src/environments/pddl_environment.py` - Simulated PDDL environment
-- `src/planning/unified_planner.py` - UP planner wrapper
-
-**Implementation Requirements:**
-
-1. **PDDL Environment** (`src/environments/pddl_environment.py`)
-   - Use UP's SequentialSimulator for action execution
-   - Track current state
-   - Execute grounded actions and return success/failure
-   - Handle action applicability checking
-   - Provide state observations
-
-2. **Unified Planner** (`src/planning/unified_planner.py`)
-   - Wrap UP's OneshotPlanner
-   - Support multiple planner backends (pyperplan, tamer, fast-downward)
-   - Handle timeout and error cases
-   - Convert between internal and UP plan formats
-   - Support both optimal and satisficing modes
-
-### Phase 5: Experiment Runner and Metrics
-
-**Files to create:**
-- `src/experiments/runner.py` - Main experiment orchestrator
-- `src/experiments/metrics.py` - Performance metrics collector
-- `configs/experiment.yaml` - Experiment configuration
-
-**Requirements:**
-1. **Domain Configurations**
-   - PDDL domain and problem files
-   - Initial states and goals
-   - Domain-specific parameters
-
-2. **Algorithm Configurations**
-   - SAT solver settings (timeout, max solutions)
-   - CNF minimization frequency
-   - Exploration parameters
-   - Learning rates and thresholds
-
-3. **Experiment Metrics**
-   - Sample complexity
-   - Model accuracy (precision/recall)
-   - CNF formula size
-   - Solution count evolution
-   - Runtime performance
-   - Minimization effectiveness
-
-### Phase 6: HPC Deployment
+### Phase 7: HPC Deployment
 
 **Files to create:**
 - `slurm/run_single.sh`
@@ -286,7 +428,8 @@ sys.path.append('/home/omer/projects/ModelLearner/src')
 
 - ✅ CNF formulas correctly represent uncertainty (with lifted support)
 - ✅ Type hierarchy properly handled with 'object' as root
-- ⏳ All three algorithms implement BaseActionModelLearner interface
+- ✅ OLAM adapter implements BaseActionModelLearner interface
+- ⏳ All three algorithms implement BaseActionModelLearner interface (1/3 complete)
 - ⏳ Information gain correctly calculated from CNF model counting
 - ⏳ Experiments run on standard PDDL domains
 - ⏳ Results reproducible with seed control
@@ -296,16 +439,35 @@ sys.path.append('/home/omer/projects/ModelLearner/src')
 
 1. **ALWAYS review `docs/DEVELOPMENT_RULES.md` first**
 2. **Check `CLAUDE.md` for quick context guidance**
-3. **UP uses expression trees** - Never assume simple sets
-4. **Negative preconditions** need special handling
-5. **Test incrementally** - Start with blocksworld, 3-4 objects
-6. **Use existing implementations** - CNFManager and PDDLHandler are complete
+3. **Follow Test-Driven Development** - Write tests before implementation
+4. **UP uses expression trees** - Never assume simple sets
+5. **Negative preconditions** need special handling
+6. **Test incrementally** - Start with blocksworld, 3-4 objects
+7. **Use existing implementations** - CNFManager and PDDLHandler are complete
+8. **Complete OLAM testing** before implementing other algorithms
 
 ## Next Steps Priority Order
 
-1. Create `BaseActionModelLearner` abstract class
-2. Implement `InformationGainLearner` using existing CNFManager
-3. Create simple PDDL environment for testing
-4. Test on small blocksworld problems
-5. Add OLAM and ModelLearner adapters
-6. Run comparative experiments
+1. **Experiment Framework Implementation (Phase 3):**
+   - Write tests first for runner and metrics components
+   - Create experiment runner with YAML configuration support
+   - Implement metrics collector with specified metrics
+   - Initial testing capability with mocked environment
+
+2. **Environment and Planning Integration (Phase 4):**
+   - Write tests for PDDL environment functionality
+   - Create PDDL environment using UP's SequentialSimulator
+   - Enable full end-to-end testing with OLAM adapter
+   - **MILESTONE: Fully test and validate OLAM learning on multiple domains**
+   - Collect baseline metrics for OLAM performance
+
+3. **Information-Theoretic Algorithm (Phase 5):**
+   - Write comprehensive test suite first
+   - Implement InformationGainLearner using existing CNFManager
+   - Validate with small blocksworld problems
+   - Compare performance with OLAM baseline
+
+4. **ModelLearner Adapter (Phase 6):**
+   - Apply same TDD approach as OLAM
+   - Ensure compatibility with optimistic exploration
+   - Complete three-way algorithm comparison
