@@ -23,33 +23,34 @@ Each fluent in a state is mapped to a unique boolean variable:
 
 ## Key Components
 
-### 1. CNF Formula Builder (`src/sat_integration/cnf_builder.py`)
-Constructs CNF formulas from observed state transitions and action failures.
+### 1. CNF Manager (`src/core/cnf_manager.py`) ✅ IMPLEMENTED
+Complete CNF formula management with PySAT integration.
 
 **Key Functions:**
-- `build_precondition_cnf(action, failed_states, success_states)`
-- `build_effect_cnf(action, before_after_pairs)`
-- `update_cnf_from_observation(cnf, observation)`
+- `add_fluent(fluent_str)` - Map fluent to variable ID
+- `add_clause(clause)` - Add clause with fluent strings
+- `count_solutions()` - Count satisfying assignments
+- `get_all_solutions()` - Get all models as fluent sets
+- `minimize_qm()` - Quine-McCluskey minimization
+- `get_entropy()` - Calculate formula entropy
+- **Lifted Support**: `add_lifted_fluent()`, `instantiate_lifted_clause()`
 
-### 2. SAT Solver Interface (`src/sat_integration/sat_solver.py`)
-Wrapper around PySAT's minisat solver for model counting and satisfiability.
-
-**Key Functions:**
-- `count_models(cnf_formula)` - Count satisfying assignments
-- `is_satisfiable(cnf_formula)` - Check satisfiability
-- `get_core(cnf_formula)` - Extract unsatisfiable core
-- `add_assumption(variable, value)` - Add temporary constraints
-
-### 3. Formula Minimizer (`src/sat_integration/formula_minimizer.py`)
-Optimizes CNF formulas for compact representation and faster solving.
+### 2. PDDL Handler (`src/core/pddl_handler.py`) ✅ IMPLEMENTED
+Unified Planning integration with CNF extraction.
 
 **Key Functions:**
-- `minimize_clauses(cnf_formula)` - Remove redundant clauses
-- `simplify_unit_propagation(cnf_formula)` - Apply unit propagation
-- `merge_equivalent_variables(cnf_formula)` - Combine equivalent vars
+- `parse_domain_and_problem()` - Parse PDDL files
+- `get_lifted_action()` - Access action schemas
+- `extract_lifted_preconditions_cnf()` - Convert to CNF
+- `get_type_hierarchy()` - Type hierarchy with 'object' root
+- **Expression Tree Handling**: Proper FNode traversal
 
-### 4. Variable Mapper (`src/sat_integration/variable_mapper.py`)
-Manages bidirectional mapping between fluents and CNF variables.
+### 3. Future Components (To Be Implemented)
+The following components will be created in `src/sat_integration/`:
+- **Advanced CNF Builder**: Domain-specific formula construction
+- **Incremental SAT Solving**: Reuse solver state
+- **Parallel Model Counting**: Multi-threaded counting
+- **Formula Learning**: Learn compact representations
 
 **Key Functions:**
 - `fluent_to_variable(fluent_name)` - Get variable ID for fluent

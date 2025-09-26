@@ -14,27 +14,33 @@ Building an experiment framework to compare three online action model learning a
 
 ## Implementation Phases
 
-### Phase 1: Core Infrastructure with UP and PySAT
+### Phase 1: Core Infrastructure with UP and PySAT ✅ COMPLETED
 
-**Files to create:**
-- `src/core/cnf_manager.py`
-- `src/core/pddl_handler.py`
+**Files created:**
+- `src/core/cnf_manager.py` ✅
+- `src/core/pddl_handler.py` ✅
 
-**Requirements:**
+**Implemented features:**
 1. **CNF Manager** (`src/core/cnf_manager.py`)
-   - Fluent to variable ID bidirectional mapping
-   - CNF formula manipulation (add/remove clauses)
-   - Solution enumeration using Minisat22
-   - Solution counting for probability calculations
-   - Formula minimization (Quine-McCluskey or Espresso)
-   - String representation for debugging
+   - ✅ Fluent to variable ID bidirectional mapping
+   - ✅ CNF formula manipulation (add/remove clauses)
+   - ✅ Solution enumeration using Minisat22
+   - ✅ Solution counting for probability calculations
+   - ✅ Formula minimization (Quine-McCluskey or Espresso)
+   - ✅ String representation for debugging
+   - ✅ **Lifted fluent support** (add_lifted_fluent, ground_lifted_fluent)
+   - ✅ **Clause instantiation** (instantiate_lifted_clause)
+   - ✅ **Entropy calculation** for uncertainty measurement
 
 2. **PDDL Handler** (`src/core/pddl_handler.py`)
-   - Parse PDDL files using Unified Planning
-   - Convert UP objects to internal representation
-   - Handle grounded predicates
-   - Support negative preconditions
-   - Export learned models back to PDDL
+   - ✅ Parse PDDL files using Unified Planning
+   - ✅ Convert UP objects to internal representation
+   - ✅ Handle grounded predicates
+   - ✅ Support negative preconditions
+   - ✅ Export learned models back to PDDL
+   - ✅ **Type hierarchy support** with 'object' as root
+   - ✅ **Expression tree traversal** for compound preconditions
+   - ✅ **Lifted action extraction** with CNF conversion
 
 ### Phase 2: Information-Theoretic Algorithm with SAT
 

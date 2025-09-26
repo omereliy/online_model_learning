@@ -1,5 +1,8 @@
 # Development Rules and Context Management
 
+## ⚠️ MANDATORY REVIEW
+**This document MUST be reviewed at the start of every Claude Code session before any interaction.**
+
 ## Project Overview
 **Goal**: Compare online action model learning algorithms (OLAM, Optimistic Exploration, CNF-based Information-Theoretic) on PDDL domains using Unified Planning Framework and PySAT integration.
 
@@ -219,3 +222,46 @@ tqdm
 - Minimize formulas before SAT solving
 - Map fluent names consistently to CNF variables
 - Handle large formulas with approximate model counting
+
+## GitHub MCP Safety Rules
+
+### Git Operations Guidelines
+**Rule**: All git operations must follow these safety protocols.
+
+#### 1. Commit Safety
+- **Never** commit sensitive data (passwords, API keys, tokens)
+- **Never** commit large binary files or datasets
+- **Always** review changes with `git status` and `git diff` before committing
+- **Always** use descriptive commit messages
+- **Never** credit claude or a person in a commit message
+- **Never** force push to main/master branches
+
+#### 2. Branch Management
+- **Always** work on feature branches for new functionality
+- **Never** directly modify main/master without review
+- **Always** pull latest changes before creating new branches
+- **Never** delete branches without confirming merged status
+
+#### 3. File Modification Rules
+- **Never** modify external repository files (OLAM, ModelLearner)
+- **Always** respect .gitignore patterns
+- **Never** commit temporary or cache files
+- **Always** ensure tests pass before committing
+
+#### 4. Pull Request Guidelines
+- **Always** provide clear PR descriptions
+- **Always** link related issues if applicable
+- **Never** merge without reviewing changes
+- **Always** resolve conflicts carefully
+
+#### 5. Repository Boundaries
+- **Never** push to repositories outside project scope
+- **Always** verify repository URL before operations
+- **Never** clone private repos without permission
+- **Always** respect repository access levels
+
+### MCP Server Usage
+- **Always** verify MCP server connection status
+- **Never** expose MCP credentials in code or commits
+- **Always** use MCP operations within project boundaries
+- **Never** use MCP to access unauthorized resources

@@ -24,11 +24,10 @@ Compare three online action model learning algorithms on PDDL domains:
 
 ### Critical Implementation Details
 
-#### CNF/SAT Integration (`src/sat_integration/`)
-- `cnf_builder.py` - Build CNF formulas from observations
-- `sat_solver.py` - PySAT minisat interface
-- `variable_mapper.py` - Fluent ↔ CNF variable mapping
-- `formula_minimizer.py` - Optimize formulas
+#### CNF/SAT Integration (Currently in `src/core/`)
+- `cnf_manager.py` ✅ - Complete CNF formula management with PySAT
+- `pddl_handler.py` ✅ - PDDL parsing with UP and CNF extraction
+- Future: `src/sat_integration/` for advanced features
 
 #### Information-Theoretic Algorithm Must:
 - Represent uncertainty as CNF formulas over fluent variables
@@ -162,24 +161,24 @@ print(f"Problem loaded: {problem.name}")
 
 ### Minimal CNF Working Example
 ```python
-# Test complete CNF workflow
-from src.sat_integration.variable_mapper import VariableMapper
-from src.sat_integration.cnf_builder import CNFBuilder
-from src.sat_integration.sat_solver import SATSolver
+# Test complete CNF workflow with current implementation
+from src.core.cnf_manager import CNFManager
 
-mapper = VariableMapper()
-builder = CNFBuilder(mapper)
-solver = SATSolver('minisat')
+cnf = CNFManager()
 
-# Map fluents to variables
-on_a_b = mapper.fluent_to_variable('on_a_b')
-clear_b = mapper.fluent_to_variable('clear_b')
-
-# Build simple CNF: (clear_b OR NOT on_a_b)
-cnf = builder.create_empty_cnf()
-cnf.add_clause([clear_b, -on_a_b])
+# Add fluents and build CNF: (clear_b OR NOT on_a_b)
+cnf.add_clause(['clear_b', '-on_a_b'])
 
 # Count models
-count = solver.count_models(cnf)
+count = cnf.count_solutions()
 print(f"Number of satisfying assignments: {count}")
+
+# Get all solutions
+solutions = cnf.get_all_solutions()
+for sol in solutions:
+    print(f"Solution: {sol}")
+
+# Calculate entropy
+entropy = cnf.get_entropy()
+print(f"Entropy: {entropy}")
 ```
