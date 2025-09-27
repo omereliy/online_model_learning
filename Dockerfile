@@ -34,9 +34,14 @@ RUN git clone https://github.com/aibasel/downward.git fast-downward && \
     python build.py
 
 # Install VAL validator (for plan validation)
-RUN git clone https://github.com/KCL-Planning/VAL.git && \
+# VAL now uses CMake for building
+RUN apt-get update && apt-get install -y flex bison && rm -rf /var/lib/apt/lists/* && \
+    git clone https://github.com/KCL-Planning/VAL.git && \
     cd VAL && \
-    make && \
+    mkdir build && \
+    cd build && \
+    cmake -DCMAKE_BUILD_TYPE=Release .. && \
+    make -j$(nproc) && \
     make install
 
 # Stage 3: Development environment
@@ -65,7 +70,8 @@ WORKDIR /workspace
 COPY requirements.txt requirements-test.txt /workspace/
 
 # Install core dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Install development/testing dependencies
 RUN pip install --no-cache-dir -r requirements-test.txt

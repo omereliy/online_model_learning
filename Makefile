@@ -96,6 +96,11 @@ docker-test:
 	@echo "Running tests in Docker..."
 	@docker-compose run test
 
+# Single command to build and test
+docker-setup-and-test:
+	@echo "Setting up Docker and running tests (single command)..."
+	@docker-compose build test && docker-compose run --rm test
+
 docker-test-quick:
 	@echo "Running quick tests in Docker..."
 	@docker-compose run test-quick
