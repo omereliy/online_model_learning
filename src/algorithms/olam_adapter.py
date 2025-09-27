@@ -44,6 +44,7 @@ class OLAMAdapter(BaseActionModelLearner):
                  problem_file: str,
                  max_iterations: int = 1000,
                  eval_frequency: int = 10,
+                 pddl_handler=None,
                  **kwargs):
         """
         Initialize OLAM adapter.
@@ -53,12 +54,21 @@ class OLAMAdapter(BaseActionModelLearner):
             problem_file: Path to PDDL problem file
             max_iterations: Maximum learning iterations
             eval_frequency: How often to evaluate the model
+            pddl_handler: Optional PDDLHandler instance for proper grounding
             **kwargs: Additional parameters
         """
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
         self.eval_frequency = eval_frequency
+
+        # Initialize PDDLHandler for proper action grounding
+        if pddl_handler is None:
+            from src.core.pddl_handler import PDDLHandler
+            self.pddl_handler = PDDLHandler()
+            self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+        else:
+            self.pddl_handler = pddl_handler
 
         # Initialize OLAM components
         self._initialize_olam()
@@ -125,53 +135,35 @@ class OLAMAdapter(BaseActionModelLearner):
 
     def _extract_action_list(self) -> List[str]:
         """
-        Extract grounded action list from domain and problem files.
+        Extract grounded action list using PDDLHandler for proper domain-agnostic grounding.
 
         Returns:
             List of grounded action strings in OLAM format
         """
-        actions = []
+        grounded_actions = []
 
-        # Parse domain to get action schemas
-        with open(self.domain_file, 'r') as f:
-            domain_content = f.read().lower()
-
-        # Extract action names
-        action_names = re.findall(r':action\s+(\S+)', domain_content)
-
-        # Parse problem to get objects
-        with open(self.problem_file, 'r') as f:
-            problem_content = f.read().lower()
-
-        # Extract objects
-        objects_section = re.search(r':objects(.*?)\)', problem_content, re.DOTALL)
-        if objects_section:
-            objects_text = objects_section.group(1)
-            # Extract object names (ignore types)
-            object_names = []
-            for token in objects_text.split():
-                if token != '-' and not token.startswith('-'):
-                    if token not in ['block', 'object']:  # Skip type names
-                        object_names.append(token)
-
-        # For now, create simple grounded actions
-        # In practice, OLAM will handle this more sophisticatedly
-        for action in action_names:
-            if action in ['pick-up', 'put-down']:
-                # Single parameter actions
-                for obj in object_names:
-                    actions.append(f"{action}({obj})")
-            elif action in ['stack', 'unstack']:
-                # Two parameter actions
-                for obj1 in object_names:
-                    for obj2 in object_names:
-                        if obj1 != obj2:  # Can't stack/unstack object on itself
-                            actions.append(f"{action}({obj1},{obj2})")
+        # Use PDDLHandler's proper grounding mechanism
+        for action, binding in self.pddl_handler._grounded_actions:
+            if not binding:
+                # Parameterless action
+                action_str = f"{action.name}()"
             else:
-                # Parameterless action (e.g., handempty)
-                actions.append(f"{action}()")
+                # Extract parameter values in order
+                # We need to maintain the parameter order from the action definition
+                param_values = []
+                for param in action.parameters:
+                    if param.name in binding:
+                        param_values.append(binding[param.name].name)
 
-        return sorted(actions)
+                # Build OLAM format: action_name(param1,param2,...)
+                if param_values:
+                    action_str = f"{action.name}({','.join(param_values)})"
+                else:
+                    action_str = f"{action.name}()"
+
+            grounded_actions.append(action_str)
+
+        return sorted(grounded_actions)
 
     def _build_action_mappings(self):
         """Build mappings between action indices and string representations."""
