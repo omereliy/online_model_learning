@@ -1,0 +1,26 @@
+# Experiment configuration for Gripper domain
+experiment:
+  name: "gripper_learning"
+  domain: "benchmarks/gripper/domain.pddl"
+  problem: "benchmarks/gripper/p01.pddl"
+  algorithms:
+    - olam
+  metrics:
+    - mistake_rate
+    - cumulative_mistakes
+    - per_action_success_rate
+    - runtime
+  stopping_criteria:
+    max_iterations: 500
+    convergence_threshold: 0.95
+    check_convergence_every: 10
+    timeout: 300  # 5 minutes
+  output:
+    directory: "results/gripper"
+    formats: ["csv", "json"]
+  random_seed: 42
+
+# Algorithm-specific parameters
+olam:
+  exploration_rate: 0.1
+  max_learning_iterations: 100

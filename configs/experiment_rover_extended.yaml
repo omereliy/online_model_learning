@@ -1,0 +1,49 @@
+# Extended experiment configuration for Rover domain
+# Designed for longer learning runs with significant action exploration
+
+experiment:
+  name: "rover_extended_learning"
+  algorithm: "olam"
+  seed: 42
+
+domain_problem:
+  domain: "benchmarks/rover/domain.pddl"
+  problem: "benchmarks/rover/p01.pddl"
+
+# Algorithm-specific parameters for extended learning
+algorithm_params:
+  olam:
+    max_iterations: 2000  # Much longer run
+    eval_frequency: 50    # Check progress every 50 actions
+
+# Metrics collection - record EVERY action
+metrics:
+  interval: 1  # Record every single action
+  window_sizes: [10, 25, 50, 100, 200, 500]  # Multiple windows for analysis
+  snapshot_interval: 100  # Take snapshot every 100 actions
+
+# Extended stopping criteria for long runs
+stopping_criteria:
+  max_iterations: 2000      # Allow up to 2000 iterations
+  max_runtime_seconds: 1800 # 30 minutes maximum
+  convergence_check_interval: 100  # Check convergence every 100 actions
+  convergence_threshold: 0.95     # 95% success rate
+  min_iterations_before_convergence: 500  # Ensure at least 500 actions before declaring convergence
+
+# Output configuration
+output:
+  directory: "results/"
+  formats: ["csv", "json"]
+  save_learned_model: true
+  save_intermediate_checkpoints: true
+  checkpoint_interval: 200  # Save checkpoint every 200 actions
+
+# Logging for detailed analysis
+logging:
+  level: "INFO"
+  console_level: "INFO"
+  file_level: "DEBUG"
+  log_state_transitions: true
+  log_action_selections: true
+  log_learning_updates: true
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

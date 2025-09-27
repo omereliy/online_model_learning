@@ -1,4 +1,4 @@
-.PHONY: test test-quick test-full test-metrics test-integration clean help run-experiment analyze fix-deadlock
+.PHONY: test test-quick test-full test-metrics test-integration clean help run-experiment analyze fix-deadlock coverage coverage-html coverage-report benchmark
 
 # Default target
 help:
@@ -10,6 +10,9 @@ help:
 	@echo "  make run-experiment - Run a quick experiment with mock environment"
 	@echo "  make analyze        - Analyze latest experiment results"
 	@echo "  make clean          - Remove generated files and caches"
+	@echo "  make coverage       - Run tests with code coverage"
+	@echo "  make coverage-html  - Generate HTML coverage report"
+	@echo "  make benchmark      - Run performance benchmarks"
 	@echo "  make fix-deadlock   - Apply RLock fix (already applied)"
 
 # Quick test of critical functionality
@@ -117,6 +120,26 @@ docker-clean:
 	@echo "Cleaning Docker containers and volumes..."
 	@docker-compose down -v
 	@docker system prune -f
+
+# Code coverage commands
+coverage:
+	@echo "Running test coverage analysis..."
+	@python scripts/simple_coverage_report.py
+
+coverage-detailed:
+	@echo "Running detailed coverage analysis (requires coverage package)..."
+	@python scripts/run_coverage.py
+
+coverage-report: coverage
+
+# Performance benchmarking
+benchmark:
+	@echo "Running performance benchmarks..."
+	@python scripts/benchmark_performance.py --domains blocksworld gripper logistics rover depots --repetitions 10
+
+benchmark-quick:
+	@echo "Running quick performance benchmark..."
+	@python scripts/benchmark_performance.py --domains blocksworld gripper --repetitions 3
 
 # CI/CD commands
 ci-local:
