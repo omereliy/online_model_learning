@@ -8,9 +8,9 @@ ENV PYTHONUNBUFFERED=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    python3.9 \
+    python3 \
     python3-pip \
-    python3.9-dev \
+    python3-dev \
     git \
     curl \
     wget \
@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y \
     default-jdk \
     && rm -rf /var/lib/apt/lists/*
 
-# Set Python 3.9 as default
-RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
+# Set Python 3 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1
 RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
 # Stage 2: Build environment with planners
