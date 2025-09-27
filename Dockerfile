@@ -42,6 +42,13 @@ RUN git clone https://github.com/KCL-Planning/VAL.git && \
 # Stage 3: Development environment
 FROM base AS development
 
+# Install development tools
+RUN apt-get update && apt-get install -y \
+    vim \
+    tmux \
+    htop \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy built planners from builder stage
 COPY --from=builder /opt/fast-downward /opt/fast-downward
 COPY --from=builder /opt/VAL /opt/VAL
@@ -55,22 +62,16 @@ ENV PATH="${VAL_PATH}:${PATH}"
 WORKDIR /workspace
 
 # Copy requirements first for better caching
-COPY requirements.txt /workspace/
+COPY requirements.txt requirements-test.txt /workspace/
+
+# Install core dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install additional dependencies
-RUN pip install --no-cache-dir \
-    unified-planning[fast-downward,tamer] \
-    python-sat \
-    pyeda \
-    pyyaml \
-    pandas \
-    matplotlib \
-    pytest \
-    pytest-cov \
-    pytest-timeout \
-    black \
-    flake8
+# Install development/testing dependencies
+RUN pip install --no-cache-dir -r requirements-test.txt
+
+# Install linting tools
+RUN pip install --no-cache-dir black flake8
 
 # Copy project files
 COPY . /workspace/
@@ -92,12 +93,7 @@ RUN mkdir -p results
 # Stage 4: Testing environment
 FROM development AS testing
 
-# Install additional testing tools
-RUN pip install --no-cache-dir \
-    pytest-xdist \
-    pytest-mock \
-    hypothesis
-
+# Testing dependencies are already installed from requirements-test.txt
 # Run tests by default
 CMD ["pytest", "-v", "--tb=short", "tests/"]
 
@@ -115,7 +111,7 @@ ENV PATH="${VAL_PATH}:${PATH}"
 
 WORKDIR /app
 
-# Copy requirements and install
+# Copy and install only production requirements
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
