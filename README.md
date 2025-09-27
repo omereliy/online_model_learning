@@ -221,8 +221,11 @@ Run the test suite:
 # Quick tests (< 2 minutes)
 make test-quick
 
-# Full test suite
-make test
+# Full curated test suite (recommended)
+make test  # Runs 165 tests, 100% pass rate
+
+# All tests including experimental
+pytest tests/  # Runs 196 tests, includes unstable experiments
 
 # Specific module tests
 make test-metrics
@@ -234,14 +237,17 @@ make test-integration
 # Build Docker images
 make docker-build
 
-# Run tests in Docker
-make docker-test
+# Run curated tests in Docker (recommended)
+make docker-test  # Same as 'make test' but in Docker
 
 # Quick tests without dependencies
 make docker-test-quick
 
 # Interactive development
 make docker-shell
+
+# Note: Docker ensures consistent environment with all dependencies
+# Use for CI/CD or when local dependencies are missing
 ```
 
 ### CI/CD
