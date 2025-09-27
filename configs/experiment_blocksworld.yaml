@@ -1,0 +1,46 @@
+# Experiment configuration for blocksworld domain with enhanced metrics
+# Records every action for comprehensive analysis
+
+experiment:
+  name: "blocksworld_detailed"
+  algorithm: "olam"
+  seed: 42
+
+domain_problem:
+  domain: "benchmarks/blocksworld/domain.pddl"
+  problem: "benchmarks/blocksworld/p01.pddl"
+
+# Algorithm-specific parameters
+algorithm_params:
+  olam:
+    max_iterations: 200
+    eval_frequency: 10
+
+# Metrics collection - record EVERY action
+metrics:
+  interval: 1  # Record every single action
+  window_size: 50  # Default window for quick checks
+
+# Enhanced logging configuration
+logging:
+  level: "DEBUG"  # Capture everything
+  console_level: "INFO"  # Show progress on console
+  file_level: "DEBUG"  # Log everything to file
+  log_state_transitions: true
+  log_action_selections: true
+  log_learning_updates: true
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Stopping criteria
+stopping_criteria:
+  max_iterations: 200
+  max_runtime_seconds: 600  # 10 minutes max
+  convergence_check_interval: 20
+
+# Output configuration
+output:
+  directory: "results/"
+  formats: ["csv", "json"]
+  save_learned_model: true
+  save_intermediate_checkpoints: true  # Save every 50 iterations
+  checkpoint_interval: 50

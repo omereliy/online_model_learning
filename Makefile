@@ -1,87 +1,131 @@
-# Makefile for Online Model Learning Framework
+.PHONY: test test-quick test-full test-metrics test-integration clean help run-experiment analyze fix-deadlock
 
-.PHONY: help test test-verbose test-coverage test-fast clean install install-dev lint format check
-
-# Help target
+# Default target
 help:
 	@echo "Available targets:"
-	@echo "  test          - Run all tests"
-	@echo "  test-verbose  - Run tests with verbose output"
-	@echo "  test-coverage - Run tests with coverage report"
-	@echo "  test-fast     - Run tests excluding slow ones"
-	@echo "  test-unit     - Run only unit tests"
-	@echo "  test-cnf      - Run only CNF-related tests"
-	@echo "  test-pddl     - Run only PDDL-related tests"
-	@echo "  clean         - Clean up temporary files"
-	@echo "  install       - Install main dependencies"
-	@echo "  install-dev   - Install development dependencies"
-	@echo "  lint          - Run linting checks"
-	@echo "  format        - Format code"
-	@echo "  check         - Run all checks (lint, test)"
+	@echo "  make test           - Run full test suite"
+	@echo "  make test-quick     - Run quick critical tests only"
+	@echo "  make test-metrics   - Test metrics module"
+	@echo "  make test-integration - Run integration tests"
+	@echo "  make run-experiment - Run a quick experiment with mock environment"
+	@echo "  make analyze        - Analyze latest experiment results"
+	@echo "  make clean          - Remove generated files and caches"
+	@echo "  make fix-deadlock   - Apply RLock fix (already applied)"
 
-# Test targets
-test:
-	pytest
+# Quick test of critical functionality
+test-quick:
+	@echo "Running quick critical tests..."
+	@python scripts/run_test_suite.py --quick
 
-test-verbose:
-	pytest -v -s
+# Run full test suite
+test-full:
+	@echo "Running complete test suite..."
+	@python scripts/run_test_suite.py
 
-test-coverage:
-	pytest --cov=src --cov-report=html --cov-report=term-missing
+# Default test target runs full suite
+test: test-full
 
-test-fast:
-	pytest -m "not slow"
+# Test specific modules
+test-metrics:
+	@echo "Testing metrics module..."
+	@python -m pytest tests/test_metrics.py -v
 
-test-unit:
-	pytest -m "unit"
+test-integration:
+	@echo "Running integration tests..."
+	@python -m pytest tests/test_experiment_integration.py -v
 
-test-cnf:
-	pytest -m "cnf" -v
+# Run a quick experiment
+run-experiment:
+	@echo "Running quick mock experiment..."
+	@python scripts/test_mock_experiment.py
 
-test-pddl:
-	pytest -m "pddl" -v
+# Analyze results
+analyze:
+	@echo "Analyzing latest experiment results..."
+	@python scripts/analyze_results.py --latest
 
-test-core:
-	pytest tests/test_cnf_manager.py tests/test_pddl_handler.py -v
-
-# Development targets
-install:
-	pip install python-sat unified-planning[fast-downward,tamer]
-
-install-dev: install
-	pip install -r requirements-test.txt
-	pip install black flake8 isort mypy
-
-install-test:
-	pip install -r requirements-test.txt
-
-# Code quality targets
-lint:
-	flake8 src tests
-	mypy src
-
-format:
-	black src tests
-	isort src tests
-
-check: lint test
-
-# Cleanup
+# Clean generated files
 clean:
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name "__pycache__" -delete
-	find . -type d -name ".pytest_cache" -delete
-	rm -rf htmlcov/
-	rm -f .coverage
+	@echo "Cleaning generated files..."
+	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete
+	@rm -rf .pytest_cache
+	@rm -rf results/*_test_*
+	@echo "Cleaned!"
 
-# Conda environment setup
-setup-conda:
-	source ~/miniconda3/etc/profile.d/conda.sh && \
-	conda activate action-learning && \
-	pip install -r requirements-test.txt
+# Check if deadlock fix is applied
+check-deadlock:
+	@echo "Checking if RLock fix is applied..."
+	@grep -q "threading.RLock()" src/experiments/metrics.py && \
+		echo "✓ RLock fix is applied" || \
+		echo "✗ RLock fix not found - Lock may cause deadlocks"
 
-# Run tests with conda environment
-test-conda:
-	source ~/miniconda3/etc/profile.d/conda.sh && \
-	conda activate action-learning && \
-	pytest
+# Apply deadlock fix (for reference - already applied)
+fix-deadlock:
+	@echo "RLock fix already applied to metrics.py"
+	@make check-deadlock
+
+# Development workflow helpers
+.PHONY: tdd verify commit
+
+# TDD workflow: write test -> implement -> verify
+tdd:
+	@echo "Test-Driven Development Workflow:"
+	@echo "1. Write tests first"
+	@echo "2. Run 'make test-quick' frequently"
+	@echo "3. Run 'make test' before committing"
+	@echo "4. Only mark tasks complete when all tests pass"
+
+# Verify implementation is complete
+verify: test
+	@echo "Verification complete!"
+
+# Pre-commit check
+commit: test
+	@echo "All tests passed - ready to commit!"
+
+# Docker commands
+docker-build:
+	@echo "Building Docker images..."
+	@docker-compose build
+
+docker-test:
+	@echo "Running tests in Docker..."
+	@docker-compose run test
+
+docker-test-quick:
+	@echo "Running quick tests in Docker..."
+	@docker-compose run test-quick
+
+docker-dev:
+	@echo "Starting development environment..."
+	@docker-compose run dev
+
+docker-shell:
+	@echo "Opening shell in development container..."
+	@docker-compose run dev /bin/bash
+
+docker-experiment:
+	@echo "Running experiment in Docker..."
+	@docker-compose run experiment
+
+docker-notebook:
+	@echo "Starting Jupyter notebook..."
+	@docker-compose up notebook
+
+docker-clean:
+	@echo "Cleaning Docker containers and volumes..."
+	@docker-compose down -v
+	@docker system prune -f
+
+# CI/CD commands
+ci-local:
+	@echo "Running local CI pipeline..."
+	@echo "1. Linting..."
+	@black --check src/ tests/ || echo "Format issues found"
+	@flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203 || echo "Lint issues found"
+	@echo "2. Unit tests..."
+	@pytest tests/test_cnf_manager.py tests/test_pddl_handler.py tests/test_metrics.py -v
+	@echo "3. Integration tests..."
+	@pytest tests/test_experiment_runner.py tests/test_olam_adapter.py -v
+	@echo "CI pipeline complete!"

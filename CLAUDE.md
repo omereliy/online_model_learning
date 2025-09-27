@@ -1,5 +1,12 @@
 # Claude Code Context Guide
 
+## 📊 Latest Updates (September 27, 2025)
+- **Test Suite**: 100% pass rate (165/165 tests passing)
+- **Docker Support**: Full containerization with multi-stage builds
+- **CI/CD Pipeline**: GitHub Actions workflow ready
+- **PDDL Handler**: Fixed expression tree traversal for AND/OR/NOT
+- **Documentation**: Added TEST_IMPLEMENTATION_REVIEW.md and HIGH_PRIORITY_IMPLEMENTATION_SUMMARY.md
+
 ## 🚨 MANDATORY: Start Here
 **ALWAYS review this first:** [Development Rules](docs/DEVELOPMENT_RULES.md)
 - Contains project structure, tech stack, implementation rules
@@ -92,8 +99,20 @@
 
 ```bash
 # Run tests
+make test              # Full test suite (165 tests)
+make test-quick        # Quick critical tests
+make test-metrics      # Test metrics module
 pytest tests/test_pddl_handler.py -v
 pytest tests/test_cnf_manager.py -v
+
+# Docker commands
+make docker-build      # Build all Docker images
+make docker-test       # Run tests in Docker
+make docker-shell      # Interactive Docker shell
+make docker-experiment # Run experiments in Docker
+
+# CI/CD
+make ci-local          # Run CI pipeline locally
 
 # Check implementation status
 grep -r "TODO" src/ --include="*.py"

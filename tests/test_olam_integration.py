@@ -16,6 +16,10 @@ from src.algorithms.olam_adapter import OLAMAdapter
 class TestOLAMIntegration:
     """Basic integration tests for OLAM adapter."""
 
+    @pytest.mark.skipif(
+        not os.path.exists('/home/omer/projects/OLAM/OLAM/compute_not_executable_actions.jar'),
+        reason="OLAM Java dependencies not available"
+    )
     def test_basic_workflow(self, sample_domain_problem):
         """Test basic workflow: initialize, select action, observe."""
         domain_file, problem_file = sample_domain_problem

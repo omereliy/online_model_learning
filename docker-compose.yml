@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  # Development environment
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+      - .:/workspace
+      - ./results:/workspace/results
+      - ~/.gitconfig:/root/.gitconfig:ro
+    environment:
+      - PYTHONPATH=/opt/OLAM:/opt/ModelLearner/src:/workspace
+      - FAST_DOWNWARD_PATH=/opt/fast-downward
+      - VAL_PATH=/opt/VAL/bin
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+  # Testing environment
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: testing
+    volumes:
+      - .:/workspace
+      - ./results:/workspace/results
+    environment:
+      - PYTHONPATH=/opt/OLAM:/opt/ModelLearner/src:/workspace
+      - FAST_DOWNWARD_PATH=/opt/fast-downward
+      - VAL_PATH=/opt/VAL/bin
+      - PYTEST_ARGS=${PYTEST_ARGS:-}
+    command: >
+      bash -c "
+        cd /workspace &&
+        pytest -v --tb=short --color=yes tests/ ${PYTEST_ARGS}
+      "
+
+  # Quick test runner (no external dependencies)
+  test-quick:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: testing
+    volumes:
+      - .:/workspace
+    environment:
+      - PYTHONPATH=/workspace
+    command: >
+      bash -c "
+        cd /workspace &&
+        pytest -v --tb=short --color=yes \
+          tests/test_cnf_manager.py \
+          tests/test_pddl_handler.py \
+          tests/test_metrics.py \
+          tests/test_experiment_runner.py \
+          -m 'not integration'
+      "
+
+  # Production experiment runner
+  experiment:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    volumes:
+      - ./configs:/app/configs
+      - ./benchmarks:/app/benchmarks
+      - ./results:/app/results
+    environment:
+      - PYTHONPATH=/opt/OLAM:/opt/ModelLearner/src:/app
+      - FAST_DOWNWARD_PATH=/opt/fast-downward
+      - VAL_PATH=/opt/VAL/bin
+      - CONFIG_FILE=${CONFIG_FILE:-configs/experiment_blocksworld.yaml}
+    command: >
+      bash -c "
+        python scripts/run_experiments.py --config ${CONFIG_FILE}
+      "
+
+  # Jupyter notebook for analysis
+  notebook:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/workspace
+      - ./results:/workspace/results
+    environment:
+      - PYTHONPATH=/opt/OLAM:/opt/ModelLearner/src:/workspace
+    command: >
+      bash -c "
+        pip install jupyter notebook &&
+        jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+      "

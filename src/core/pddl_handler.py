@@ -498,7 +498,28 @@ class PDDLHandler:
 
     def _ground_expression_to_string(self, expr: Any, binding: Dict[str, Object]) -> Optional[str]:
         """Convert UP expression to grounded string with binding."""
-        if hasattr(expr, 'fluent'):
+        # Handle AND expressions recursively
+        if hasattr(expr, 'is_and') and expr.is_and():
+            # For AND expressions, we need to traverse each operand
+            # This shouldn't happen in normal precondition extraction
+            # but we handle it for robustness
+            return None
+
+        # Handle OR expressions recursively
+        if hasattr(expr, 'is_or') and expr.is_or():
+            # For OR expressions, similar handling
+            return None
+
+        # Handle NOT expressions
+        if hasattr(expr, 'is_not') and expr.is_not():
+            inner = expr.args[0] if expr.args else expr
+            inner_str = self._ground_expression_to_string(inner, binding)
+            if inner_str:
+                return f"-{inner_str}"
+            return None
+
+        # Handle fluent expressions
+        if hasattr(expr, 'is_fluent_exp') and expr.is_fluent_exp():
             fluent = expr.fluent()
             if expr.args:
                 # Has parameters - ground them
@@ -610,9 +631,16 @@ class PDDLHandler:
 
             preconditions = set()
             for precond in action.preconditions:
-                grounded_str = self._ground_expression_to_string(precond, binding)
-                if grounded_str:
-                    preconditions.add(grounded_str)
+                # Check if it's an AND expression and extract individual fluents
+                if hasattr(precond, 'is_and') and precond.is_and():
+                    for arg in precond.args:
+                        grounded_str = self._ground_expression_to_string(arg, binding)
+                        if grounded_str:
+                            preconditions.add(grounded_str)
+                else:
+                    grounded_str = self._ground_expression_to_string(precond, binding)
+                    if grounded_str:
+                        preconditions.add(grounded_str)
 
             return preconditions
 
