@@ -29,17 +29,19 @@
 online_model_learning/
 ├── src/
 │   ├── algorithms/           # Algorithm implementations and adapters
+│   ├── configuration/       # Project configuration and paths (renamed from config)
 │   ├── core/                # PDDL models, states, actions, CNF formulas
-│   ├── sat_integration/     # CNF/SAT solver components
-│   ├── planning/            # Unified Planning Framework integration
+│   ├── sat_integration/     # CNF/SAT solver components (Phase 4a - TODO)
+│   ├── planning/            # Unified Planning Framework integration (Phase 4b - TODO)
 │   ├── environments/        # Simulators and domains
 │   └── experiments/         # Runners and metrics
 ├── benchmarks/              # Domain/problem files
 ├── configs/                 # Experiment configurations
-├── scripts/                 # SLURM and setup scripts
+├── scripts/                 # Experiment, testing, and analysis scripts
 ├── results/                 # Experiment outputs
 └── docs/                    # Documentation
     ├── external_repos/      # Interface documentation for OLAM/ModelLearner
+    ├── information_gain_algorithm/ # Information-theoretic algorithm docs
     └── CNF_SAT_INTEGRATION.md # CNF/SAT solver integration guide
 ```
 

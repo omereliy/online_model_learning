@@ -28,7 +28,7 @@ Building an experiment framework to compare three online action model learning a
 
 ## Current Implementation Status (Updated: September 27, 2025)
 
-### ✅ Completed Components
+### 📊 Implementation Status
 
 #### Phase 1: Core Infrastructure
 - **CNF Manager** (`src/core/cnf_manager.py`) - Full CNF formula management with:
@@ -68,7 +68,7 @@ Building an experiment framework to compare three online action model learning a
   - Model export functionality
   - Handles OLAM's directory structure requirements (PDDL/, Info/)
 
-#### Phase 3: Experiment Runner and Metrics Framework (Completed)
+#### Phase 3: Experiment Runner and Metrics Framework ⏳ IN PROGRESS
 
 **Experiment Runner** (`src/experiments/runner.py`) ✅
 - YAML configuration loading with validation
@@ -89,6 +89,14 @@ Building an experiment framework to compare three online action model learning a
 - **Thread-safe implementation**: Using RLock to prevent deadlocks
 - **Export functionality**: CSV and JSON with custom numpy encoder
 - **Snapshot collection**: Periodic metrics snapshots at configurable intervals
+
+**Rover Domain Validation** ⏳ TODO
+- **Run full OLAM experiment on Rover domain** from start to finish
+- **Provide evidence of successful experiment completion** with detailed logs
+- **Verify domain integrity**: Ensure the domain remains Rover-specific throughout learning
+- **Track domain evolution**: Compare previous and current versions of learned OLAM domain at key checkpoints
+- **Validate action model updates**: Confirm all learned actions and predicates belong to Rover domain
+- **Document domain consistency**: Show that both failures and successes maintain Rover domain structure
 
 #### Testing & CI/CD Infrastructure (September 27, 2025)
 
@@ -240,7 +248,83 @@ This ensures we have a fully functional and tested baseline before adding comple
    - OLAM functionality correctly preserved
 
 
-### Phase 4: Environment and Planning Integration ⏳ REQUIRED FOR TESTING
+### Phase 4a: SAT Integration Module Refactoring ⏳ FOUNDATIONAL
+
+**Rationale:** Extract CNF/SAT functionality from core into dedicated modules for better organization and reusability.
+
+**Test-Driven Development Approach:**
+1. Write tests for new module structure (`tests/test_sat_integration.py`)
+2. Test CNF builder functionality
+3. Test SAT solver wrapper
+4. Test variable mapping consistency
+5. Test formula minimization algorithms
+6. Refactor incrementally while maintaining all existing tests
+
+**Files to create:**
+- `src/sat_integration/` - New directory for SAT-related modules
+- `src/sat_integration/__init__.py` - Package initialization
+- `src/sat_integration/cnf_builder.py` - CNF formula construction from observations
+- `src/sat_integration/sat_solver.py` - PySAT Minisat22 wrapper and utilities
+- `src/sat_integration/variable_mapper.py` - Fluent ↔ CNF variable mapping
+- `src/sat_integration/formula_minimizer.py` - QM and Espresso minimization
+
+**Implementation Requirements:**
+1. **CNF Builder** (`src/sat_integration/cnf_builder.py`)
+   - Extract CNF construction logic from `cnf_manager.py`
+   - Build formulas from state observations
+   - Handle positive and negative literals
+   - Support lifted fluent instantiation
+
+2. **SAT Solver** (`src/sat_integration/sat_solver.py`)
+   - Wrap PySAT's Minisat22 solver
+   - Provide clean interface for SAT solving
+   - Handle solution enumeration
+   - Support model counting
+
+3. **Variable Mapper** (`src/sat_integration/variable_mapper.py`)
+   - Extract mapping logic from `cnf_manager.py`
+   - Maintain bidirectional fluent ↔ variable mappings
+   - Handle lifted fluent grounding
+   - Ensure consistent variable allocation
+
+4. **Formula Minimizer** (`src/sat_integration/formula_minimizer.py`)
+   - Extract minimization algorithms from `cnf_manager.py`
+   - Implement Quine-McCluskey algorithm
+   - Integrate Espresso minimization (if pyeda available)
+   - Provide fallback for missing dependencies
+
+5. **Update CNF Manager** (`src/core/cnf_manager.py`)
+   - Refactor to use new sat_integration modules
+   - Maintain existing API for backward compatibility
+   - Delegate to specialized modules
+   - Keep high-level coordination logic
+
+### Phase 4b: Planning Integration Module ⏳ REQUIRED FOR EXPERIMENTS
+
+**Rationale:** Create dedicated planning module for UP integration and planner management.
+
+**Test-Driven Development Approach:**
+1. Write test suite first (`tests/test_planning_integration.py`)
+2. Test planner initialization with different backends
+3. Test plan generation and validation
+4. Test timeout handling and error recovery
+5. Implement planning module incrementally
+
+**Files to create:**
+- `src/planning/` - New directory for planning modules
+- `src/planning/__init__.py` - Package initialization
+- `src/planning/unified_planning_interface.py` - Main UP wrapper and utilities
+
+**Implementation Requirements:**
+1. **Unified Planning Interface** (`src/planning/unified_planning_interface.py`)
+   - Wrap UP's OneshotPlanner for plan generation
+   - Support multiple backends (pyperplan, tamer, fast-downward)
+   - Handle plan validation with UP's PlanValidator
+   - Provide timeout and error handling
+   - Convert between internal and UP plan formats
+   - Support both optimal and satisficing planning modes
+
+### Phase 5: Environment and Planning Integration ⏳ REQUIRED FOR TESTING
 
 **Rationale:** Need environment and planning components to run actual experiments and fully test OLAM adapter.
 
@@ -279,7 +363,7 @@ This ensures we have a fully functional and tested baseline before adding comple
 - State observations compatible with OLAM adapter format
 - Enables full end-to-end testing of OLAM learning
 
-### Phase 5: Information-Theoretic Algorithm Implementation
+### Phase 6: Information-Theoretic Algorithm Implementation
 
 **Context Documentation:**
 - `docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md` - Complete algorithm specification with negative preconditions
@@ -314,7 +398,7 @@ This ensures we have a fully functional and tested baseline before adding comple
    - Update rules for success/failure observations
    - Integrate with experiment framework for comparison with OLAM
 
-### Phase 6: ModelLearner Adapter Integration
+### Phase 7: ModelLearner Adapter Integration
 
 **Prerequisites:**
 - Ensure external repo is accessible: `/home/omer/projects/ModelLearner/`
@@ -346,7 +430,7 @@ This ensures we have a fully functional and tested baseline before adding comple
    - State/action format conversion similar to OLAM adapter
    - Integrate with experiment framework for three-way comparison
 
-### Phase 7: HPC Deployment
+### Phase 8: HPC Deployment
 
 **Files to create:**
 - `slurm/run_single.sh`
