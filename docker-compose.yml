@@ -30,7 +30,7 @@ services:
       - PYTHONPATH=/opt/OLAM:/opt/ModelLearner/src:/workspace
       - FAST_DOWNWARD_PATH=/opt/fast-downward
       - VAL_PATH=/opt/VAL/bin
-      - PYTEST_ARGS=${PYTEST_ARGS:-}
+      - PYTEST_ARGS=${PYTEST_ARGS:-""}
     command: >
       bash -c "
         cd /workspace &&
@@ -72,7 +72,7 @@ services:
       - PYTHONPATH=/opt/OLAM:/opt/ModelLearner/src:/app
       - FAST_DOWNWARD_PATH=/opt/fast-downward
       - VAL_PATH=/opt/VAL/bin
-      - CONFIG_FILE=${CONFIG_FILE:-configs/experiment_blocksworld.yaml}
+      - CONFIG_FILE=${CONFIG_FILE:-"configs/experiment_blocksworld.yaml"}
     command: >
       bash -c "
         python scripts/run_experiments.py --config ${CONFIG_FILE}
