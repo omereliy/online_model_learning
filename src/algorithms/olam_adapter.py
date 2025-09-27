@@ -45,6 +45,8 @@ class OLAMAdapter(BaseActionModelLearner):
                  max_iterations: int = 1000,
                  eval_frequency: int = 10,
                  pddl_handler=None,
+                 bypass_java: bool = False,
+                 use_system_java: bool = False,
                  **kwargs):
         """
         Initialize OLAM adapter.
@@ -55,12 +57,16 @@ class OLAMAdapter(BaseActionModelLearner):
             max_iterations: Maximum learning iterations
             eval_frequency: How often to evaluate the model
             pddl_handler: Optional PDDLHandler instance for proper grounding
+            bypass_java: If True, bypass Java dependency for action filtering
+            use_system_java: If True, try to use system Java instead of bundled
             **kwargs: Additional parameters
         """
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
         self.eval_frequency = eval_frequency
+        self.bypass_java = bypass_java
+        self.use_system_java = use_system_java
 
         # Initialize PDDLHandler for proper action grounding
         if pddl_handler is None:
@@ -85,8 +91,16 @@ class OLAMAdapter(BaseActionModelLearner):
 
     def _initialize_olam(self):
         """Initialize OLAM learner and related components."""
+        # Configure Java settings before OLAM initialization
+        self._configure_java_settings()
+
         # Create temporary PDDL directory for OLAM (it expects files in PDDL/)
         self._setup_olam_pddl_directory()
+
+        # Initialize PDDLHandler for predicate/object information
+        from src.core.pddl_handler import PDDLHandler
+        self.pddl_handler = PDDLHandler()
+        self.pddl_handler.parse_domain_and_problem(self.domain_file, self.problem_file)
 
         # Initialize OLAM parser
         self.parser = PddlParser()
@@ -104,10 +118,16 @@ class OLAMAdapter(BaseActionModelLearner):
         if not hasattr(self.learner, 'current_plan'):
             self.learner.current_plan = []
 
+        # If bypassing Java, monkey-patch the Java computation method
+        if self.bypass_java:
+            self._setup_java_bypass()
+
         # Create simulator for state tracking
         self.simulator = Simulator()
 
         logger.info(f"Initialized OLAM with {len(self.action_list)} actions")
+        if self.bypass_java:
+            logger.info("Java bypass mode enabled - using Python fallback for action filtering")
 
     def _setup_olam_pddl_directory(self):
         """
@@ -170,6 +190,66 @@ class OLAMAdapter(BaseActionModelLearner):
         for idx, action_str in enumerate(self.learner.action_labels):
             self.action_idx_to_str[idx] = action_str
             self.action_str_to_idx[action_str] = idx
+
+    def _configure_java_settings(self):
+        """Configure Java settings for OLAM."""
+        if self.bypass_java:
+            # Set empty path to avoid Java calls
+            Configuration.JAVA_BIN_PATH = ""
+            return
+
+        if self.use_system_java:
+            # Try to use system Java
+            Configuration.JAVA_BIN_PATH = "java"
+            logger.info("Configured to use system Java")
+        else:
+            # Default OLAM behavior - look for bundled Java
+            import os
+            java_dir = os.path.join(os.path.dirname(Configuration.__file__), Configuration.JAVA_DIR)
+            if os.path.exists(java_dir):
+                java_dirs = [d for d in os.listdir(java_dir) if os.path.isdir(os.path.join(java_dir, d))]
+                if java_dirs:
+                    Configuration.JAVA_BIN_PATH = os.path.join(java_dir, java_dirs[0], "bin", "java")
+                else:
+                    logger.warning("No Java installation found in OLAM/Java directory")
+                    Configuration.JAVA_BIN_PATH = ""
+            else:
+                Configuration.JAVA_BIN_PATH = ""
+
+    def _setup_java_bypass(self):
+        """Setup bypass for Java-dependent methods."""
+        # Store original method
+        self.learner._original_compute_not_executable = self.learner.compute_not_executable_actionsJAVA
+
+        # Replace with Python fallback
+        def compute_not_executable_bypass():
+            """Bypass Java computation, return empty list of non-executable actions."""
+            logger.debug("Bypassing Java computation for non-executable actions")
+            return []  # Return empty list - all actions considered potentially executable
+
+        self.learner.compute_not_executable_actionsJAVA = compute_not_executable_bypass
+
+    def _compute_executable_actions_python(self, state: Set[str]) -> List[str]:
+        """
+        Python fallback for computing executable actions without Java.
+
+        Args:
+            state: Current state as set of fluent strings
+
+        Returns:
+            List of potentially executable action strings
+        """
+        executable = []
+
+        for action_str in self.action_list:
+            # Simple heuristic: check if action might be applicable
+            # This is a simplified version - OLAM's Java does more sophisticated checking
+
+            # For now, return all actions as potentially executable
+            # A more sophisticated implementation would check preconditions
+            executable.append(action_str)
+
+        return executable
 
     def select_action(self, state: Any) -> Tuple[str, List[str]]:
         """
@@ -374,26 +454,63 @@ class OLAMAdapter(BaseActionModelLearner):
         """
         Convert fluent string to PDDL predicate string.
 
+        General approach that works for any domain:
+        1. Use PDDLHandler's predicate information if available
+        2. Use environment's predicate information as fallback
+        3. Otherwise use intelligent heuristics
+
         Args:
-            fluent: Fluent like "clear_a" or "on_a_b"
+            fluent: Fluent like "clear_a" or "on_a_b" or "at_rover0_waypoint0"
 
         Returns:
-            PDDL string like "(clear a)" or "(on a b)"
+            PDDL string like "(clear a)" or "(on a b)" or "(at rover0 waypoint0)"
         """
+        if not fluent:
+            return ""
+
+        # First try: Get predicate names from PDDLHandler
+        predicate_names = self._get_predicate_names()
+
+        if predicate_names:
+            # Try to match the longest predicate name first (handles multi-word predicates)
+            for pred_name in sorted(predicate_names, key=len, reverse=True):
+                if fluent.startswith(pred_name + '_') or fluent == pred_name:
+                    if fluent == pred_name:
+                        # Parameterless predicate
+                        return f"({pred_name})"
+                    else:
+                        # Extract parameters after predicate
+                        params_str = fluent[len(pred_name) + 1:]
+                        # Smart parameter splitting - handle objects with underscores
+                        params = self._smart_split_parameters(params_str)
+                        # Keep predicate name as-is (preserving underscores)
+                        return f"({pred_name} {' '.join(params)})"
+
+        # Fallback: Intelligent heuristic approach
+        # Try to guess predicate boundaries using object names
+        object_names = self._get_object_names()
+
+        if object_names:
+            # Find the first object in the fluent to determine predicate boundary
+            parts = fluent.split('_')
+            for i in range(1, len(parts) + 1):
+                # Check if we've found an object name
+                if i < len(parts) and parts[i] in object_names:
+                    # Everything before this is the predicate
+                    predicate = '_'.join(parts[:i])
+                    params = parts[i:]
+                    return f"({predicate} {' '.join(params)})"
+
+        # Final fallback: Simple split approach
         parts = fluent.split('_')
 
         if len(parts) == 1:
-            # Parameterless predicate like "handempty"
+            # Parameterless
             return f"({parts[0]})"
-        elif len(parts) == 2:
-            # Single parameter like "clear_a"
-            return f"({parts[0]} {parts[1]})"
-        elif len(parts) == 3:
-            # Two parameters like "on_a_b"
-            return f"({parts[0]} {parts[1]} {parts[2]})"
         else:
-            logger.warning(f"Unexpected fluent format: {fluent}")
-            return ""
+            # Assume first part is predicate, rest are parameters
+            # This works for many classical planning domains
+            return f"({parts[0]} {' '.join(parts[1:])})"
 
     def _pddl_string_to_fluent(self, pddl_str: str) -> str:
         """
@@ -409,12 +526,112 @@ class OLAMAdapter(BaseActionModelLearner):
         content = pddl_str.strip('()')
         parts = content.split()
 
-        if len(parts) == 1:
+        if len(parts) == 0:
+            return ""
+        elif len(parts) == 1:
             # Parameterless
             return parts[0]
         else:
             # Join with underscores
-            return '_'.join(parts)
+            # First part is predicate, might have underscores
+            predicate = parts[0]
+            params = parts[1:]
+
+            # Handle multi-word predicates - they already have underscores
+            return '_'.join([predicate] + params)
+
+    def _get_predicate_names(self) -> Set[str]:
+        """
+        Get all predicate names from the domain.
+
+        Returns:
+            Set of predicate names (with underscores for multi-word predicates)
+        """
+        predicate_names = set()
+
+        # Try to get from PDDLHandler
+        if hasattr(self, 'pddl_handler') and self.pddl_handler:
+            if hasattr(self.pddl_handler, 'problem') and self.pddl_handler.problem:
+                for fluent_obj in self.pddl_handler.problem.fluents:
+                    predicate_names.add(fluent_obj.name)
+
+        # Also try to get from environment if available
+        if not predicate_names and hasattr(self, 'environment'):
+            if hasattr(self.environment, 'handler'):
+                pddl_env_handler = self.environment.handler
+                if hasattr(pddl_env_handler, 'problem') and pddl_env_handler.problem:
+                    for fluent_obj in pddl_env_handler.problem.fluents:
+                        predicate_names.add(fluent_obj.name)
+
+        return predicate_names
+
+    def _get_object_names(self) -> Set[str]:
+        """
+        Get all object names from the problem.
+
+        Returns:
+            Set of object names
+        """
+        object_names = set()
+
+        # Try to get from PDDLHandler
+        if hasattr(self, 'pddl_handler') and self.pddl_handler:
+            if hasattr(self.pddl_handler, 'problem') and self.pddl_handler.problem:
+                for obj in self.pddl_handler.problem.all_objects:
+                    object_names.add(obj.name)
+
+        # Also try to get from environment if available
+        if not object_names and hasattr(self, 'environment'):
+            if hasattr(self.environment, 'handler'):
+                pddl_env_handler = self.environment.handler
+                if hasattr(pddl_env_handler, 'problem') and pddl_env_handler.problem:
+                    for obj in pddl_env_handler.problem.all_objects:
+                        object_names.add(obj.name)
+
+        return object_names
+
+    def _smart_split_parameters(self, params_str: str) -> List[str]:
+        """
+        Split parameter string intelligently, preserving object names with underscores.
+
+        Args:
+            params_str: String like "camera0_high_res" or "rover0_waypoint0"
+
+        Returns:
+            List of parameters like ["camera0", "high_res"] or ["rover0", "waypoint0"]
+        """
+        if not params_str:
+            return []
+
+        # Get all known object names
+        object_names = self._get_object_names()
+
+        if not object_names:
+            # Fallback: simple split
+            return params_str.split('_')
+
+        # Try to match object names greedily from left to right
+        parts = params_str.split('_')
+        result = []
+        i = 0
+
+        while i < len(parts):
+            # Try to match the longest possible object name starting at position i
+            found = False
+            for length in range(len(parts) - i, 0, -1):
+                candidate = '_'.join(parts[i:i+length])
+                if candidate in object_names:
+                    result.append(candidate)
+                    i += length
+                    found = True
+                    break
+
+            if not found:
+                # No object match, take single part
+                result.append(parts[i])
+                i += 1
+
+        return result
 
     def _up_action_to_olam(self, action: str, objects: List[str]) -> str:
         """

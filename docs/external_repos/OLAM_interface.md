@@ -8,6 +8,9 @@
   - `Util/Simulator.py` - Domain simulation
   - `Util/PddlParser.py` - PDDL parsing utilities
   - `Configuration.py` - Configuration settings
+- **Required Directories**:
+  - `PDDL/` - Domain and problem files
+  - `Info/` - State and constraint tracking
 
 ## Main Class: `OLAM.Learner`
 
@@ -23,12 +26,14 @@ def __init__(self, parser, action_list, eval_frequency=10):
 ```
 
 ### Key Attributes
-- `action_labels`: Sorted list of action labels
+- `action_labels`: Sorted list of action labels (grounded actions)
 - `operator_certain_predicates`: Dict of learned certain preconditions
 - `operator_uncertain_predicates`: Dict of uncertain preconditions
 - `operator_negative_preconditions`: Dict of negative preconditions
+- `operator_executability_constr`: Dict of executability constraints
 - `current_plan`: Current plan being executed
 - `model_convergence`: Boolean flag for convergence
+- `not_executable_actions_index`: List of action indices that are not executable
 
 ### Core Methods
 
@@ -109,44 +114,73 @@ def update_executability_constr(self, op, op_preconds):
 ```
 
 ### Configuration Parameters (Configuration.py)
-- `RANDOM_SEED`: Random seed for reproducibility
-- `MAX_ITER`: Maximum learning iterations
-- `TIME_LIMIT_SECONDS`: Time limit for learning
+- `RANDOM_SEED`: Random seed for reproducibility (default: 2021)
+- `MAX_ITER`: Maximum learning iterations (default: 5000)
+- `TIME_LIMIT_SECONDS`: Time limit for learning (default: 1800)
 - `STRATEGIES`: List of action selection strategies
 - `RANDOM_WALK`: Boolean for random walk mode
+- `JAVA_BIN_PATH`: Path to Java binary (required for `compute_not_executable_actionsJAVA()`)
+- `JAVA_DIR`: Directory containing Java installation
 
 ### Usage Pattern
 ```python
 # Initialize
 parser = PddlParser()
-learner = Learner(parser, action_list)
+learner = Learner(parser, action_list, eval_frequency=10)
 
-# Learning loop (called by framework)
-learner.learn(simulator=simulator)
+# Set required attributes for execution
+learner.initial_timer = default_timer()
+learner.max_time_limit = 3600  # seconds
+if not hasattr(learner, 'current_plan'):
+    learner.current_plan = []
 
-# During learning:
+# Action selection and learning
 action_idx, strategy = learner.select_action()
-# Execute action in simulator
+action_label = learner.action_labels[action_idx]
+
+# After execution:
 if action_failed:
     learner.learn_failed_action_precondition(simulator)
+else:
+    learner.add_operator_precondition(action_label)
+    learner.add_operator_effects(action_label, old_state, new_state)
 ```
 
 ## Integration Notes
 
 ### Required Inputs
-1. PDDL parser instance
-2. Complete list of ground actions
-3. Simulator that provides:
-   - Current state observation
+1. **PDDL parser instance** from `Util.PddlParser`
+2. **Complete list of ground actions** as strings (e.g., `["pick-up(a)", "stack(a,b)"]`)
+3. **Simulator** that provides:
+   - Current state observation (as PDDL strings)
    - Action execution with success/failure feedback
+   - State updates
+
+### External Dependencies
+- **Java Runtime**: Required for `compute_not_executable_actionsJAVA()` method
+  - Uses `compute_not_executable_actions.jar` for action filtering
+  - Can be bypassed in adapter implementations if Java is unavailable
 
 ### Output Format
 - Learned model stored in:
   - `operator_certain_predicates`: Definite preconditions
   - `operator_uncertain_predicates`: Possible preconditions
   - `operator_negative_preconditions`: Negative preconditions
+  - `operator_executability_constr`: Action executability constraints
+- Files generated:
+  - `PDDL/domain_learned.pddl`: Learned domain model
+  - `Info/action_list.txt`: Indexed action list
+  - `Info/action_executability_constraints.json`: Constraint tracking
 
 ### Key Dependencies
-- numpy for random selection
-- pandas for evaluation metrics
-- Custom PDDL parser and simulator interfaces
+- **numpy**: Random selection and array operations
+- **pandas**: Evaluation metrics tracking
+- **json**: Constraint serialization
+- **subprocess**: Java process execution
+- **Custom modules**: PDDL parser and simulator interfaces
+
+### Important Implementation Notes
+1. **Action Indexing**: Actions are referenced by integer indices into `action_labels`
+2. **State Format**: States should be provided as lists of PDDL predicate strings
+3. **Java Dependency**: The `compute_not_executable_actionsJAVA()` method requires Java; adapters may need to implement workarounds
+4. **Directory Structure**: OLAM expects `PDDL/` and `Info/` directories to exist in the working directory

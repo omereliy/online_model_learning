@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional, Tuple, List
 
 from ..algorithms.base_learner import BaseActionModelLearner
 from ..algorithms.olam_adapter import OLAMAdapter
-from ..environments.mock_environment import MockEnvironment
+from ..environments.pddl_environment import PDDLEnvironment
 from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -172,21 +172,20 @@ class ExperimentRunner:
 
         return learner
 
-    def _init_environment(self) -> MockEnvironment:
+    def _init_environment(self) -> PDDLEnvironment:
         """
-        Initialize the environment.
-
-        Phase 3: Returns MockEnvironment
-        Phase 4: Will return real PDDL environment
+        Initialize the PDDL environment with real action execution.
 
         Returns:
-            Environment instance
+            PDDLEnvironment instance for real PDDL execution
         """
-        # For Phase 3, use mock environment
-        seed = self.config['experiment'].get('seed')
-        environment = MockEnvironment(success_rate=0.7, seed=seed)
+        domain_file = self.config['domain_problem']['domain']
+        problem_file = self.config['domain_problem']['problem']
 
-        logger.info("Initialized MockEnvironment (Phase 4 will provide real environment)")
+        environment = PDDLEnvironment(domain_file, problem_file)
+
+        logger.info(f"Initialized PDDLEnvironment with domain: {domain_file}")
+        logger.info("Using real PDDL execution - no mocking!")
         return environment
 
     def _set_random_seed(self, seed: int) -> None:
@@ -237,8 +236,8 @@ class ExperimentRunner:
                 # Select action
                 action, objects = self.learner.select_action(state)
 
-                # Execute action
-                success, runtime = self._execute_action(action, objects)
+                # Execute action in PDDL environment
+                success, runtime = self.environment.execute(action, objects)
 
                 # Record metrics
                 self.metrics.record_action(
@@ -302,18 +301,6 @@ class ExperimentRunner:
         logger.info(f"Experiment completed: {iteration} iterations, reason: {stopping_reason}")
         return results
 
-    def _execute_action(self, action: str, objects: List[str]) -> Tuple[bool, float]:
-        """
-        Execute an action in the environment.
-
-        Args:
-            action: Action name
-            objects: Objects involved
-
-        Returns:
-            Tuple of (success, runtime)
-        """
-        return self.environment.execute(action, objects)
 
     def _should_stop(self, iteration: int, start_time: float) -> bool:
         """
