@@ -1,126 +1,68 @@
-# Claude Code Context Guide
+# Claude Code Context Guide - Navigation Index
 
-## 📊 Latest Updates (September 27, 2025)
-- **Test Suite**: 100% pass rate (165/165 tests passing)
-- **Docker Support**: Full containerization with multi-stage builds
-- **CI/CD Pipeline**: GitHub Actions workflow ready
-- **PDDL Handler**: Fixed expression tree traversal for AND/OR/NOT
-- **Documentation**: Added TEST_IMPLEMENTATION_REVIEW.md and HIGH_PRIORITY_IMPLEMENTATION_SUMMARY.md
+## 🚨 MANDATORY: Read First
+**[DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md)** - ALWAYS read this file first in every conversation
+- Project conventions, architecture, implementation rules
+- Testing approach (`make test` vs `pytest`)
+- Docker usage and rationale
+- Markdown editing guidelines
+- GitHub MCP safety rules
 
-## 🚨 MANDATORY: Start Here
-**ALWAYS review this first:** [Development Rules](docs/DEVELOPMENT_RULES.md)
-- Contains project structure, tech stack, implementation rules
-- GitHub MCP safety guidelines
-- Common pitfalls to avoid
-- **IMPORTANT**: Update IMPLEMENTATION_TASKS.md after each task (with user approval!)
+## 📍 Quick Navigation by Topic
 
-## 📚 Quick Documentation Reference
+| Topic | Go To | Purpose |
+|-------|-------|----------|
+| **Project Status** | [IMPLEMENTATION_TASKS.md](docs/IMPLEMENTATION_TASKS.md) | Current progress, todos |
+| **Commands & Patterns** | [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) | All commands, code snippets |
+| **Test Analysis** | [TEST_IMPLEMENTATION_REVIEW.md](docs/TEST_IMPLEMENTATION_REVIEW.md) | Test quality assessment |
+| **UP Expression Trees** | [UNIFIED_PLANNING_GUIDE.md](docs/UNIFIED_PLANNING_GUIDE.md) | FNode traversal patterns |
+| **Lifted Support** | [LIFTED_SUPPORT.md](docs/LIFTED_SUPPORT.md) | Parameterized actions/fluents |
+| **CNF/SAT** | [CNF_SAT_INTEGRATION.md](docs/information_gain_algorithm/CNF_SAT_INTEGRATION.md) | PySAT integration |
+| **Info Gain Algorithm** | [INFORMATION_GAIN_ALGORITHM.md](docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md) | CNF-based learning |
+| **OLAM Interface** | [OLAM_interface.md](docs/external_repos/OLAM_interface.md) | OLAM adapter guide |
+| **ModelLearner** | [ModelLearner_interface.md](docs/external_repos/ModelLearner_interface.md) | Optimistic exploration |
+| **Integration Pattern** | [integration_guide.md](docs/external_repos/integration_guide.md) | Adapter implementation |
 
-### Core Understanding
-- **[Unified Planning Guide](docs/UNIFIED_PLANNING_GUIDE.md)** - Critical for understanding how UP handles expression trees, NOT simple sets
-- **[Quick Reference](docs/QUICK_REFERENCE.md)** - Fast lookup for common patterns
-- **[Lifted Support](docs/LIFTED_SUPPORT.md)** - Lifted vs grounded fluents/actions
+## 🎯 Quick Navigation by Task
 
-### Implementation Planning
-- **[Implementation Tasks](docs/IMPLEMENTATION_TASKS.md)** - When implementing new features, check task breakdown here
-- **[Information Gain Algorithm](docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md)** - For CNF-based learning approach
-- **[CNF/SAT Integration](docs/information_gain_algorithm/CNF_SAT_INTEGRATION.md)** - PySAT usage patterns
+| If You're... | Read This | Location |
+|--------------|-----------|----------|
+| **Working on PDDL parsing** | UNIFIED_PLANNING_GUIDE | `src/core/pddl_handler.py` |
+| **Implementing CNF formulas** | CNF_SAT_INTEGRATION | `src/core/cnf_manager.py` |
+| **Adding algorithm adapters** | integration_guide | `src/algorithms/` |
+| **Running experiments** | IMPLEMENTATION_TASKS | `configs/` |
+| **Debugging tests** | TEST_IMPLEMENTATION_REVIEW | `tests/` |
+| **Looking for commands** | QUICK_REFERENCE | Commands section |
+| **Checking project status** | IMPLEMENTATION_TASKS | Status section |
+| **Understanding architecture** | DEVELOPMENT_RULES | Architecture section |
 
-### External Integrations
-- **[OLAM Interface](docs/external_repos/OLAM_interface.md)** - When working with OLAM adapter
-- **[ModelLearner Interface](docs/external_repos/ModelLearner_interface.md)** - When working with Optimistic Exploration
-- **[Integration Guide](docs/external_repos/integration_guide.md)** - Adapter pattern implementation
+## 📂 Key File Locations
 
-## 🎯 Context Hints by Task
+| Component | Path | Status |
+|-----------|------|--------|
+| **CNF Manager** | `src/core/cnf_manager.py` | ✅ Complete |
+| **PDDL Handler** | `src/core/pddl_handler.py` | ✅ Complete |
+| **OLAM Adapter** | `src/algorithms/olam_adapter.py` | ✅ Complete |
+| **Experiment Runner** | `src/experiments/runner.py` | ✅ Complete |
+| **Metrics Collector** | `src/experiments/metrics.py` | ✅ Complete |
+| **Info Gain Learner** | `src/algorithms/information_gain.py` | ⏳ TODO |
+| **ModelLearner Adapter** | `src/algorithms/optimistic_adapter.py` | ⏳ TODO |
+| **PDDL Environment** | `src/environments/pddl_environment.py` | ⏳ TODO |
 
-### Working on PDDL Parsing?
-→ Read: [Unified Planning Guide](docs/UNIFIED_PLANNING_GUIDE.md)
-- UP uses expression trees (FNode), not sets
-- Preconditions need recursive traversal
-- See `src/core/pddl_handler.py`
+## 🔗 External Resources
 
-### Implementing CNF Formulas?
-→ Read: [CNF/SAT Integration](docs/information_gain_algorithm/CNF_SAT_INTEGRATION.md)
-- PySAT/python-sat import handling
-- Variable mapping strategies
-- See `src/core/cnf_manager.py`
+| Resource | Path |
+|----------|------|
+| **OLAM** | `/home/omer/projects/OLAM/` |
+| **ModelLearner** | `/home/omer/projects/ModelLearner/` |
+| **Fast Downward** | `/home/omer/projects/fast-downward/` |
+| **VAL Validator** | `/home/omer/projects/Val/` |
 
-### Adding Algorithm Adapters?
-→ Read: [Integration Guide](docs/external_repos/integration_guide.md)
-- BaseActionModelLearner interface
-- State/action format conversion
-- See `src/algorithms/`
+## 📋 Quick Checklist
 
-### Debugging Type Hierarchy?
-→ Check: `pddl_handler.get_type_hierarchy()`
-- 'object' is implicit root
-- Single parent constraint
-- See tests in `tests/test_pddl_handler.py`
-
-### Running Experiments?
-→ Reference: [Implementation Tasks](docs/IMPLEMENTATION_TASKS.md)
-- YAML config structure
-- Metrics to collect
-- See `configs/` directory
-
-## 🔧 Key Technical Notes
-
-1. **UP Expression Trees**: Preconditions are FNode trees, not sets. Always traverse recursively.
-
-2. **Import Paths**:
-   ```python
-   # External algorithms need sys.path
-   sys.path.append('/home/omer/projects/OLAM')
-   sys.path.append('/home/omer/projects/ModelLearner/src')
-   ```
-
-3. **PySAT Import Fix**:
-   ```python
-   try:
-       from pysat.solvers import Minisat22
-   except ImportError:
-       from pysat.solvers import Minisat22  # python-sat package
-   ```
-
-4. **Type Hierarchy**: Always check `is_subtype_of('object')` returns True for all types.
-
-5. **Lifted → Grounded**: Three stages: Lifted (schema) → Parameter-bound → Fully grounded
-
-## 💡 Common Issues & Solutions
-
-| Issue | Solution | Reference |
-|-------|----------|-----------|
-| UP preconditions not visible as sets | Use recursive traversal of FNode tree | [UP Guide](docs/UNIFIED_PLANNING_GUIDE.md#expression-tree-structure) |
-| PySAT import errors | Use try/except for pysat vs python-sat | `src/core/cnf_manager.py:6-12` |
-| Type hierarchy missing 'object' | Special case in `is_subtype_of()` | `src/core/pddl_handler.py` |
-| Lifted fluent grounding | Use `instantiate_lifted_clause()` | `src/core/cnf_manager.py:393` |
-
-## 🚀 Quick Commands
-
-```bash
-# Run tests
-make test              # Full test suite (165 tests)
-make test-quick        # Quick critical tests
-make test-metrics      # Test metrics module
-pytest tests/test_pddl_handler.py -v
-pytest tests/test_cnf_manager.py -v
-
-# Docker commands
-make docker-build      # Build all Docker images
-make docker-test       # Run tests in Docker
-make docker-shell      # Interactive Docker shell
-make docker-experiment # Run experiments in Docker
-
-# CI/CD
-make ci-local          # Run CI pipeline locally
-
-# Check implementation status
-grep -r "TODO" src/ --include="*.py"
-grep -r "NotImplementedError" src/ --include="*.py"
-```
-
-## 📝 Remember
-- Don't modify external repos (OLAM, ModelLearner)
-- Always convert state/action formats between systems
-- Test with multiple PDDL domains (blocksworld, logistics, etc.)
-- Use YAML configs for experiments, not hardcoded values
+Before starting any work:
+- [ ] Read DEVELOPMENT_RULES.md
+- [ ] Check IMPLEMENTATION_TASKS.md for current status
+- [ ] Review relevant documentation for your task
+- [ ] Run `make test` to verify baseline
+- [ ] Use appropriate test approach (`make test` for stable, `pytest` for all)

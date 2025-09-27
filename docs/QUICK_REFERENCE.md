@@ -1,44 +1,65 @@
-# Quick Reference Guide - Updated for CNF/SAT Integration
+# Quick Reference - Code Patterns & Commands
 
-## Essential Context for AI Agents
+## Commands
 
-### Project Purpose
-Compare three online action model learning algorithms on PDDL domains:
-1. **OLAM**: Learn from both success/failure (Python wrapper)
-2. **Optimistic**: Start optimistic, refine on failures (Python wrapper)
-3. **Information Gain**: Novel CNF-based approach using SAT solvers
-
-### Tech Stack
-- **Unified Planning Framework**: PDDL parsing, planning, simulation
-- **PySAT**: CNF formula manipulation and SAT solving (minisat)
-- **External repos**: OLAM and ModelLearner (Python implementations)
-
-### Key Files to Check First
+### Testing Commands
 ```bash
-# Project structure and requirements
-/docs/DEVELOPMENT_RULES.md          # Updated implementation rules
-/docs/LIFTED_SUPPORT.md             # Lifted fluents and actions documentation
-/docs/external_repos/               # Interface docs for OLAM/ModelLearner
-/README.md                          # Updated project overview with lifted examples
+# Curated test suite (165 tests, 100% pass rate)
+make test
+
+# All tests including experimental (196 tests)
+pytest tests/
+
+# Quick tests (< 2 minutes)
+make test-quick
+
+# Specific module tests
+make test-metrics
+make test-integration
+pytest tests/test_pddl_handler.py -v
+pytest tests/test_cnf_manager.py -v
 ```
 
-### Critical Implementation Details
+### Docker Commands
+```bash
+# Build all Docker images
+make docker-build
 
-#### CNF/SAT Integration (Currently in `src/core/`)
-- `cnf_manager.py` ✅ - Complete CNF formula management with PySAT
-- `pddl_handler.py` ✅ - PDDL parsing with UP and CNF extraction
-- Future: `src/sat_integration/` for advanced features
+# Run curated tests in Docker
+make docker-test
 
-#### Information-Theoretic Algorithm Must:
-- Represent uncertainty as CNF formulas over fluent variables
-- Use SAT solver for model counting and information gain
-- Select actions that maximize expected entropy reduction
-- Minimize formulas for performance
+# Quick tests without dependencies
+make docker-test-quick
 
-#### Unified Planning Integration (`src/planning/`)
-- Use UP for all PDDL parsing and planning
-- Convert between UP objects and internal representations
-- Handle UP Problem/State/Action objects
+# Interactive development shell
+make docker-shell
+
+# Run experiments in container
+make docker-experiment
+
+# Jupyter notebook for analysis
+make docker-notebook
+```
+
+### Development Commands
+```bash
+# Run CI pipeline locally
+make ci-local
+
+# Performance benchmarks
+make benchmark
+make benchmark-quick
+
+# Code coverage
+make coverage
+make coverage-detailed
+
+# Check implementation status
+grep -r "TODO" src/ --include="*.py"
+grep -r "NotImplementedError" src/ --include="*.py"
+```
+
+## Code Patterns
 
 ### State Format Conversions:
 ```python
@@ -55,9 +76,7 @@ mapper.fluent_to_variable('on_a_b') → 1
 {"domain": {...}, "problem": {"init": {...}}}
 ```
 
-### Common Tasks
-
-#### 1. CNF Formula Manipulation with Lifted Support
+### CNF Formula Manipulation with Lifted Support
 ```python
 from src.core.cnf_manager import CNFManager
 from src.core.pddl_handler import PDDLHandler
@@ -76,7 +95,7 @@ num_models = cnf.count_solutions()
 entropy = cnf.get_entropy()
 ```
 
-#### 2. Run Experiment with CNF Settings
+### Run Experiment with CNF Settings
 ```python
 config = {
     'domain': 'blocksworld',
@@ -89,79 +108,58 @@ config = {
 }
 ```
 
-#### 3. Debug CNF Issues
+## Import Patterns
+
+### External Algorithm Imports
 ```python
-# Common problems:
-1. Variable mapping inconsistent → Check variable_mapper
-2. CNF formulas too large → Enable formula minimization
-3. SAT solver timeout → Use approximate model counting
-4. Memory issues → Cache formula evaluations
+import sys
+
+# OLAM
+sys.path.append('/home/omer/projects/OLAM')
+from OLAM.Learner import Learner
+from Util.PddlParser import PddlParser
+
+# ModelLearner
+sys.path.append('/home/omer/projects/ModelLearner/src')
+from model_learner.ModelLearnerLifted import ModelLearnerLifted
 ```
 
-### File Creation Priority for CNF Integration
-1. `src/core/cnf_manager.py` - CNF formulas with lifted support ✓
-2. `src/core/pddl_handler.py` - PDDL parsing with lifted actions ✓
-3. `src/algorithms/information_gain.py` - Main algorithm
-4. `src/planning/unified_planning_interface.py` - UP integration
-5. Everything else
-
-### External Dependencies Paths
+### PySAT Import Pattern
 ```python
-OLAM_PATH = "/home/omer/projects/OLAM"
-MODELLEARNER_PATH = "/home/omer/projects/ModelLearner"
+# Handle both pysat and python-sat packages
+try:
+    from pysat.solvers import Minisat22
+    from pysat.formula import CNF
+except ImportError:
+    from pysat.solvers import Minisat22  # python-sat package
+    from pysat.formula import CNF
+```
 
-# New dependencies
+### Unified Planning Import Pattern
+```python
 from unified_planning.io import PDDLReader
-from pysat.solvers import Minisat22
-from pysat.formula import CNF
+from unified_planning.shortcuts import OneshotPlanner
+from unified_planning.engines import SequentialSimulator
+from unified_planning.model import Problem, Action, FNode
 ```
 
-### Quick CNF/SAT Testing
+## Debugging Patterns
+
+### Common Issues & Solutions
+| Issue | Solution |
+|-------|----------|
+| UP preconditions not sets | Use recursive FNode traversal |
+| PySAT import errors | Try/except for both packages |
+| Type hierarchy missing 'object' | Special case in `is_subtype_of()` |
+| Test timeout/hanging | Check for Lock vs RLock |
+| JSON serialization errors | Custom encoder for numpy types |
+| State format mismatches | Verify conversion functions |
+
+## Complete Working Examples
+
+### CNF Formula with SAT Solving
 ```python
-# Test PySAT integration
-from pysat.solvers import Minisat22
-from pysat.formula import CNF
-
-cnf = CNF()
-cnf.append([1, -2])  # (x1 OR NOT x2)
-cnf.append([2])      # x2
-
-solver = Minisat22(bootstrap_with=cnf)
-is_sat = solver.solve()
-print(f"Satisfiable: {is_sat}")
-
-# Test UP integration
-from unified_planning.io import PDDLReader
-reader = PDDLReader()
-problem = reader.parse_problem('benchmarks/blocksworld/domain.pddl',
-                              'benchmarks/blocksworld/p01.pddl')
-print(f"Problem loaded: {problem.name}")
-```
-
-### CNF-Specific Debugging Checklist
-- [ ] PySAT installed? `pip install python-sat`
-- [ ] UP installed? `pip install unified-planning`
-- [ ] Variable mapping consistent? Print variable assignments
-- [ ] CNF formulas valid? Test with small examples
-- [ ] SAT solver working? Test basic satisfiability
-
-### Information-Theoretic Algorithm Workflow
-1. **Initialize**: Create empty CNF formulas for all actions
-2. **Select Action**: Calculate information gain via model counting
-3. **Execute**: Use UP simulator or external environment
-4. **Observe**: Update CNF formulas based on success/failure
-5. **Minimize**: Optimize formulas for performance
-
-### When Stuck on CNF Integration
-1. Read `/docs/CNF_SAT_INTEGRATION.md` for detailed examples
-2. Test PySAT separately with simple formulas
-3. Verify variable mapping with print statements
-4. Use formula minimization for large CNF formulas
-5. Check SAT solver logs for timeout issues
-
-### Minimal CNF Working Example
-```python
-# Test complete CNF workflow with current implementation
+# Complete CNF workflow
 from src.core.cnf_manager import CNFManager
 
 cnf = CNFManager()
@@ -182,3 +180,74 @@ for sol in solutions:
 entropy = cnf.get_entropy()
 print(f"Entropy: {entropy}")
 ```
+
+### PDDL Parsing with UP
+```python
+from unified_planning.io import PDDLReader
+
+reader = PDDLReader()
+problem = reader.parse_problem(
+    'benchmarks/blocksworld/domain.pddl',
+    'benchmarks/blocksworld/p01.pddl'
+)
+
+# Access components
+for action in problem.actions:
+    print(f"Action: {action.name}")
+    for param in action.parameters:
+        print(f"  Param: {param.name} : {param.type}")
+```
+
+### UP Expression Tree Traversal
+```python
+from unified_planning.model import FNode
+
+def traverse_expression(expr):
+    """Recursively traverse UP expression tree."""
+    if expr.is_and():
+        return all(traverse_expression(arg) for arg in expr.args)
+    elif expr.is_or():
+        return any(traverse_expression(arg) for arg in expr.args)
+    elif expr.is_not():
+        return not traverse_expression(expr.arg(0))
+    elif expr.is_fluent_exp():
+        # Handle fluent
+        return check_fluent_in_state(expr)
+    else:
+        return True
+```
+
+### OLAM State/Action Conversion
+```python
+# UP format to OLAM format
+def up_state_to_olam(up_state):
+    """Convert {'clear_a', 'on_a_b'} to ['(clear a)', '(on a b)']"""
+    olam_state = []
+    for fluent in up_state:
+        parts = fluent.split('_')
+        if len(parts) == 1:
+            olam_state.append(f"({parts[0]})")
+        elif len(parts) == 2:
+            olam_state.append(f"({parts[0]} {parts[1]})")
+        elif len(parts) == 3:
+            olam_state.append(f"({parts[0]} {parts[1]} {parts[2]})")
+    return olam_state
+
+# Action conversion
+def up_action_to_olam(action, objects):
+    """Convert ('pick-up', ['a']) to 'pick-up(a)'"""
+    if objects:
+        return f"{action}({','.join(objects)})"
+    else:
+        return f"{action}()"
+```
+
+## External Dependencies
+
+| Component | Path |
+|-----------|------|
+| OLAM | `/home/omer/projects/OLAM/` |
+| ModelLearner | `/home/omer/projects/ModelLearner/` |
+| Fast Downward | `/home/omer/projects/fast-downward/` |
+| VAL Validator | `/home/omer/projects/Val/` |
+| PDDL Benchmarks | `benchmarks/` |
