@@ -109,6 +109,7 @@ def validate_olam_rover():
         olam = OLAMAdapter(
             domain_file=config['domain_problem']['domain'],
             problem_file=config['domain_problem']['problem'],
+            pddl_environment=env,  # Pass PDDL environment for proper action filtering
             **config['algorithm_params']['olam']
         )
 

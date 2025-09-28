@@ -45,6 +45,7 @@ class OLAMAdapter(BaseActionModelLearner):
                  max_iterations: int = 1000,
                  eval_frequency: int = 10,
                  pddl_handler=None,
+                 pddl_environment=None,
                  bypass_java: bool = False,
                  use_system_java: bool = False,
                  **kwargs):
@@ -57,6 +58,7 @@ class OLAMAdapter(BaseActionModelLearner):
             max_iterations: Maximum learning iterations
             eval_frequency: How often to evaluate the model
             pddl_handler: Optional PDDLHandler instance for proper grounding
+            pddl_environment: Optional PDDL environment for action applicability checking
             bypass_java: If True, bypass Java dependency for action filtering
             use_system_java: If True, try to use system Java instead of bundled
             **kwargs: Additional parameters
@@ -67,6 +69,7 @@ class OLAMAdapter(BaseActionModelLearner):
         self.eval_frequency = eval_frequency
         self.bypass_java = bypass_java
         self.use_system_java = use_system_java
+        self.pddl_environment = pddl_environment
 
         # Initialize PDDLHandler for proper action grounding
         if pddl_handler is None:
@@ -223,11 +226,97 @@ class OLAMAdapter(BaseActionModelLearner):
 
         # Replace with Python fallback
         def compute_not_executable_bypass():
-            """Bypass Java computation, return empty list of non-executable actions."""
-            logger.debug("Bypassing Java computation for non-executable actions")
-            return []  # Return empty list - all actions considered potentially executable
+            """Properly compute non-executable actions using PDDL environment or Python fallback."""
+
+            if self.pddl_environment:
+                # Use PDDL environment for accurate action filtering
+                try:
+                    # Get current state from PDDL environment
+                    current_state = self.pddl_environment.get_state()
+
+                    # Get applicable actions from environment
+                    applicable = self.pddl_environment.get_applicable_actions()
+                    applicable_strs = {f"{name}({','.join(objs)})" for name, objs in applicable}
+
+                    # Find NON-executable action indices
+                    non_executable_indices = []
+                    for idx, action_str in enumerate(self.action_list):
+                        if action_str not in applicable_strs:
+                            non_executable_indices.append(idx)
+
+                    logger.debug(f"PDDL environment filtering: {len(non_executable_indices)}/{len(self.action_list)} non-executable")
+                    return non_executable_indices
+
+                except Exception as e:
+                    logger.warning(f"Failed to use PDDL environment for filtering: {e}")
+                    # Fall through to Python fallback
+
+            # Fallback: use OLAM's Python method to compute non-executable
+            logger.debug("Using Python fallback for non-executable computation")
+            return self._compute_non_executable_python()
 
         self.learner.compute_not_executable_actionsJAVA = compute_not_executable_bypass
+
+    def _compute_non_executable_python(self) -> List[int]:
+        """
+        Python fallback to compute non-executable actions without Java or PDDL environment.
+
+        Returns:
+            List of action indices that are NOT executable in the current state
+        """
+        # If no learning has happened yet, consider all actions potentially executable
+        if not hasattr(self.learner, 'operator_certain_predicates'):
+            logger.debug("No learned model yet, considering all actions potentially executable")
+            return []
+
+        # Read current state from OLAM's state files
+        try:
+            import os
+            import re
+
+            # Try to read current state from PDDL facts file
+            facts_file = "PDDL/facts.pddl"
+            if os.path.exists(facts_file):
+                with open(facts_file, "r") as f:
+                    data = [el.strip() for el in f.read().split("\n")]
+                    facts = re.findall(r":init.*\(:goal", "".join(data))[0]
+                    current_state_pddl = set(re.findall(r"\([^()]*\)", facts))
+            else:
+                # No state file, assume all actions potentially executable
+                logger.debug("No PDDL facts file found, returning empty non-executable list")
+                return []
+
+            non_executable_indices = []
+
+            # Check each action for basic precondition satisfaction
+            for idx, action_label in enumerate(self.action_list):
+                operator = action_label.split("(")[0]
+                params = [el.strip() for el in action_label.split("(")[1][:-1].split(",")]
+
+                # Get learned preconditions for this operator
+                if operator in self.learner.operator_certain_predicates:
+                    certain_preconds = self.learner.operator_certain_predicates[operator]
+
+                    # Ground the preconditions with action parameters
+                    grounded_preconds = []
+                    for pred in certain_preconds:
+                        grounded_pred = pred
+                        for k, param in enumerate(params):
+                            grounded_pred = grounded_pred.replace(f"?param_{k+1})", f"{param})")
+                            grounded_pred = grounded_pred.replace(f"?param_{k+1} ", f"{param} ")
+                        grounded_preconds.append(grounded_pred)
+
+                    # Check if all certain preconditions are satisfied
+                    if grounded_preconds and not all(pred in current_state_pddl for pred in grounded_preconds):
+                        non_executable_indices.append(idx)
+
+            logger.debug(f"Python fallback: {len(non_executable_indices)}/{len(self.action_list)} non-executable")
+            return non_executable_indices
+
+        except Exception as e:
+            logger.warning(f"Error in Python fallback computation: {e}")
+            # On error, return empty list (all actions potentially executable)
+            return []
 
     def _compute_executable_actions_python(self, state: Set[str]) -> List[str]:
         """
