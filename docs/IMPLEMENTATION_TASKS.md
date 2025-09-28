@@ -38,11 +38,12 @@ Building an experiment framework to compare three online action model learning a
 - ✅ Ready for comparative experiments with other algorithms
 
 ### 🔧 Critical Fix Applied (September 28, 2025)
-**Fixed OLAM Java Bypass Action Filtering**:
+**Fixed OLAM Java Bypass to Use Learned Model Only**:
 - **Problem**: Java bypass returned empty non-executable list, causing random selection from all 313 actions (90% failure rate)
-- **Solution**: Implemented proper action filtering using PDDL environment in bypass mode
-- **Result**: Action selection success improved from 10% to 100% in validation tests
-- **Branch**: `fix-olam-action-filtering`
+- **Initial Wrong Fix**: Used PDDL environment ground truth (cheating) - achieved 100% but violated learning principles
+- **Proper Solution**: Implemented filtering based ONLY on OLAM's learned preconditions
+- **Expected Behavior**: Start with high uncertainty (~20% success), improve to ~70-80% over time through learning
+- **Key Change**: Removed PDDL environment dependency from OLAM adapter - now learns purely from experience
 
 ### 📊 Implementation Status
 
@@ -83,8 +84,9 @@ Building an experiment framework to compare three online action model learning a
   - Observation handling for success/failure learning
   - Model export functionality
   - Handles OLAM's directory structure requirements (PDDL/, Info/)
-  - **Java Bypass Mode** (September 27, 2025): Added `bypass_java=True` flag to work without Java installation
-  - **Intelligent Fluent Conversion** (September 27, 2025): Handles multi-word predicates and objects with underscores correctly across all domains
+  - **Java Bypass Mode** (September 28, 2025): Uses learned model for filtering, NOT ground truth
+  - **No PDDL Environment Access**: Adapter learns purely from experience without cheating
+  - **Intelligent Fluent Conversion**: Handles multi-word predicates and objects with underscores
 
 #### Phase 3: Experiment Runner and Metrics Framework ✅ COMPLETED
 

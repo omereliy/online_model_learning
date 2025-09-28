@@ -182,5 +182,7 @@ else:
 ### Important Implementation Notes
 1. **Action Indexing**: Actions are referenced by integer indices into `action_labels`
 2. **State Format**: States should be provided as lists of PDDL predicate strings
-3. **Java Dependency**: The `compute_not_executable_actionsJAVA()` method requires Java; adapters may need to implement workarounds
+3. **Java Dependency**: The `compute_not_executable_actionsJAVA()` method requires Java; adapters should implement bypass using learned model only
 4. **Directory Structure**: OLAM expects `PDDL/` and `Info/` directories to exist in the working directory
+5. **Learning Principles**: OLAM must learn from experience only - never provide ground truth preconditions or effects
+6. **Expected Learning Curve**: Initial success rate ~20%, improving to ~70-80% over time through trial and error
