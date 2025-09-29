@@ -15,8 +15,13 @@ logger = logging.getLogger(__name__)
 class PDDLHandler:
     """Handles PDDL operations using Unified Planning Framework."""
 
-    def __init__(self):
-        """Initialize PDDL handler."""
+    def __init__(self, require_injective_bindings: bool = False):
+        """Initialize PDDL handler.
+
+        Args:
+            require_injective_bindings: If True, filter out parameter bindings where
+                                       the same object appears multiple times (for OLAM compatibility)
+        """
         self.reader = PDDLReader()
         self.writer = None  # Will be initialized when needed
         self.problem: Optional[Problem] = None
@@ -25,6 +30,7 @@ class PDDLHandler:
         self._fluent_map: Dict[str, Fluent] = {}
         self._object_map: Dict[str, Object] = {}
         self._grounded_actions: List[Tuple[Action, Dict[str, Object]]] = []
+        self.require_injective_bindings = require_injective_bindings
         # Support for lifted representations
         self._lifted_actions: Dict[str, Action] = {}  # action_name -> Action
         self._lifted_predicates: Dict[str, Tuple[str, List[str]]] = {}  # pred_name -> (name, param_types)
@@ -49,7 +55,7 @@ class PDDLHandler:
 
         # Build internal mappings
         self._build_mappings()
-        self._ground_actions()
+        self._ground_actions(self.require_injective_bindings)
 
         logger.info(f"Parsed problem: {self.problem.name}")
         logger.info(f"Fluents: {len(self._fluent_map)}")
@@ -97,27 +103,33 @@ class PDDLHandler:
             self._type_hierarchy[parent_name] = set()
         self._type_hierarchy[parent_name].add(type_name)
 
-    def _ground_actions(self):
-        """Ground all actions with all possible parameter bindings."""
+    def _ground_actions(self, require_injective=False):
+        """Ground all actions with all possible parameter bindings.
+
+        Args:
+            require_injective: If True, skip bindings where same object appears multiple times
+        """
         self._grounded_actions.clear()
         self._lifted_actions.clear()
+        self.require_injective = require_injective
 
         for action in self.problem.actions:
             # Store lifted action
             self._lifted_actions[action.name] = action
 
             # Get all possible parameter bindings
-            param_bindings = self._get_parameter_bindings(action)
+            param_bindings = self._get_parameter_bindings(action, require_injective)
 
             for binding in param_bindings:
                 self._grounded_actions.append((action, binding))
 
-    def _get_parameter_bindings(self, action: Action) -> List[Dict[str, Object]]:
+    def _get_parameter_bindings(self, action: Action, require_injective: bool = False) -> List[Dict[str, Object]]:
         """
         Get all possible parameter bindings for an action.
 
         Args:
             action: UP Action object
+            require_injective: If True, skip non-injective bindings (same object in multiple positions)
 
         Returns:
             List of parameter binding dictionaries
@@ -140,6 +152,11 @@ class PDDLHandler:
         # Generate all combinations
         bindings = []
         for combo in itertools.product(*param_options):
+            # Check for injective binding if required
+            if require_injective and len(set(combo)) != len(combo):
+                # Skip this combination - same object appears multiple times
+                continue
+
             binding = {}
             for param, obj in zip(action.parameters, combo):
                 binding[param.name] = obj

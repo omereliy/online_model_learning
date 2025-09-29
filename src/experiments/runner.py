@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional, Tuple, List
 
 from ..algorithms.base_learner import BaseActionModelLearner
 from ..algorithms.olam_adapter import OLAMAdapter
-from ..environments.mock_environment import MockEnvironment
+from ..environments.pddl_environment import PDDLEnvironment
 from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -29,16 +29,23 @@ class ExperimentRunner:
     and result export.
     """
 
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, verbose_debug: bool = False):
         """
         Initialize the experiment runner.
 
         Args:
             config_path: Path to YAML configuration file
+            verbose_debug: Enable detailed logging for validation/debugging
         """
         self.config_path = config_path
         self.config = self._load_config(config_path)
         self._validate_config()
+        self.verbose_debug = verbose_debug
+
+        # Setup verbose logging if requested
+        if self.verbose_debug:
+            logging.getLogger().setLevel(logging.DEBUG)
+            logger.info("VERBOSE DEBUG MODE ENABLED - Detailed logging active")
 
         # Set random seed if specified
         if 'seed' in self.config['experiment']:
@@ -172,21 +179,20 @@ class ExperimentRunner:
 
         return learner
 
-    def _init_environment(self) -> MockEnvironment:
+    def _init_environment(self) -> PDDLEnvironment:
         """
-        Initialize the environment.
-
-        Phase 3: Returns MockEnvironment
-        Phase 4: Will return real PDDL environment
+        Initialize the PDDL environment with real action execution.
 
         Returns:
-            Environment instance
+            PDDLEnvironment instance for real PDDL execution
         """
-        # For Phase 3, use mock environment
-        seed = self.config['experiment'].get('seed')
-        environment = MockEnvironment(success_rate=0.7, seed=seed)
+        domain_file = self.config['domain_problem']['domain']
+        problem_file = self.config['domain_problem']['problem']
 
-        logger.info("Initialized MockEnvironment (Phase 4 will provide real environment)")
+        environment = PDDLEnvironment(domain_file, problem_file)
+
+        logger.info(f"Initialized PDDLEnvironment with domain: {domain_file}")
+        logger.info("Using real PDDL execution - no mocking!")
         return environment
 
     def _set_random_seed(self, seed: int) -> None:
@@ -233,12 +239,22 @@ class ExperimentRunner:
             # Get current state
             state = self.environment.get_state()
 
+            # Verbose debug: log hypothesis space info
+            if self.verbose_debug and iteration % 10 == 0:
+                self._log_hypothesis_space_info(iteration)
+
             try:
                 # Select action
                 action, objects = self.learner.select_action(state)
 
-                # Execute action
-                success, runtime = self._execute_action(action, objects)
+                if self.verbose_debug:
+                    logger.debug(f"Iteration {iteration}: Selected {action}({','.join(objects)})")
+
+                # Execute action in PDDL environment
+                success, runtime = self.environment.execute(action, objects)
+
+                if self.verbose_debug:
+                    logger.debug(f"  Execution: {'SUCCESS' if success else 'FAILURE'} (runtime: {runtime:.3f}s)")
 
                 # Record metrics
                 self.metrics.record_action(
@@ -302,18 +318,6 @@ class ExperimentRunner:
         logger.info(f"Experiment completed: {iteration} iterations, reason: {stopping_reason}")
         return results
 
-    def _execute_action(self, action: str, objects: List[str]) -> Tuple[bool, float]:
-        """
-        Execute an action in the environment.
-
-        Args:
-            action: Action name
-            objects: Objects involved
-
-        Returns:
-            Tuple of (success, runtime)
-        """
-        return self.environment.execute(action, objects)
 
     def _should_stop(self, iteration: int, start_time: float) -> bool:
         """
@@ -357,6 +361,45 @@ class ExperimentRunner:
             return self.learner.has_converged()
 
         return False
+
+    def _log_hypothesis_space_info(self, iteration: int) -> None:
+        """
+        Log detailed hypothesis space information for debugging.
+
+        Args:
+            iteration: Current iteration number
+        """
+        if not hasattr(self.learner, 'get_learned_model'):
+            return
+
+        model = self.learner.get_learned_model()
+        actions = model.get('actions', {})
+
+        # Count statistics
+        total_actions = len(actions)
+        with_certain = sum(1 for a in actions.values() if a['preconditions'].get('certain', []))
+        with_uncertain = sum(1 for a in actions.values() if a['preconditions'].get('uncertain', []))
+        unexplored = sum(1 for a in actions.values() if not a['preconditions'].get('certain', []) and not a['preconditions'].get('uncertain', []))
+
+        # For OLAM, check how many actions are filtered
+        filtered = 0
+        if hasattr(self.learner, 'learner') and hasattr(self.learner.learner, 'compute_not_executable_actionsJAVA'):
+            filtered = len(self.learner.learner.compute_not_executable_actionsJAVA())
+
+        logger.info(f"\n--- HYPOTHESIS SPACE (Iteration {iteration}) ---")
+        logger.info(f"Total actions: {total_actions}")
+        logger.info(f"Actions filtered as non-executable: {filtered}")
+        logger.info(f"Actions with certain preconditions: {with_certain}")
+        logger.info(f"Actions with uncertain preconditions: {with_uncertain}")
+        logger.info(f"Unexplored actions: {unexplored}")
+        logger.info(f"Hypothesis space reduction: {filtered}/{total_actions} = {(filtered/total_actions*100):.1f}% filtered")
+
+        # Sample a learned action for detail
+        for action_name, data in list(actions.items())[:1]:
+            if data['preconditions'].get('certain'):
+                logger.debug(f"Example learned action: {action_name}")
+                logger.debug(f"  Certain: {data['preconditions']['certain'][:3]}")
+                logger.debug(f"  Uncertain: {data['preconditions']['uncertain'][:3] if data['preconditions'].get('uncertain') else []}")
 
     def _handle_error(self, error: Exception, iteration: int) -> None:
         """
