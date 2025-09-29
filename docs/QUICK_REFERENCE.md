@@ -243,11 +243,4 @@ def up_action_to_olam(action, objects):
 ```
 
 ## External Dependencies
-
-| Component | Path |
-|-----------|------|
-| OLAM | `/home/omer/projects/OLAM/` |
-| ModelLearner | `/home/omer/projects/ModelLearner/` |
-| Fast Downward | `/home/omer/projects/fast-downward/` |
-| VAL Validator | `/home/omer/projects/Val/` |
-| PDDL Benchmarks | `benchmarks/` |
+See [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for complete external tool paths.

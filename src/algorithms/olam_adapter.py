@@ -69,9 +69,10 @@ class OLAMAdapter(BaseActionModelLearner):
         self.use_system_java = use_system_java
 
         # Initialize PDDLHandler for proper action grounding
+        # OLAM requires injective bindings (no repeated objects in action parameters)
         if pddl_handler is None:
             from src.core.pddl_handler import PDDLHandler
-            self.pddl_handler = PDDLHandler()
+            self.pddl_handler = PDDLHandler(require_injective_bindings=True)
             self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
         else:
             self.pddl_handler = pddl_handler
@@ -114,9 +115,17 @@ class OLAMAdapter(BaseActionModelLearner):
         # Initialize required OLAM attributes
         from timeit import default_timer
         self.learner.initial_timer = default_timer()
+        self.learner.now = default_timer()  # Initialize timing attribute
         self.learner.max_time_limit = 3600  # 1 hour default time limit
         if not hasattr(self.learner, 'current_plan'):
             self.learner.current_plan = []
+        if not hasattr(self.learner, 'time_at_iter'):
+            self.learner.time_at_iter = []
+        if not hasattr(self.learner, 'iter'):
+            self.learner.iter = 0
+
+        # Disable eval_log which has path dependencies
+        self.learner.eval_log = lambda: None
 
         # If bypassing Java, monkey-patch the Java computation method
         if self.bypass_java:
@@ -244,46 +253,72 @@ class OLAMAdapter(BaseActionModelLearner):
             return []
 
         try:
-            import os
-            import re
-
-            # Get current state from OLAM's internal state representation
-            facts_file = "PDDL/facts.pddl"
-            if os.path.exists(facts_file):
-                with open(facts_file, "r") as f:
-                    data = [el.strip() for el in f.read().split("\n")]
-                    facts = re.findall(r":init.*\(:goal", "".join(data))[0]
-                    current_state_pddl = set(re.findall(r"\([^()]*\)", facts))
+            # Get current state from OLAM's simulator (already updated)
+            if hasattr(self.learner, 'simulator') and hasattr(self.learner.simulator, 'facts'):
+                current_state_pddl = set(self.learner.simulator.facts)
+                logger.debug(f"Using simulator state with {len(current_state_pddl)} facts")
             else:
-                # No state available, return empty (high uncertainty)
-                logger.debug("No state available, cannot filter actions")
-                return []
+                # Try to read from facts file as fallback
+                import os
+                import re
+                facts_file = "PDDL/facts.pddl"
+                if os.path.exists(facts_file):
+                    with open(facts_file, "r") as f:
+                        data = [el.strip() for el in f.read().split("\n")]
+                        facts = re.findall(r":init.*\(:goal", "".join(data))[0]
+                        current_state_pddl = set(re.findall(r"\([^()]*\)", facts))
+                    logger.debug(f"Using facts file state with {len(current_state_pddl)} facts")
+                else:
+                    # No state available, return empty (high uncertainty)
+                    logger.debug("No state available, cannot filter actions")
+                    return []
 
             non_executable_indices = []
 
-            # Filter based ONLY on what OLAM has LEARNED with high confidence
+            # Filter based on what OLAM has LEARNED (both certain and uncertain)
+            total_certain_ops = sum(1 for v in self.learner.operator_certain_predicates.values() if v)
+            total_uncertain_ops = sum(1 for v in self.learner.operator_uncertain_predicates.values() if v)
+            logger.debug(f"Learned model has {total_certain_ops} ops with certain, {total_uncertain_ops} with uncertain")
+
             for idx, action_label in enumerate(self.action_list):
                 operator = action_label.split("(")[0]
                 params = [el.strip() for el in action_label.split("(")[1][:-1].split(",")]
 
-                # Only use CERTAIN preconditions that OLAM has learned
-                if operator in self.learner.operator_certain_predicates:
-                    certain_preconds = self.learner.operator_certain_predicates[operator]
+                # Check both CERTAIN and UNCERTAIN preconditions
+                certain_preconds = self.learner.operator_certain_predicates.get(operator, [])
+                uncertain_preconds = self.learner.operator_uncertain_predicates.get(operator, [])
 
-                    # Only filter if we have strong evidence (multiple preconditions learned)
-                    if len(certain_preconds) >= 2:  # Need confidence before filtering
-                        # Ground the preconditions with action parameters
-                        grounded_preconds = []
-                        for pred in certain_preconds:
-                            grounded_pred = pred
-                            for k, param in enumerate(params):
-                                grounded_pred = grounded_pred.replace(f"?param_{k+1})", f"{param})")
-                                grounded_pred = grounded_pred.replace(f"?param_{k+1} ", f"{param} ")
-                            grounded_preconds.append(grounded_pred)
+                # Filter if we have ANY learned preconditions (even just 1)
+                if certain_preconds:
+                    # Ground the certain preconditions with action parameters
+                    grounded_certain = []
+                    for pred in certain_preconds:
+                        grounded_pred = pred
+                        for k, param in enumerate(params):
+                            grounded_pred = grounded_pred.replace(f"?param_{k+1})", f"{param})")
+                            grounded_pred = grounded_pred.replace(f"?param_{k+1} ", f"{param} ")
+                        grounded_certain.append(grounded_pred)
 
-                        # Only filter if we're certain ALL learned preconditions are violated
-                        if grounded_preconds and not all(pred in current_state_pddl for pred in grounded_preconds):
-                            non_executable_indices.append(idx)
+                    # Filter if ANY certain precondition is violated
+                    if grounded_certain and not all(pred in current_state_pddl for pred in grounded_certain):
+                        non_executable_indices.append(idx)
+                        continue
+
+                # Also consider uncertain preconditions (weaker filtering)
+                if len(uncertain_preconds) >= 3:  # Need multiple uncertain to filter
+                    # Ground the uncertain preconditions
+                    grounded_uncertain = []
+                    for pred in uncertain_preconds:
+                        grounded_pred = pred
+                        for k, param in enumerate(params):
+                            grounded_pred = grounded_pred.replace(f"?param_{k+1})", f"{param})")
+                            grounded_pred = grounded_pred.replace(f"?param_{k+1} ", f"{param} ")
+                        grounded_uncertain.append(grounded_pred)
+
+                    # Filter if MOST uncertain preconditions are violated (>75%)
+                    satisfied = sum(1 for pred in grounded_uncertain if pred in current_state_pddl)
+                    if satisfied < len(grounded_uncertain) * 0.25:  # Less than 25% satisfied
+                        non_executable_indices.append(idx)
 
             logger.debug(f"Learned model filtering: {len(non_executable_indices)}/{len(self.action_list)} non-executable")
             return non_executable_indices
@@ -391,20 +426,34 @@ class OLAMAdapter(BaseActionModelLearner):
         }
 
         # Extract learned operators from OLAM
-        for action_label in self.learner.action_labels:
-            action_name, objects = self.parse_action_string(action_label)
+        # OLAM stores knowledge at the operator (schema) level, not grounded action level
+        for action_label in self.action_list:
+            action_name = action_label.split("(")[0]  # Get operator name
+
+            # Get learned preconditions from operator-level storage
+            certain_precs = self.learner.operator_certain_predicates.get(action_name, [])
+            uncertain_precs = self.learner.operator_uncertain_predicates.get(action_name, [])
+            neg_precs = self.learner.operator_negative_preconditions.get(action_name, [])
+
+            # Get effects if available
+            pos_effects = []
+            neg_effects = []
+            if hasattr(self.learner, 'operator_positive_effects'):
+                pos_effects = self.learner.operator_positive_effects.get(action_name, [])
+            if hasattr(self.learner, 'operator_negative_effects'):
+                neg_effects = self.learner.operator_negative_effects.get(action_name, [])
 
             model['actions'][action_label] = {
                 'name': action_name,
-                'parameters': objects,
+                'parameters': action_label.split("(")[1].rstrip(")").split(",") if "(" in action_label else [],
                 'preconditions': {
-                    'certain': self.learner.operator_certain_predicates.get(action_label, []),
-                    'uncertain': self.learner.operator_uncertain_predicates.get(action_label, []),
-                    'negative': self.learner.operator_negative_preconditions.get(action_label, [])
+                    'certain': certain_precs,
+                    'uncertain': uncertain_precs,
+                    'negative': neg_precs
                 },
                 'effects': {
-                    'add': [],  # OLAM tracks these internally
-                    'delete': []
+                    'positive': pos_effects,
+                    'negative': neg_effects
                 }
             }
 
