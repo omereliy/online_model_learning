@@ -28,8 +28,8 @@ class TestExperimentRunner:
                 'seed': 42
             },
             'domain_problem': {
-                'domain': 'benchmarks/blocksworld/domain.pddl',
-                'problem': 'benchmarks/blocksworld/p01.pddl'
+                'domain': 'benchmarks/olam-compatible/blocksworld/domain.pddl',
+                'problem': 'benchmarks/olam-compatible/blocksworld/p01.pddl'
             },
             'algorithm_params': {
                 'olam': {

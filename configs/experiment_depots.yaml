@@ -7,8 +7,8 @@ experiment:
   seed: 42
 
 domain_problem:
-  domain: "benchmarks/depots/domain.pddl"
-  problem: "benchmarks/depots/p01.pddl"
+  domain: "benchmarks/olam-compatible/depots/domain.pddl"
+  problem: "benchmarks/olam-compatible/depots/p01.pddl"
 
 # Algorithm-specific parameters
 algorithm_params:

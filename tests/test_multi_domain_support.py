@@ -22,19 +22,19 @@ class TestMultiDomainSupport:
         """Path to benchmarks directory."""
         return Path(__file__).parent.parent / "benchmarks"
 
-    @pytest.mark.parametrize("domain_name,expected_actions", [
-        ("blocksworld", ["pick-up", "put-down", "stack", "unstack"]),
-        ("gripper", ["move", "pick", "drop"]),
-        ("logistics", ["load-truck", "unload-truck", "drive-truck", "load-airplane", "unload-airplane", "fly-airplane"]),
+    @pytest.mark.parametrize("domain_name,expected_actions,compatibility", [
+        ("blocksworld", ["pick-up", "put-down", "stack", "unstack"], "olam-compatible"),
+        ("gripper", ["move", "pick", "drop"], "olam-compatible"),
+        ("logistics", ["load-truck", "unload-truck", "drive-truck", "load-airplane", "unload-airplane", "fly-airplane"], "olam-compatible"),
         ("rover", ["navigate", "sample_soil", "sample_rock", "drop", "calibrate",
                    "take_image", "communicate_soil_data", "communicate_rock_data",
-                   "communicate_image_data"]),
-        ("depots", ["drive", "lift", "drop", "load", "unload"])
+                   "communicate_image_data"], "olam-incompatible"),
+        ("depots", ["drive", "lift", "drop", "load", "unload"], "olam-compatible")
     ])
-    def test_domain_parsing(self, benchmarks_path, domain_name, expected_actions):
+    def test_domain_parsing(self, benchmarks_path, domain_name, expected_actions, compatibility):
         """Test that each domain can be parsed correctly."""
-        domain_file = benchmarks_path / domain_name / "domain.pddl"
-        problem_file = benchmarks_path / domain_name / "p01.pddl"
+        domain_file = benchmarks_path / compatibility / domain_name / "domain.pddl"
+        problem_file = benchmarks_path / compatibility / domain_name / "p01.pddl"
 
         # Check files exist
         assert domain_file.exists(), f"Domain file missing: {domain_file}"
@@ -50,13 +50,15 @@ class TestMultiDomainSupport:
         for action in expected_actions:
             assert action in action_names, f"Missing action {action} in {domain_name}"
 
-    @pytest.mark.parametrize("domain_name", [
-        "blocksworld", "gripper", "logistics", "rover", "depots"
+    @pytest.mark.parametrize("domain_name,compatibility", [
+        ("blocksworld", "olam-compatible"), ("gripper", "olam-compatible"),
+        ("logistics", "olam-compatible"), ("rover", "olam-incompatible"),
+        ("depots", "olam-compatible")
     ])
-    def test_domain_grounding(self, benchmarks_path, domain_name):
+    def test_domain_grounding(self, benchmarks_path, domain_name, compatibility):
         """Test that domains can be grounded with their problem files."""
-        domain_file = benchmarks_path / domain_name / "domain.pddl"
-        problem_file = benchmarks_path / domain_name / "p01.pddl"
+        domain_file = benchmarks_path / compatibility / domain_name / "domain.pddl"
+        problem_file = benchmarks_path / compatibility / domain_name / "p01.pddl"
 
         handler = PDDLHandler()
         handler.parse_domain_and_problem(str(domain_file), str(problem_file))

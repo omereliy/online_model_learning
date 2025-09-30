@@ -22,8 +22,8 @@ class TestOLAMJavaWorkaround:
     @pytest.fixture
     def domain_problem_files(self):
         """Return test domain and problem file paths."""
-        domain = str(project_root / "benchmarks/blocksworld/domain.pddl")
-        problem = str(project_root / "benchmarks/blocksworld/p01.pddl")
+        domain = str(project_root / "benchmarks/olam-compatible/blocksworld/domain.pddl")
+        problem = str(project_root / "benchmarks/olam-compatible/blocksworld/p01.pddl")
         return domain, problem
 
     def test_olam_initialization_without_java(self, domain_problem_files):

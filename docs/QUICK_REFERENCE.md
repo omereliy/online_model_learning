@@ -187,8 +187,8 @@ from unified_planning.io import PDDLReader
 
 reader = PDDLReader()
 problem = reader.parse_problem(
-    'benchmarks/blocksworld/domain.pddl',
-    'benchmarks/blocksworld/p01.pddl'
+    'benchmarks/olam-compatible/blocksworld/domain.pddl',
+    'benchmarks/olam-compatible/blocksworld/p01.pddl'
 )
 
 # Access components

@@ -7,8 +7,8 @@ experiment:
   seed: 42
 
 domain_problem:
-  domain: "benchmarks/rover/domain.pddl"
-  problem: "benchmarks/rover/p01.pddl"
+  domain: "benchmarks/olam-incompatible/rover/domain.pddl"
+  problem: "benchmarks/olam-incompatible/rover/p01.pddl"
 
 # Algorithm-specific parameters for extended learning
 algorithm_params:

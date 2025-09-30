@@ -7,8 +7,8 @@ experiment:
   seed: 42  # Random seed for reproducibility
 
 domain_problem:
-  domain: "benchmarks/blocksworld/domain.pddl"
-  problem: "benchmarks/blocksworld/p01.pddl"
+  domain: "benchmarks/olam-compatible/blocksworld/domain.pddl"
+  problem: "benchmarks/olam-compatible/blocksworld/p01.pddl"
 
 # Algorithm-specific parameters
 algorithm_params:
