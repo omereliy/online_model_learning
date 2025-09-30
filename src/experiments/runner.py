@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from ..algorithms.base_learner import BaseActionModelLearner
 from ..algorithms.olam_adapter import OLAMAdapter
 from ..environments.pddl_environment import PDDLEnvironment
+from ..environments.mock_environment import MockEnvironment
 from .metrics import MetricsCollector
 
 logger = logging.getLogger(__name__)
@@ -172,20 +173,29 @@ class ExperimentRunner:
 
         return learner
 
-    def _init_environment(self) -> PDDLEnvironment:
+    def _init_environment(self):
         """
-        Initialize the PDDL environment with real action execution.
+        Initialize the environment based on configuration.
 
         Returns:
-            PDDLEnvironment instance for real PDDL execution
+            Environment instance (PDDLEnvironment or MockEnvironment)
         """
         domain_file = self.config['domain_problem']['domain']
         problem_file = self.config['domain_problem']['problem']
 
-        environment = PDDLEnvironment(domain_file, problem_file)
+        # Check for environment type in config (default to 'pddl' for real execution)
+        env_type = self.config.get('experiment', {}).get('environment_type', 'pddl')
 
-        logger.info(f"Initialized PDDLEnvironment with domain: {domain_file}")
-        logger.info("Using real PDDL execution - no mocking!")
+        if env_type == 'mock':
+            # Use mock environment for testing
+            environment = MockEnvironment(domain_file, problem_file)
+            logger.info(f"Initialized MockEnvironment for testing with domain: {domain_file}")
+        else:
+            # Use real PDDL environment for actual experiments
+            environment = PDDLEnvironment(domain_file, problem_file)
+            logger.info(f"Initialized PDDLEnvironment with domain: {domain_file}")
+            logger.info("Using real PDDL execution")
+
         return environment
 
     def _set_random_seed(self, seed: int) -> None:
@@ -236,8 +246,8 @@ class ExperimentRunner:
                 # Select action
                 action, objects = self.learner.select_action(state)
 
-                # Execute action in PDDL environment
-                success, runtime = self.environment.execute(action, objects)
+                # Execute action
+                success, runtime = self._execute_action(action, objects)
 
                 # Record metrics
                 self.metrics.record_action(
@@ -327,6 +337,19 @@ class ExperimentRunner:
             return True
 
         return False
+
+    def _execute_action(self, action: str, objects: List[str]) -> Tuple[bool, float]:
+        """
+        Execute an action in the environment.
+
+        Args:
+            action: Action name to execute
+            objects: Objects involved in the action
+
+        Returns:
+            Tuple of (success, runtime)
+        """
+        return self.environment.execute(action, objects)
 
     def _check_convergence(self, iteration: int) -> bool:
         """

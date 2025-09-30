@@ -138,6 +138,16 @@ results/
 logs/
 slurm-*.out
 
+# OLAM-generated directories (anywhere in project)
+**/PDDL/
+**/Info/
+**/results/
+
+# Test-specific OLAM directories
+tests/PDDL/
+tests/Info/
+tests/results/
+
 # Temporary files
 tmp/
 temp/
@@ -161,3 +171,4 @@ temp/
 # SLURM job files
 job_*.sh
 slurm_*.log
+/docs/temp_markdown_instructions_4tasks/
