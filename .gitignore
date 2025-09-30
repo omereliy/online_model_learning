@@ -172,3 +172,10 @@ temp/
 job_*.sh
 slurm_*.log
 /docs/temp_markdown_instructions_4tasks/
+
+# Review outputs (exclude from version control)
+/docs/reviews/
+
+# Archive directory (keep structure, track files)
+!/docs/archive/
+!/docs/validation/

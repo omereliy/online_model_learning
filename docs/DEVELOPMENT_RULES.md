@@ -159,59 +159,34 @@ from model_learner.parser import Parser
 ### MANDATORY: Run Tests Before Marking Complete
 **Rule**: No task or implementation can be marked as complete without passing all tests.
 
-#### 1. TDD Workflow
+#### TDD Workflow
 1. **Write tests FIRST** - Tests define the expected behavior
 2. **Implement to pass tests** - Code only what's needed
-3. **Run tests frequently** - Use `make test-quick` during development
-4. **Full test suite before complete** - Run `make test` or `python scripts/run_test_suite.py`
+3. **Run tests frequently** - During development
+4. **Full test suite before complete** - Before marking any task complete
 5. **Only mark "completed" if ALL tests pass** - No exceptions
 
-#### 2. Available Test Commands
-```bash
-# Quick critical tests (< 2 minutes)
-make test-quick
+#### Test Commands
+For all available test commands, see [QUICK_REFERENCE.md](QUICK_REFERENCE.md#testing-commands)
 
-# Full test suite (all tests)
-make test
+Key test approaches:
+- `make test` - Curated suite (165 tests, 100% pass rate) - Use for validation
+- `pytest tests/` - All tests (196 tests) - Use for development
+- `make test-quick` - Quick subset - Use during active development
 
-# Specific module tests
-make test-metrics
-make test-integration
-
-# Run with test runner script
-python scripts/run_test_suite.py         # Full suite
-python scripts/run_test_suite.py --quick # Quick tests only
-python scripts/run_test_suite.py --list  # List available tests
-```
-
-#### 3. Common Test Issues and Solutions
-- **Test timeout/hanging**: Likely a deadlock (e.g., threading.Lock instead of RLock)
-- **Import errors**: Check sys.path and external repo availability
-- **JSON serialization**: Use custom encoder for numpy types
-- **State format mismatches**: Verify conversions between systems
-
-#### 4. Test Categories
-1. **Unit Tests** - Test individual methods/classes
-2. **Integration Tests** - Test component interactions
-3. **System Tests** - Test full pipeline execution
-4. **Performance Tests** - Verify acceptable runtimes
-
-#### 5. Pre-Commit Verification
-```bash
-# Before ANY commit, run:
-make commit  # Runs full test suite and reports status
-
-# Or manually:
-make test && echo "Ready to commit" || echo "Fix tests first"
-```
-
-#### 6. Test Failure Protocol
+#### Test Failure Protocol
 If tests fail:
 1. **STOP** - Do not proceed or mark complete
 2. **DEBUG** - Use pytest -vv for verbose output
 3. **FIX** - Address the root cause, not symptoms
 4. **RETEST** - Verify fix with full test suite
 5. **DOCUMENT** - Note any changes needed in other components
+
+#### Common Issues
+- **Test timeout/hanging**: Likely deadlock (threading.Lock vs RLock)
+- **Import errors**: Check sys.path and external repo availability
+- **JSON serialization**: Use custom encoder for numpy types
+- **State format mismatches**: Verify conversions between systems
 
 ## Implementation Progress Tracking
 

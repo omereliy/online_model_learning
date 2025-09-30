@@ -1,0 +1,30 @@
+{
+  "coverage_threshold": 80,
+  "quick_test_timeout": 30,
+  "full_test_timeout": 300,
+  "strict_mode": false,
+  "auto_fix_suggestions": true,
+  "test_commands": {
+    "quick": "make test-quick",
+    "full": "make test",
+    "specific": "pytest tests/test_{}.py -v"
+  },
+  "file_mappings": {
+    "src/algorithms": ["test_algorithms", "test_adapters"],
+    "src/core": ["test_core", "test_pddl_handler", "test_cnf_manager"],
+    "src/experiments": ["test_experiments", "test_metrics", "test_runner"],
+    "src/environments": ["test_environments", "test_pddl_environment"]
+  },
+  "ignore_patterns": [
+    "*.md",
+    "*.txt",
+    "*.yaml",
+    "*.yml",
+    "docs/*"
+  ],
+  "metrics": {
+    "log_level": "INFO",
+    "retain_logs_days": 7,
+    "report_frequency": "daily"
+  }
+}

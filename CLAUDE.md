@@ -76,3 +76,29 @@ A git pre-commit hook runs `make test` before every commit.
 - **Important**: Must be in `action-learning` conda environment for tests to pass
 
 Implementation: `.claude/hooks/pre-commit` installed via `.claude/install.sh`
+
+## 📝 Documentation Maintenance Rules
+
+**Single Source of Truth**: Each fact appears in exactly ONE file
+
+### Content Ownership
+| File | Owns |
+|------|------|
+| README.md | Installation, basic usage |
+| DEVELOPMENT_RULES.md | Architecture, rules, conventions |
+| QUICK_REFERENCE.md | All commands, code snippets |
+| IMPLEMENTATION_TASKS.md | Current status, TODOs |
+
+### Rules
+- ✅ Keep each fact in ONE document only
+- ✅ Use cross-references via links
+- ✅ Update only the authoritative source
+- ❌ Don't duplicate information across files
+- ❌ Don't copy content instead of linking
+
+### Maintenance Protocol
+1. Quarterly review for duplicate content
+2. Update only authoritative location
+3. Add links instead of copying
+4. Remove duplicates when found
+5. Track changes in git history

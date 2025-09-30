@@ -9,6 +9,7 @@
       <excludeFolder url="file://$MODULE_DIR$/tests/Info" />
       <excludeFolder url="file://$MODULE_DIR$/tests/PDDL" />
       <excludeFolder url="file://$MODULE_DIR$/tests/results" />
+      <excludeFolder url="file://$MODULE_DIR$/.claude/logs" />
     </content>
     <orderEntry type="jdk" jdkName="action-learning" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
