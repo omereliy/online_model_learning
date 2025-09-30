@@ -66,3 +66,13 @@ Before starting any work:
 - [ ] Review relevant documentation for your task
 - [ ] Run `make test` to verify baseline
 - [ ] Use appropriate test approach (`make test` for stable, `pytest` for all)
+
+## 🛡️ Pre-Commit Test Protection
+
+A git pre-commit hook runs `make test` before every commit.
+- Blocks commits if tests fail (enforces TDD methodology)
+- Bypass if needed: `git commit --no-verify` (emergency only)
+- Check status: `python .claude/agents/test_guardian.py --status`
+- **Important**: Must be in `action-learning` conda environment for tests to pass
+
+Implementation: `.claude/hooks/pre-commit` installed via `.claude/install.sh`
