@@ -1,23 +1,39 @@
-# Integration Guide for External Repositories
+# Algorithm Integration Guide
 
-## Overview
-This guide explains how to integrate OLAM and ModelLearner into our unified framework.
+## BaseActionModelLearner Interface
 
-## Key Differences Between Approaches
+All algorithms must implement this abstract base class:
+
+```python
+class BaseActionModelLearner(ABC):
+    def select_action(self, state) -> Tuple[str, List[str]]
+    def observe(self, state, action, objects, success, next_state) -> None
+    def get_learned_model() -> Dict[str, Any]
+    def has_converged() -> bool
+```
+
+## Integration Pattern
+
+### 1. Create Adapter Class
+Extend `BaseActionModelLearner` and wrap external algorithm.
+
+### 2. Handle State/Action Conversion
+Convert between unified format and external format.
+
+### 3. Implement Required Methods
+Map external methods to interface methods.
+
+## Algorithm Specifics
 
 ### OLAM
-- **Strategy**: Learns from both successful and failed action executions
-- **Action Selection**: Uses precondition satisfaction rate
-- **Model Update**:
-  - Failed actions: Updates preconditions via `learn_failed_action_precondition()`
-  - Successful actions: Updates both preconditions and effects via `add_operator_precondition()` and `add_operator_effects()`
-- **Strengths**: Efficient exploration, handles uncertainty well, learns complete models
+- See [OLAM_interface.md](OLAM_interface.md)
+- Requires injective bindings
+- No negative preconditions
 
-### ModelLearner (Optimistic)
-- **Strategy**: Optimistic initialization with refinement
-- **Action Selection**: Plan-based using diverse planner
-- **Model Update**: Batch updates after plan execution
-- **Strengths**: Fast convergence when planning works
+### ModelLearner
+- See [ModelLearner_interface.md](ModelLearner_interface.md)
+- Requires lifted_dict YAML
+- Optimistic exploration
 
 ## Unified Interface Design
 

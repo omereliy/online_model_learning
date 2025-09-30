@@ -30,16 +30,23 @@ class ExperimentRunner:
     and result export.
     """
 
-    def __init__(self, config_path: str):
+    def __init__(self, config_path: str, verbose_debug: bool = False):
         """
         Initialize the experiment runner.
 
         Args:
             config_path: Path to YAML configuration file
+            verbose_debug: Enable detailed logging for validation/debugging
         """
         self.config_path = config_path
         self.config = self._load_config(config_path)
         self._validate_config()
+        self.verbose_debug = verbose_debug
+
+        # Setup verbose logging if requested
+        if self.verbose_debug:
+            logging.getLogger().setLevel(logging.DEBUG)
+            logger.info("VERBOSE DEBUG MODE ENABLED - Detailed logging active")
 
         # Set random seed if specified
         if 'seed' in self.config['experiment']:
@@ -242,12 +249,22 @@ class ExperimentRunner:
             # Get current state
             state = self.environment.get_state()
 
+            # Verbose debug: log hypothesis space info
+            if self.verbose_debug and iteration % 10 == 0:
+                self._log_hypothesis_space_info(iteration)
+
             try:
                 # Select action
                 action, objects = self.learner.select_action(state)
 
+                if self.verbose_debug:
+                    logger.debug(f"Iteration {iteration}: Selected {action}({','.join(objects)})")
+
                 # Execute action
                 success, runtime = self._execute_action(action, objects)
+
+                if self.verbose_debug:
+                    logger.debug(f"  Execution: {'SUCCESS' if success else 'FAILURE'} (runtime: {runtime:.3f}s)")
 
                 # Record metrics
                 self.metrics.record_action(
@@ -367,6 +384,45 @@ class ExperimentRunner:
             return self.learner.has_converged()
 
         return False
+
+    def _log_hypothesis_space_info(self, iteration: int) -> None:
+        """
+        Log detailed hypothesis space information for debugging.
+
+        Args:
+            iteration: Current iteration number
+        """
+        if not hasattr(self.learner, 'get_learned_model'):
+            return
+
+        model = self.learner.get_learned_model()
+        actions = model.get('actions', {})
+
+        # Count statistics
+        total_actions = len(actions)
+        with_certain = sum(1 for a in actions.values() if a['preconditions'].get('certain', []))
+        with_uncertain = sum(1 for a in actions.values() if a['preconditions'].get('uncertain', []))
+        unexplored = sum(1 for a in actions.values() if not a['preconditions'].get('certain', []) and not a['preconditions'].get('uncertain', []))
+
+        # For OLAM, check how many actions are filtered
+        filtered = 0
+        if hasattr(self.learner, 'learner') and hasattr(self.learner.learner, 'compute_not_executable_actionsJAVA'):
+            filtered = len(self.learner.learner.compute_not_executable_actionsJAVA())
+
+        logger.info(f"\n--- HYPOTHESIS SPACE (Iteration {iteration}) ---")
+        logger.info(f"Total actions: {total_actions}")
+        logger.info(f"Actions filtered as non-executable: {filtered}")
+        logger.info(f"Actions with certain preconditions: {with_certain}")
+        logger.info(f"Actions with uncertain preconditions: {with_uncertain}")
+        logger.info(f"Unexplored actions: {unexplored}")
+        logger.info(f"Hypothesis space reduction: {filtered}/{total_actions} = {(filtered/total_actions*100):.1f}% filtered")
+
+        # Sample a learned action for detail
+        for action_name, data in list(actions.items())[:1]:
+            if data['preconditions'].get('certain'):
+                logger.debug(f"Example learned action: {action_name}")
+                logger.debug(f"  Certain: {data['preconditions']['certain'][:3]}")
+                logger.debug(f"  Uncertain: {data['preconditions']['uncertain'][:3] if data['preconditions'].get('uncertain') else []}")
 
     def _handle_error(self, error: Exception, iteration: int) -> None:
         """
