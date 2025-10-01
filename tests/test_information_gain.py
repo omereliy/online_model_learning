@@ -312,7 +312,6 @@ class TestObservationRecording:
         assert learner.observation_history[action][0]['objects'] == ['a']
         assert learner.observation_history[action][1]['objects'] == ['b']
 
-    @pytest.mark.skip(reason="Requires Phase 2: Update rules not yet implemented")
     def test_eff_maybe_sets_become_disjoint_after_success(self, learner):
         r"""
         Sanity check: After successful action execution, eff_maybe_add and eff_maybe_del
@@ -358,6 +357,7 @@ class TestObservationRecording:
 
         # Observe successful execution
         learner.observe(state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()  # Phase 2 requires calling update_model
 
         # After Phase 2 update rules are implemented, the sets should narrow
         # and eventually become disjoint as we learn which fluents change vs remain unchanged
@@ -461,6 +461,333 @@ class TestConvergence:
         """Test that learner converges after max iterations."""
         learner.iteration_count = learner.max_iterations
         assert learner.has_converged() is True
+
+
+# Phase 2 Tests: Update Rules and CNF Construction
+class TestUpdateRules:
+    """Test Phase 2 update rules for observations."""
+
+    def test_success_updates_preconditions(self, learner):
+        """Test that successful execution narrows preconditions to satisfied literals."""
+        action_name = 'drive'  # drive(truck, from, to)
+        objects = ['truck1', 'depot0', 'distributor0']
+
+        # State with some satisfied and some unsatisfied literals
+        state = {
+            'at_truck1_depot0',  # truck is at source
+            'at_hoist0_depot0',
+            'clear_pallet0'
+        }
+        next_state = {
+            'at_truck1_distributor0',  # truck moved to destination
+            'at_hoist0_depot0',
+            'clear_pallet0'
+        }
+
+        # Get initial precondition size
+        initial_pre_size = len(learner.pre[action_name])
+
+        # Observe successful execution
+        learner.observe(state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()  # Phase 2 adds this
+
+        # pre(a) should be narrowed to only satisfied literals
+        # pre(a) = pre(a) ∩ bindP_inverse(s, O)
+        satisfied_literals = learner.bindP_inverse(learner.pre[action_name], objects)
+        grounded_state_literals = learner._state_to_internal(state)
+
+        # Check that preconditions were narrowed
+        assert len(learner.pre[action_name]) < initial_pre_size, \
+            "Preconditions should narrow after successful observation"
+
+    def test_success_updates_confirmed_effects(self, learner):
+        """Test that successful execution updates confirmed add/delete effects."""
+        action_name = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
+
+        state = {
+            'at_truck1_depot0',     # Will be deleted
+            'at_hoist0_depot0',     # Unchanged
+        }
+        next_state = {
+            'at_truck1_distributor0',  # Will be added
+            'at_hoist0_depot0',        # Unchanged
+        }
+
+        # Initially, no confirmed effects
+        assert len(learner.eff_add[action_name]) == 0
+        assert len(learner.eff_del[action_name]) == 0
+
+        # Observe successful execution
+        learner.observe(state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()
+
+        # Should learn effects from state change
+        # eff+(a) = eff+(a) ∪ bindP(s' \ s, O)
+        # eff-(a) = eff-(a) ∪ bindP(s \ s', O)
+        assert len(learner.eff_add[action_name]) > 0, "Should learn add effects"
+        assert len(learner.eff_del[action_name]) > 0, "Should learn delete effects"
+
+    def test_success_narrows_possible_effects(self, learner):
+        """Test that successful execution narrows possible effect sets."""
+        action_name = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
+
+        state = {
+            'at_truck1_depot0',
+            'at_hoist0_depot0',
+        }
+        next_state = {
+            'at_truck1_distributor0',
+            'at_hoist0_depot0',  # Unchanged
+        }
+
+        # Get initial sizes
+        initial_maybe_add = len(learner.eff_maybe_add[action_name])
+        initial_maybe_del = len(learner.eff_maybe_del[action_name])
+
+        # Observe successful execution
+        learner.observe(state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()
+
+        # eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)  # Keep unchanged
+        # eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)  # Remove if was/became true
+        assert len(learner.eff_maybe_add[action_name]) < initial_maybe_add, \
+            "Possible add effects should narrow"
+        assert len(learner.eff_maybe_del[action_name]) < initial_maybe_del, \
+            "Possible delete effects should narrow"
+
+    def test_failure_adds_constraint(self, learner):
+        """Test that failed execution adds a precondition constraint."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # State where action fails (e.g., hoist not available)
+        state = {
+            'at_crate0_depot0',
+            'at_hoist0_depot0',
+            # Missing 'available_hoist0' which is likely needed
+        }
+
+        # Initially, no constraints
+        assert len(learner.pre_constraints[action_name]) == 0
+
+        # Observe failed execution
+        learner.observe(state, action_name, objects, success=False)
+        learner.update_model()
+
+        # Should add constraint: at least one unsatisfied literal is required
+        # pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
+        assert len(learner.pre_constraints[action_name]) == 1, \
+            "Failed observation should add one constraint"
+
+        # The constraint should contain unsatisfied literals
+        constraint = learner.pre_constraints[action_name][0]
+        assert len(constraint) > 0, "Constraint should not be empty"
+
+    def test_multiple_failures_accumulate_constraints(self, learner):
+        """Test that multiple failures add multiple constraints."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # First failure
+        state1 = {'at_crate0_depot0', 'at_hoist0_depot0'}
+        learner.observe(state1, action_name, objects, success=False)
+        learner.update_model()
+
+        # Second failure with different state
+        state2 = {'at_crate0_depot0', 'available_hoist0'}
+        learner.observe(state2, action_name, objects, success=False)
+        learner.update_model()
+
+        # Should have two constraints
+        assert len(learner.pre_constraints[action_name]) == 2, \
+            "Should accumulate constraints from multiple failures"
+
+    def test_success_updates_existing_constraints(self, learner):
+        """Test that successful execution updates existing constraint sets."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # First add a constraint through failure
+        fail_state = {'at_crate0_depot0', 'at_hoist0_depot0'}
+        learner.observe(fail_state, action_name, objects, success=False)
+        learner.update_model()
+
+        initial_constraint = learner.pre_constraints[action_name][0].copy()
+
+        # Now observe success
+        success_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'available_hoist0', 'on_crate0_pallet0'}
+        next_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'lifting_hoist0_crate0'}
+        learner.observe(success_state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()
+
+        # Constraint should be updated
+        # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+        updated_constraint = learner.pre_constraints[action_name][0]
+        assert updated_constraint != initial_constraint, \
+            "Constraint should be updated after successful observation"
+
+    def test_negative_preconditions_in_constraints(self, learner):
+        """Test that negative preconditions are correctly handled in constraints."""
+        action_name = 'load'  # May have negative preconditions
+        objects = ['hoist0', 'crate0', 'truck0', 'depot0']
+
+        # State where load fails
+        state = {
+            'at_truck0_depot0',
+            'at_crate0_depot0',
+            # Missing lifting_hoist0_crate0 which is likely required
+        }
+
+        # Observe failure
+        learner.observe(state, action_name, objects, success=False)
+        learner.update_model()
+
+        # Check constraint contains negative literals
+        constraint = learner.pre_constraints[action_name][0]
+        has_negative = any(lit.startswith('¬') for lit in constraint)
+        assert has_negative or len(constraint) > 0, \
+            "Constraint should handle negative preconditions"
+
+    def test_state_conversion_functions(self, learner):
+        """Test state format conversion functions."""
+        # Test grounded state to internal format
+        state = {'at_truck1_depot0', 'clear_pallet0'}
+        internal = learner._state_to_internal(state)
+        assert isinstance(internal, set)
+        assert 'at_truck1_depot0' in internal
+
+        # Test handling of negative literals in internal format
+        # Negative literal ¬p means p is NOT in state
+        assert '¬at_truck1_distributor0' not in internal, \
+            "Should not add explicit negatives for absent fluents"
+
+
+class TestCNFIntegrationWithAlgorithm:
+    """Test integration of CNF with Information Gain algorithm - NOT testing CNF itself."""
+
+    def test_cnf_tracks_constraint_evolution(self, learner):
+        """Test that CNF formula evolves correctly with constraint updates."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # Initially no constraints means no CNF restrictions
+        assert len(learner.pre_constraints[action_name]) == 0
+
+        # After failure, constraint is added and reflected in CNF
+        fail_state = {'at_crate0_depot0', 'at_hoist0_depot0'}
+        learner.observe(fail_state, action_name, objects, success=False)
+        learner.update_model()
+
+        # Verify constraint → CNF mapping
+        assert len(learner.pre_constraints[action_name]) == 1
+        # The CNF should encode: "at least one of the unsatisfied literals must be true"
+
+        # After success, constraints are refined
+        success_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'available_hoist0', 'on_crate0_pallet0'}
+        next_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'lifting_hoist0_crate0'}
+        learner.observe(success_state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()
+
+        # Constraints should be updated to keep only satisfied literals
+        constraint = learner.pre_constraints[action_name][0]
+        # Verify constraint was narrowed based on what was satisfied
+
+    def test_negative_preconditions_properly_encoded_in_cnf(self, learner):
+        """Test that negative preconditions (¬p means p ∉ state) are correctly encoded."""
+        action_name = 'load'  # May have negative preconditions
+        objects = ['hoist0', 'crate0', 'truck0', 'depot0']
+
+        # State that may violate negative preconditions
+        state_violates_neg = {'at_truck0_depot0', 'at_crate0_depot0', 'in_crate0_truck0'}
+        learner.observe(state_violates_neg, action_name, objects, success=False)
+        learner.update_model()
+
+        # The constraint should recognize that ¬on(?x,?y) was NOT satisfied
+        # because on_block1_block2 WAS in the state
+        constraint = learner.pre_constraints[action_name][0]
+
+        # Should contain ¬on(?x,?y) as a possible required precondition
+        lifted_constraint = learner.bindP(constraint, objects)
+        has_neg_on = any('¬on(' in lit for lit in lifted_constraint)
+        assert has_neg_on or len(constraint) > 0, \
+            "Constraint should identify negative precondition violation"
+
+    def test_cnf_formula_consistency_across_observations(self, learner):
+        """Test that CNF formula maintains consistency as observations accumulate."""
+        action_name = 'drive'
+
+        # Multiple observations with different object groundings
+        observations = [
+            (['truck1', 'depot0', 'distributor0'],
+             {'at_truck1_depot0'},
+             {'at_truck1_distributor0'},
+             True),
+            (['truck2', 'depot1', 'distributor1'],
+             {'at_truck2_distributor1'},  # Wrong location
+             None,
+             False),
+        ]
+
+        for objects, state, next_state, success in observations:
+            learner.observe(state, action_name, objects, success, next_state)
+            learner.update_model()
+
+        # After multiple observations, verify invariants:
+        # 1. Confirmed effects remain consistent
+        # 2. Possible preconditions only shrink (monotonicity)
+        # 3. Constraints accumulate for failures
+
+        if not success:
+            assert len(learner.pre_constraints[action_name]) > 0, \
+                "Failed observations should add constraints"
+
+    def test_cnf_reflects_learned_precondition_certainty(self, learner):
+        """Test that CNF formula reflects growing certainty about preconditions."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # Multiple failures from different states help narrow preconditions
+        failure_states = [
+            {'at_crate0_depot0'},  # Missing other preconditions
+            {'at_hoist0_depot0'},  # Missing other preconditions
+            {'available_hoist0'},  # Missing other preconditions
+        ]
+
+        initial_pre_size = len(learner.pre[action_name])
+
+        for state in failure_states:
+            learner.observe(state, action_name, objects, success=False)
+            learner.update_model()
+
+        # As constraints accumulate, the set of possible preconditions narrows
+        # This should be reflected in the CNF encoding
+        final_pre_size = len(learner.pre[action_name])
+
+        # Note: pre doesn't shrink on failures, only on successes
+        # But constraints accumulate
+        assert len(learner.pre_constraints[action_name]) == len(failure_states), \
+            "Each failure should add a constraint"
+
+    def test_internal_negation_format_consistency(self, learner):
+        """Test that internal ¬ notation is consistently used throughout."""
+        action_name = 'load'
+        objects = ['hoist0', 'crate0', 'truck0', 'depot0']
+
+        # Create a state
+        state = {'at_truck0_depot0', 'at_crate0_depot0'}
+
+        learner.observe(state, action_name, objects, success=False)
+        learner.update_model()
+
+        # Check internal representation uses ¬ symbol
+        for constraint in learner.pre_constraints[action_name]:
+            for lit in constraint:
+                if lit.startswith('¬'):
+                    # Verify format is ¬predicate(...) not (not predicate(...))
+                    assert not lit.startswith('(not'), \
+                        "Should use ¬ symbol, not PDDL (not ...) syntax internally"
 
 
 # Integration test

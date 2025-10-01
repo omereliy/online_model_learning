@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .base_learner import BaseActionModelLearner
 from src.core.pddl_handler import PDDLHandler
+from src.core.cnf_manager import CNFManager
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,9 @@ class InformationGainLearner(BaseActionModelLearner):
         # Track observations for each action schema
         self.observation_history: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
+        # CNF managers for each action (Phase 2)
+        self.cnf_managers: Dict[str, CNFManager] = {}
+
         # Initialize action models
         self._initialize_action_models()
 
@@ -80,6 +84,9 @@ class InformationGainLearner(BaseActionModelLearner):
             self.eff_del[action_name] = set()  # No confirmed delete effects
             self.eff_maybe_add[action_name] = La.copy()  # All possible add effects
             self.eff_maybe_del[action_name] = La.copy()  # All possible delete effects
+
+            # Initialize CNF manager for this action (Phase 2)
+            self.cnf_managers[action_name] = CNFManager()
 
             logger.debug(f"Initialized action {action_name} with |La|={len(La)}")
 
@@ -395,6 +402,245 @@ class InformationGainLearner(BaseActionModelLearner):
 
         logger.debug(f"Recorded observation {self.observation_count}: {action}({','.join(objects)}) - {'success' if success else 'failure'}")
 
+    def update_model(self) -> None:
+        """
+        Update action models based on the latest observation (Phase 2).
+
+        This method processes the most recent observation and updates the
+        action model according to the Information Gain algorithm update rules.
+        """
+        # Get the most recent observation across all actions
+        latest_action = None
+        latest_obs = None
+        latest_time = -1
+
+        for action_name, obs_list in self.observation_history.items():
+            if obs_list and obs_list[-1]['iteration'] > latest_time:
+                latest_time = obs_list[-1]['iteration']
+                latest_action = action_name
+                latest_obs = obs_list[-1]
+
+        if not latest_obs:
+            return
+
+        # Extract observation details
+        action = latest_action
+        objects = latest_obs['objects']
+        success = latest_obs['success']
+        state = latest_obs['state']
+        next_state = latest_obs.get('next_state')
+
+        if success:
+            self._update_success(action, objects, state, next_state)
+        else:
+            self._update_failure(action, objects, state)
+
+        # Rebuild CNF formula after updates
+        self._build_cnf_formula(action)
+
+    def _update_success(self, action: str, objects: List[str],
+                       state: Set[str], next_state: Set[str]) -> None:
+        r"""
+        Update model after successful action execution.
+
+        According to algorithm:
+        - pre(a) = pre(a) ∩ bindP⁻¹(s, O)
+        - eff+(a) = eff+(a) ∪ bindP(s' \ s, O)
+        - eff-(a) = eff-(a) ∪ bindP(s \ s', O)
+        - eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)
+        - eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)
+        - pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+        """
+        # Convert state to internal format
+        state_internal = self._state_to_internal(state)
+        next_state_internal = self._state_to_internal(next_state)
+
+        # Get satisfied literals in state (considering negative literals)
+        satisfied_in_state = self._get_satisfied_literals(action, state_internal, objects)
+
+        # Update preconditions: keep only satisfied literals
+        # pre(a) = pre(a) ∩ bindP⁻¹(s, O)
+        self.pre[action] = self.pre[action].intersection(satisfied_in_state)
+
+        # Update effects based on state changes
+        # eff+(a) = eff+(a) ∪ bindP(s' \ s, O)
+        added_fluents = next_state_internal - state_internal
+        if added_fluents:
+            lifted_adds = self.bindP(added_fluents, objects)
+            self.eff_add[action] = self.eff_add[action].union(lifted_adds)
+
+        # eff-(a) = eff-(a) ∪ bindP(s \ s', O)
+        deleted_fluents = state_internal - next_state_internal
+        if deleted_fluents:
+            lifted_dels = self.bindP(deleted_fluents, objects)
+            self.eff_del[action] = self.eff_del[action].union(lifted_dels)
+
+        # Update possible effects
+        # eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)
+        unchanged_fluents = state_internal.intersection(next_state_internal)
+        if unchanged_fluents:
+            lifted_unchanged = self.bindP(unchanged_fluents, objects)
+            # Possible add effects: must be in unchanged fluents
+            # But we need to intersect with lifted space, not grounded
+            # So we keep literals that COULD produce these unchanged fluents
+            possible_adds = set()
+            for lit in self.eff_maybe_add[action]:
+                # Check if this literal could produce an unchanged fluent
+                grounded = self.bindP_inverse({lit}, objects)
+                if any(g in unchanged_fluents for g in grounded):
+                    possible_adds.add(lit)
+            self.eff_maybe_add[action] = possible_adds
+        else:
+            # No unchanged fluents means nothing can be a conditional add
+            self.eff_maybe_add[action] = set()
+
+        # eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)
+        all_true_fluents = state_internal.union(next_state_internal)
+        if all_true_fluents:
+            lifted_all_true = self.bindP(all_true_fluents, objects)
+            # Remove from possible deletes anything that was true before or after
+            self.eff_maybe_del[action] = self.eff_maybe_del[action] - lifted_all_true
+
+        # Update constraint sets
+        # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+        updated_constraints = []
+        for constraint in self.pre_constraints[action]:
+            # Keep only literals from constraint that were satisfied
+            updated = constraint.intersection(satisfied_in_state)
+            if updated:  # Don't add empty constraints
+                updated_constraints.append(updated)
+        self.pre_constraints[action] = updated_constraints
+
+        logger.debug(f"Updated {action} after success: |pre|={len(self.pre[action])}, "
+                    f"|eff+|={len(self.eff_add[action])}, |eff-|={len(self.eff_del[action])}")
+
+    def _update_failure(self, action: str, objects: List[str], state: Set[str]) -> None:
+        r"""
+        Update model after failed action execution.
+
+        According to algorithm:
+        - pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
+        """
+        # Convert state to internal format
+        state_internal = self._state_to_internal(state)
+
+        # Get satisfied literals in state
+        satisfied_in_state = self._get_satisfied_literals(action, state_internal, objects)
+
+        # Add new constraint: unsatisfied literals from pre(a)
+        # pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
+        unsatisfied = self.pre[action] - satisfied_in_state
+
+        if unsatisfied:
+            self.pre_constraints[action].append(unsatisfied)
+            logger.debug(f"Added constraint for {action}: {len(unsatisfied)} unsatisfied literals")
+        else:
+            # This shouldn't happen - if all preconditions were satisfied, action should succeed
+            logger.warning(f"Failed action {action} had all preconditions satisfied - possible environment issue")
+
+    def _state_to_internal(self, state: Set[str]) -> Set[str]:
+        """
+        Convert state to internal format.
+
+        The state contains grounded fluents that are true.
+        Internal format uses the same representation (no conversion needed for positive fluents).
+        Negative literals (¬p) are NOT explicitly added for absent fluents.
+
+        Args:
+            state: Set of grounded fluents that are true
+
+        Returns:
+            Set of fluents in internal format
+        """
+        # For now, internal format is the same as input
+        # We don't add explicit negatives for absent fluents
+        return state.copy()
+
+    def _get_satisfied_literals(self, action: str, state: Set[str], objects: List[str]) -> Set[str]:
+        """
+        Get all literals from pre(a) that are satisfied in the given state.
+
+        A literal is satisfied if:
+        - Positive literal p: p ∈ state
+        - Negative literal ¬p: p ∉ state
+
+        Args:
+            action: Action name
+            state: Set of true grounded fluents
+            objects: Object binding for the action
+
+        Returns:
+            Set of satisfied lifted literals
+        """
+
+        satisfied = set()
+
+        for literal in self.pre[action]:
+            # Check if literal is negative
+            if literal.startswith('¬'):
+                # Negative literal: ¬p
+                # Remove negation symbol and ground it
+                positive_literal = literal[1:]
+                grounded = self.bindP_inverse({positive_literal}, objects)
+
+                # Satisfied if NONE of the grounded versions are in state
+                if not any(g in state for g in grounded):
+                    satisfied.add(literal)
+            else:
+                # Positive literal: p
+                grounded = self.bindP_inverse({literal}, objects)
+
+                # Satisfied if ANY of the grounded versions are in state
+                if any(g in state for g in grounded):
+                    satisfied.add(literal)
+
+        return satisfied
+
+    def _build_cnf_formula(self, action: str) -> CNFManager:
+        """
+        Build CNF formula from constraint sets for an action.
+
+        According to algorithm:
+        cnf_pre?(a) = ⋀(⋁xl) for B ∈ pre?(a), l ∈ B
+
+        Each constraint set becomes a clause (disjunction).
+
+        Args:
+            action: Action name
+
+        Returns:
+            CNF manager with the formula
+        """
+        cnf = self.cnf_managers[action]
+
+        # Clear existing clauses
+        cnf.cnf.clauses = []
+        cnf.fluent_to_var = {}
+        cnf.var_to_fluent = {}
+        cnf.next_var = 1
+
+        # Build CNF from constraints
+        for constraint_set in self.pre_constraints[action]:
+            if not constraint_set:
+                continue
+
+            # Each constraint set becomes a clause
+            clause = []
+            for literal in constraint_set:
+                if literal.startswith('¬'):
+                    # Negative literal: add as negated variable
+                    positive = literal[1:]
+                    clause.append('-' + positive)
+                else:
+                    # Positive literal
+                    clause.append(literal)
+
+            if clause:
+                cnf.add_clause(clause)
+
+        logger.debug(f"Built CNF for {action}: {len(cnf.cnf.clauses)} clauses")
+        return cnf
+
     def get_learned_model(self) -> Dict[str, Any]:
         """
         Export the current learned model.
@@ -481,6 +727,7 @@ class InformationGainLearner(BaseActionModelLearner):
         self.eff_maybe_add.clear()
         self.eff_maybe_del.clear()
         self.observation_history.clear()
+        self.cnf_managers.clear()
 
         # Reinitialize
         self._initialize_action_models()
