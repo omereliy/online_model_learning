@@ -9,7 +9,13 @@ Building experiment framework to compare three online action model learning algo
 ## Quick Start
 **See [CLAUDE.md](../CLAUDE.md) for navigation and [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for project rules.**
 
-## Current Status (Updated: September 28, 2025 - 5:20 PM)
+## Current Status (Updated: October 1, 2025)
+
+### 🔧 Recent CI/CD Fixes
+- **NumPy Version**: Updated to support 2.x (was restricted to <2.0.0)
+- **VAL Build**: Fixed CMake build process in CI workflow
+- **ModelLearner**: Repository unavailable - commented out until fixed
+- **Error Visibility**: Removed `continue-on-error` flags to expose real failures
 
 ### ✅ Completed Components
 
@@ -62,11 +68,13 @@ Building experiment framework to compare three online action model learning algo
 3. Add entropy-based action selection
 4. Test with negative precondition domains
 
-### Phase 2: ModelLearner Adapter
-1. Create `OptimisticAdapter` class
-2. Handle lifted_dict YAML requirements
-3. Implement optimistic exploration strategy
-4. Validate against ModelLearner paper
+### Phase 2: ModelLearner Adapter (BLOCKED)
+⚠️ **Blocked**: Repository https://github.com/kcleung/ModelLearner.git not accessible
+1. Find correct repository URL or alternative implementation
+2. Create `OptimisticAdapter` class
+3. Handle lifted_dict YAML requirements
+4. Implement optimistic exploration strategy
+5. Validate against ModelLearner paper
 
 ### Phase 3: Comparative Experiments
 1. Create experiment configs for all algorithms
@@ -84,10 +92,10 @@ Building experiment framework to compare three online action model learning algo
 See [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for complete directory structure.
 
 ## External Dependencies
-- OLAM: `/home/omer/projects/OLAM/`
-- ModelLearner: `/home/omer/projects/ModelLearner/`
-- Fast Downward: `/home/omer/projects/fast-downward/`
-- VAL: `/home/omer/projects/Val/`
+- OLAM: `/home/omer/projects/OLAM/` ✅
+- ModelLearner: `/home/omer/projects/ModelLearner/` ⚠️ Repository unavailable
+- Fast Downward: `/home/omer/projects/fast-downward/` ✅
+- VAL: `/home/omer/projects/Val/` ✅
 
 ## Documentation Index
 See [CLAUDE.md](../CLAUDE.md) for complete documentation navigation.

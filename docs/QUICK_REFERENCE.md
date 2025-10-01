@@ -2,6 +2,24 @@
 
 ## Commands
 
+### Setup Commands
+```bash
+# Using pip (CI/Docker compatible)
+pip install -r requirements.txt
+pip install -r requirements-test.txt  # For testing
+
+# Using conda (local development)
+conda create -n action-learning python=3.9
+conda activate action-learning
+pip install -r requirements.txt
+
+# Run single experiment
+python -c "from src.experiments.runner import ExperimentRunner; runner = ExperimentRunner('configs/blocksworld.yaml'); results = runner.run()"
+
+# SLURM submission
+sbatch scripts/run_experiments.sh
+```
+
 ### Testing Commands
 ```bash
 # Curated test suite (165 tests, 100% pass rate)
@@ -72,8 +90,8 @@ mapper.fluent_to_variable('on_a_b') → 1
 # OLAM format: Set of strings
 {'on(a,b)', 'clear(c)', 'handempty()'}
 
-# ModelLearner format: Dict
-{"domain": {...}, "problem": {"init": {...}}}
+# ModelLearner format: Dict (when available)
+# {"domain": {...}, "problem": {"init": {...}}}
 ```
 
 ### CNF Formula Manipulation with Lifted Support
@@ -119,9 +137,10 @@ sys.path.append('/home/omer/projects/OLAM')
 from OLAM.Learner import Learner
 from Util.PddlParser import PddlParser
 
-# ModelLearner
-sys.path.append('/home/omer/projects/ModelLearner/src')
-from model_learner.ModelLearnerLifted import ModelLearnerLifted
+# ModelLearner (currently unavailable - repo not found)
+# TODO: Update when correct repository URL is available
+# sys.path.append('/home/omer/projects/ModelLearner/src')
+# from model_learner.ModelLearnerLifted import ModelLearnerLifted
 ```
 
 ### PySAT Import Pattern

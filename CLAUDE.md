@@ -46,7 +46,7 @@
 | **Experiment Runner** | `src/experiments/runner.py` | ✅ Complete |
 | **Metrics Collector** | `src/experiments/metrics.py` | ✅ Complete |
 | **Info Gain Learner** | `src/algorithms/information_gain.py` | ⏳ TODO |
-| **ModelLearner Adapter** | `src/algorithms/optimistic_adapter.py` | ⏳ TODO |
+| **ModelLearner Adapter** | `src/algorithms/optimistic_adapter.py` | ⏳ TODO (blocked - repo unavailable) |
 | **PDDL Environment** | `src/environments/pddl_environment.py` | ⏳ TODO |
 
 ## 🔗 External Resources
@@ -54,7 +54,7 @@
 | Resource | Path |
 |----------|------|
 | **OLAM** | `/home/omer/projects/OLAM/` |
-| **ModelLearner** | `/home/omer/projects/ModelLearner/` |
+| **ModelLearner** | `/home/omer/projects/ModelLearner/` (⚠️ Repo unavailable) |
 | **Fast Downward** | `/home/omer/projects/fast-downward/` |
 | **VAL Validator** | `/home/omer/projects/Val/` |
 

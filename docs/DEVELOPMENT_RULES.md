@@ -65,7 +65,9 @@ class BaseActionModelLearner(ABC):
 - Handle state format conversion
 
 **ModelLearner Adapter** (`src/algorithms/optimistic_adapter.py`):
-- Import: `from model_learner.ModelLearnerLifted import ModelLearnerLifted`
+- **Status**: Repository currently unavailable (https://github.com/kcleung/ModelLearner.git not found)
+- **TODO**: Find correct repository URL or alternative implementation
+- When available: Import from `model_learner.ModelLearnerLifted`
 - Key method: `learning_step_all_actions_updated()`
 - Requires lifted_dict YAML file
 
@@ -119,27 +121,7 @@ cnf_settings:
 - `integration_guide.md`: Adapter implementation guide
 
 ### 2. Import Statements
-```python
-# Unified Planning imports
-from unified_planning.io import PDDLReader
-from unified_planning.shortcuts import OneshotPlanner
-from unified_planning.engines import SequentialSimulator
-
-# PySAT imports
-from pysat.solvers import Minisat22
-from pysat.formula import CNF
-
-# OLAM imports
-import sys
-sys.path.append('/home/omer/projects/OLAM')
-from OLAM.Learner import Learner
-from Util.PddlParser import PddlParser
-
-# ModelLearner imports
-sys.path.append('/home/omer/projects/ModelLearner/src')
-from model_learner.ModelLearnerLifted import ModelLearnerLifted
-from model_learner.parser import Parser
-```
+For import patterns and examples, see [QUICK_REFERENCE.md](QUICK_REFERENCE.md#import-patterns)
 
 ### 3. Common Pitfalls to Avoid
 - **Don't** modify external repositories (OLAM, ModelLearner)
@@ -169,11 +151,6 @@ from model_learner.parser import Parser
 #### Test Commands
 For all available test commands, see [QUICK_REFERENCE.md](QUICK_REFERENCE.md#testing-commands)
 
-Key test approaches:
-- `make test` - Curated suite (165 tests, 100% pass rate) - Use for validation
-- `pytest tests/` - All tests (196 tests) - Use for development
-- `make test-quick` - Quick subset - Use during active development
-
 #### Test Failure Protocol
 If tests fail:
 1. **STOP** - Do not proceed or mark complete
@@ -197,25 +174,8 @@ If tests fail:
 3. Wait for explicit user approval (no auto-approve)
 4. Only then update and commit the documentation
 
-## Quick Start Commands
-
-### Setup Environment
-```bash
-conda env create -f environment.yml
-conda activate online_model_learning
-```
-
-### Run Single Experiment
-```python
-from src.experiments.runner import ExperimentRunner
-runner = ExperimentRunner('configs/blocksworld.yaml')
-results = runner.run()
-```
-
-### SLURM Submission
-```bash
-sbatch scripts/run_experiments.sh
-```
+## Quick Start
+For setup commands and code examples, see [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
 
 ## File Priorities for Implementation
 
@@ -241,24 +201,29 @@ sbatch scripts/run_experiments.sh
 ## Required Dependencies
 ```
 # Core framework
-unified-planning[pyperplan,tamer]
-python-sat[pblib,aiger]
+unified-planning[fast-downward,tamer]>=1.2.0
+python-sat>=1.8.dev22
 
 # Scientific computing
-numpy
-pandas
-matplotlib
-scipy
+numpy>=1.21.0,<3.0.0  # Updated to support numpy 2.x
+pandas>=1.3.0
+matplotlib>=3.5.0
+scipy>=1.7.0
 
 # Utilities
-pyyaml
-tqdm
+pyyaml>=6.0
+tqdm>=4.65.0
+typing-extensions>=4.0.0
+
+# Optional
+pyeda>=0.28.0  # For formula minimization
 ```
 
 ## External Tool Paths
-- OLAM: `/home/omer/projects/OLAM/`
-- ModelLearner: `/home/omer/projects/ModelLearner/`
-- Val validator: `/home/omer/projects/Val/validate`
+- OLAM: `/home/omer/projects/OLAM/` (Available)
+- ModelLearner: `/home/omer/projects/ModelLearner/` (Repository unavailable - needs fix)
+- Fast Downward: `/home/omer/projects/fast-downward/`
+- Val validator: `/home/omer/projects/Val/`
 - PDDL domains: `/home/omer/projects/online_model_learning/benchmarks/`
 
 ## CNF/SAT Specific Rules
@@ -344,25 +309,7 @@ The project maintains two test execution approaches:
 5. **Reproducibility**: Exact same environment for all developers
 
 ### Docker Commands
-```bash
-# Build all Docker images
-make docker-build
-
-# Run curated tests in Docker (recommended)
-make docker-test
-
-# Quick tests without dependencies
-make docker-test-quick
-
-# Interactive development shell
-make docker-shell
-
-# Run experiments in container
-make docker-experiment
-
-# Jupyter notebook for analysis
-make docker-notebook
-```
+See [QUICK_REFERENCE.md](QUICK_REFERENCE.md#docker-commands) for all Docker commands.
 
 ### Docker Architecture
 - **Multi-stage builds**: Optimized image sizes

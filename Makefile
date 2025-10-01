@@ -18,12 +18,12 @@ help:
 # Quick test of critical functionality
 test-quick:
 	@echo "Running quick critical tests..."
-	@python scripts/run_test_suite.py --quick
+	@python3 scripts/run_test_suite.py --quick
 
 # Run full test suite
 test-full:
 	@echo "Running complete test suite..."
-	@python scripts/run_test_suite.py
+	@python3 scripts/run_test_suite.py
 
 # Default test target runs full suite
 test: test-full
@@ -31,21 +31,21 @@ test: test-full
 # Test specific modules
 test-metrics:
 	@echo "Testing metrics module..."
-	@python -m pytest tests/test_metrics.py -v
+	@python3 -m pytest tests/test_metrics.py -v
 
 test-integration:
 	@echo "Running integration tests..."
-	@python -m pytest tests/test_experiment_integration.py -v
+	@python3 -m pytest tests/test_experiment_integration.py -v
 
 # Run a quick experiment
 run-experiment:
 	@echo "Running quick mock experiment..."
-	@python scripts/test_mock_experiment.py
+	@python3 scripts/test_mock_experiment.py
 
 # Analyze results
 analyze:
 	@echo "Analyzing latest experiment results..."
-	@python scripts/analyze_results.py --latest
+	@python3 scripts/analyze_results.py --latest
 
 # Clean generated files
 clean:
@@ -129,22 +129,22 @@ docker-clean:
 # Code coverage commands
 coverage:
 	@echo "Running test coverage analysis..."
-	@python scripts/simple_coverage_report.py
+	@python3 scripts/simple_coverage_report.py
 
 coverage-detailed:
 	@echo "Running detailed coverage analysis (requires coverage package)..."
-	@python scripts/run_coverage.py
+	@python3 scripts/run_coverage.py
 
 coverage-report: coverage
 
 # Performance benchmarking
 benchmark:
 	@echo "Running performance benchmarks..."
-	@python scripts/benchmark_performance.py --domains blocksworld gripper logistics rover depots --repetitions 10
+	@python3 scripts/benchmark_performance.py --domains blocksworld gripper logistics rover depots --repetitions 10
 
 benchmark-quick:
 	@echo "Running quick performance benchmark..."
-	@python scripts/benchmark_performance.py --domains blocksworld gripper --repetitions 3
+	@python3 scripts/benchmark_performance.py --domains blocksworld gripper --repetitions 3
 
 # CI/CD commands
 ci-local:
