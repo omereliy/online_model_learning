@@ -85,10 +85,11 @@ COPY . /workspace/
 # Clone external repositories (OLAM and ModelLearner)
 WORKDIR /opt
 RUN git clone https://github.com/LamannaLeonardo/OLAM.git || true
-RUN git clone https://github.com/kcleung/ModelLearner.git || true
+# ModelLearner repo not accessible - commenting out until fixed
+# RUN git clone https://github.com/kcleung/ModelLearner.git || true
 
 # Add external repos to Python path
-ENV PYTHONPATH="/opt/OLAM:/opt/ModelLearner/src:${PYTHONPATH}"
+ENV PYTHONPATH="/opt/OLAM:${PYTHONPATH}"
 
 # Return to workspace
 WORKDIR /workspace
@@ -130,10 +131,11 @@ COPY scripts/ /app/scripts/
 # Clone external repositories
 WORKDIR /opt
 RUN git clone https://github.com/LamannaLeonardo/OLAM.git || true
-RUN git clone https://github.com/kcleung/ModelLearner.git || true
+# ModelLearner repo not accessible - commenting out until fixed
+# RUN git clone https://github.com/kcleung/ModelLearner.git || true
 
 # Add to Python path
-ENV PYTHONPATH="/opt/OLAM:/opt/ModelLearner/src:/app:${PYTHONPATH}"
+ENV PYTHONPATH="/opt/OLAM:/app:${PYTHONPATH}"
 
 WORKDIR /app
 

@@ -8,6 +8,12 @@ args:
 
 # Task Execution Protocol
 
+## Phase 0: Complexity Assessment
+If task is large/ambiguous:
+- Break into subtasks
+- Propose phased implementation
+- Ask which subtask to tackle first
+
 ## Phase 1: Context Validation
 Load and verify project context:
 1. Read @CLAUDE.md - project overview and conventions

@@ -100,7 +100,6 @@ jobs:
       - name: Run integration tests in Docker
         run: |
           docker-compose run test
-        continue-on-error: true
 
       - name: Clean up Docker
         if: always()
@@ -146,10 +145,14 @@ jobs:
       - name: Install VAL
         run: |
           if [ ! -d "$HOME/VAL" ]; then
+            sudo apt-get update && sudo apt-get install -y flex bison
             cd $HOME
             git clone https://github.com/KCL-Planning/VAL.git
             cd VAL
-            make
+            mkdir build && cd build
+            cmake -DCMAKE_BUILD_TYPE=Release ..
+            make -j$(nproc)
+            sudo make install
           fi
           echo "VAL_PATH=$HOME/VAL/bin" >> $GITHUB_ENV
           echo "$HOME/VAL/bin" >> $GITHUB_PATH
@@ -158,8 +161,9 @@ jobs:
         run: |
           cd $HOME
           git clone https://github.com/LamannaLeonardo/OLAM.git || true
-          git clone https://github.com/kcleung/ModelLearner.git || true
-          echo "PYTHONPATH=$HOME/OLAM:$HOME/ModelLearner/src:$PYTHONPATH" >> $GITHUB_ENV
+          # ModelLearner repo not accessible - commenting out until fixed
+          # git clone https://github.com/kcleung/ModelLearner.git || true
+          echo "PYTHONPATH=$HOME/OLAM:$PYTHONPATH" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         run: |
@@ -170,7 +174,6 @@ jobs:
       - name: Run all tests
         run: |
           pytest tests/ -v --tb=short --timeout=300
-        continue-on-error: true
 
   # Build and test Docker images
   docker-build:

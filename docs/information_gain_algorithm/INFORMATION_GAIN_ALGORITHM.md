@@ -387,4 +387,3 @@ class InformationGainLearner:
 - Address injective binding problem using equality predicates
 - Implement proof of correctness for exported models
 - Analyze worst-case learning bounds
-- Extend to conditional effects and numeric fluents
