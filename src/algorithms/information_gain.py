@@ -42,7 +42,8 @@ class InformationGainLearner(BaseActionModelLearner):
             max_iterations: Maximum learning iterations
             **kwargs: Additional parameters
         """
-        logger.info(f"Initializing Information Gain learner: domain={domain_file}, problem={problem_file}")
+        logger.info(
+            f"Initializing Information Gain learner: domain={domain_file}, problem={problem_file}")
         logger.debug(f"Configuration: max_iterations={max_iterations}, kwargs={kwargs}")
 
         super().__init__(domain_file, problem_file, **kwargs)
@@ -53,8 +54,9 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug("Parsing PDDL domain and problem files")
         self.pddl_handler = PDDLHandler()
         self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
-        logger.debug(f"PDDL parsing complete: {len(self.pddl_handler._lifted_actions)} lifted actions, "
-                    f"{len(self.pddl_handler.problem.fluents)} fluents")
+        logger.debug(
+            f"PDDL parsing complete: {len(self.pddl_handler._lifted_actions)} lifted actions, "
+            f"{len(self.pddl_handler.problem.fluents)} fluents")
 
         # Action model state variables (per action schema)
         # Structure: Dict[action_name, data]
@@ -83,7 +85,8 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Get all lifted actions from domain
         for action_name, action in self.pddl_handler._lifted_actions.items():
-            logger.debug(f"Processing action: {action_name}, parameters: {[p.name for p in action.parameters]}")
+            logger.debug(
+                f"Processing action: {action_name}, parameters: {[p.name for p in action.parameters]}")
 
             # Get La: all parameter-bound literals for this action
             La = self._get_parameter_bound_literals(action_name)
@@ -100,7 +103,8 @@ class InformationGainLearner(BaseActionModelLearner):
             # Initialize CNF manager for this action (Phase 2)
             self.cnf_managers[action_name] = CNFManager()
 
-            logger.info(f"Initialized action '{action_name}': |La|={len(La)}, |pre|={len(self.pre[action_name])}")
+            logger.info(
+                f"Initialized action '{action_name}': |La|={len(La)}, |pre|={len(self.pre[action_name])}")
 
     def _get_parameter_bound_literals(self, action_name: str) -> Set[str]:
         """
@@ -126,7 +130,7 @@ class InformationGainLearner(BaseActionModelLearner):
         num_params = len(action.parameters)
         param_letters = 'xyzuvwpqrst'
         param_names = [f"?{param_letters[i]}" if i < len(param_letters) else f"?p{i}"
-                      for i in range(num_params)]
+                       for i in range(num_params)]
 
         # For each predicate in the domain, generate all valid lifted literals
         for fluent in self.pddl_handler.problem.fluents:
@@ -144,7 +148,8 @@ class InformationGainLearner(BaseActionModelLearner):
 
                 # Generate combinations with repetition allowed
                 for combo_length in range(1, min(pred_arity + 1, num_params + 1)):
-                    for combo in itertools.combinations_with_replacement(param_names[:num_params], combo_length):
+                    for combo in itertools.combinations_with_replacement(
+                            param_names[:num_params], combo_length):
                         if len(combo) == pred_arity:
                             # Create positive literal
                             literal = f"{pred_name}({','.join(combo)})"
@@ -270,7 +275,8 @@ class InformationGainLearner(BaseActionModelLearner):
                 if param_idx < len(objects):
                     grounded_params.append(objects[param_idx])
                 else:
-                    logger.warning(f"Parameter {param} index {param_idx} out of bounds for objects {objects}")
+                    logger.warning(
+                        f"Parameter {param} index {param_idx} out of bounds for objects {objects}")
                     grounded_params.append(param)  # Keep original if error
             else:
                 # Already grounded
@@ -388,7 +394,8 @@ class InformationGainLearner(BaseActionModelLearner):
         if self.pddl_handler._grounded_actions:
             action, binding = self.pddl_handler._grounded_actions[0]
             objects = [obj.name for obj in binding.values()] if binding else []
-            logger.info(f"Selected action: {action.name}({','.join(objects)}) [iteration {self.iteration_count}]")
+            logger.info(
+                f"Selected action: {action.name}({','.join(objects)}) [iteration {self.iteration_count}]")
             return action.name, objects
 
         # Fallback
@@ -416,10 +423,12 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         self.observation_count += 1
 
-        logger.info(f"Observation {self.observation_count}: {action}({','.join(objects)}) - {'SUCCESS' if success else 'FAILURE'}")
+        logger.info(
+            f"Observation {self.observation_count}: {action}({','.join(objects)}) - {'SUCCESS' if success else 'FAILURE'}")
         logger.debug(f"  State size: {len(state) if isinstance(state, (set, list)) else 'N/A'}")
         if success and next_state:
-            logger.debug(f"  Next state size: {len(next_state) if isinstance(next_state, (set, list)) else 'N/A'}")
+            logger.debug(
+                f"  Next state size: {len(next_state) if isinstance(next_state, (set, list)) else 'N/A'}")
 
         # Record observation
         observation = {
@@ -465,7 +474,8 @@ class InformationGainLearner(BaseActionModelLearner):
         state = latest_obs['state']
         next_state = latest_obs.get('next_state')
 
-        logger.info(f"Updating model for action '{action}' based on {'success' if success else 'failure'} observation")
+        logger.info(
+            f"Updating model for action '{action}' based on {'success' if success else 'failure'} observation")
 
         if success:
             self._update_success(action, objects, state, next_state)
@@ -478,7 +488,7 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.info(f"Model update complete for '{action}'")
 
     def _update_success(self, action: str, objects: List[str],
-                       state: Set[str], next_state: Set[str]) -> None:
+                        state: Set[str], next_state: Set[str]) -> None:
         r"""
         Update model after successful action execution.
 
@@ -495,7 +505,8 @@ class InformationGainLearner(BaseActionModelLearner):
         # Convert state to internal format
         state_internal = self._state_to_internal(state)
         next_state_internal = self._state_to_internal(next_state)
-        logger.debug(f"  State: {len(state_internal)} fluents, Next state: {len(next_state_internal)} fluents")
+        logger.debug(
+            f"  State: {len(state_internal)} fluents, Next state: {len(next_state_internal)} fluents")
 
         # Get satisfied literals in state (considering negative literals)
         satisfied_in_state = self._get_satisfied_literals(action, state_internal, objects)
@@ -524,7 +535,8 @@ class InformationGainLearner(BaseActionModelLearner):
             lifted_dels = self.bindP(deleted_fluents, objects)
             eff_del_before = len(self.eff_del[action])
             self.eff_del[action] = self.eff_del[action].union(lifted_dels)
-            logger.debug(f"  Delete effects updated: {eff_del_before} → {len(self.eff_del[action])}")
+            logger.debug(
+                f"  Delete effects updated: {eff_del_before} → {len(self.eff_del[action])}")
 
         # Update possible effects
         # eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)
@@ -562,7 +574,8 @@ class InformationGainLearner(BaseActionModelLearner):
             if updated:  # Don't add empty constraints
                 updated_constraints.append(updated)
         self.pre_constraints[action] = updated_constraints
-        logger.debug(f"  Constraints updated: {constraints_before} → {len(self.pre_constraints[action])}")
+        logger.debug(
+            f"  Constraints updated: {constraints_before} → {len(self.pre_constraints[action])}")
 
         logger.info(f"Success update complete for {action}: |pre|={len(self.pre[action])}, "
                     f"|eff+|={len(self.eff_add[action])}, |eff-|={len(self.eff_del[action])}")
@@ -591,11 +604,13 @@ class InformationGainLearner(BaseActionModelLearner):
         if unsatisfied:
             constraints_before = len(self.pre_constraints[action])
             self.pre_constraints[action].append(unsatisfied)
-            logger.info(f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
-                       f"(total constraints: {constraints_before} → {len(self.pre_constraints[action])})")
+            logger.info(
+                f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
+                f"(total constraints: {constraints_before} → {len(self.pre_constraints[action])})")
         else:
             # This shouldn't happen - if all preconditions were satisfied, action should succeed
-            logger.warning(f"Failed action {action} had all preconditions satisfied - possible environment issue")
+            logger.warning(
+                f"Failed action {action} had all preconditions satisfied - possible environment issue")
 
     def _state_to_internal(self, state: Set[str]) -> Set[str]:
         """
@@ -706,7 +721,7 @@ class InformationGainLearner(BaseActionModelLearner):
                 logger.debug(f"  Constraint {i}: added clause with {len(clause)} literals")
 
         logger.info(f"CNF formula built for '{action}': {clauses_added} clauses, "
-                   f"{len(cnf.fluent_to_var)} unique variables")
+                    f"{len(cnf.fluent_to_var)} unique variables")
         return cnf
 
     def get_learned_model(self) -> Dict[str, Any]:
@@ -741,10 +756,11 @@ class InformationGainLearner(BaseActionModelLearner):
                 'observations': len(self.observation_history[action_name])
             }
 
-            logger.debug(f"Exported action '{action_name}': {len(self.pre[action_name])} preconditions, "
-                        f"{len(self.eff_add[action_name])} add effects, "
-                        f"{len(self.eff_del[action_name])} delete effects, "
-                        f"{len(self.observation_history[action_name])} observations")
+            logger.debug(
+                f"Exported action '{action_name}': {len(self.pre[action_name])} preconditions, "
+                f"{len(self.eff_add[action_name])} add effects, "
+                f"{len(self.eff_del[action_name])} delete effects, "
+                f"{len(self.observation_history[action_name])} observations")
 
             # Extract predicates from literals
             for literal in self.pre[action_name]:
@@ -753,7 +769,7 @@ class InformationGainLearner(BaseActionModelLearner):
                     model['predicates'].add(pred_name)
 
         logger.info(f"Model export complete: {len(model['actions'])} actions, "
-                   f"{len(model['predicates'])} predicates")
+                    f"{len(model['predicates'])} predicates")
         return model
 
     def _extract_predicate_name(self, literal: str) -> Optional[str]:

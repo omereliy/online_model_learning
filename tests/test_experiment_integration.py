@@ -3,6 +3,10 @@ Integration test for experiment runner with OLAM adapter.
 Tests Phase 3 implementation with mock environment.
 """
 
+from tests.test_helpers import mock_olam_select_action, mock_olam_planner
+from src.algorithms.olam_adapter import OLAMAdapter
+from src.experiments.metrics import MetricsCollector
+from src.experiments.runner import ExperimentRunner
 import pytest
 import tempfile
 import yaml
@@ -12,11 +16,6 @@ import sys
 from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.experiments.runner import ExperimentRunner
-from src.experiments.metrics import MetricsCollector
-from src.algorithms.olam_adapter import OLAMAdapter
-from tests.test_helpers import mock_olam_select_action, mock_olam_planner
 
 
 class TestExperimentIntegration:
@@ -108,7 +107,7 @@ class TestExperimentIntegration:
         steps = [s['step'] for s in runner.metrics.snapshots]
         for i in range(len(steps) - 1):
             if steps[i] > 0:  # Skip initial snapshot
-                assert (steps[i+1] - steps[i]) == 5 or steps[i+1] == results['total_iterations']
+                assert (steps[i + 1] - steps[i]) == 5 or steps[i + 1] == results['total_iterations']
 
     def test_results_export(self, integration_config):
         """Test that results are properly exported."""

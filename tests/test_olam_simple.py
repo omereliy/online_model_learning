@@ -2,13 +2,12 @@
 Simple test to verify OLAM adapter basic functionality without full OLAM execution.
 """
 
+from src.algorithms.olam_adapter import OLAMAdapter
 import pytest
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.algorithms.olam_adapter import OLAMAdapter
 
 
 class TestOLAMSimple:
@@ -80,7 +79,8 @@ class TestOLAMSimple:
         # Check that we have grounded actions
         # With proper PDDLHandler grounding:
         # 3 pick-up + 3 put-down + 9 stack (3*3) + 9 unstack (3*3) = 24
-        # Note: PDDLHandler grounds all combinations, domain preconditions prevent invalid ones at runtime
+        # Note: PDDLHandler grounds all combinations, domain preconditions prevent
+        # invalid ones at runtime
         assert len(adapter.action_list) == 24
 
         # Check specific actions
@@ -118,7 +118,7 @@ class TestOLAMSimple:
         stats = adapter.get_statistics()
         assert stats['iterations'] == 10
         assert stats['observations'] == 25
-        assert stats['converged'] == True
+        assert stats['converged']
 
     def test_reset_functionality(self):
         """Test adapter reset functionality with base class."""
@@ -138,7 +138,7 @@ class TestOLAMSimple:
         learner = TestLearner()
         assert learner.iteration_count == 10
         assert learner.observation_count == 20
-        assert learner._converged == True
+        assert learner._converged
 
         learner.reset()
 

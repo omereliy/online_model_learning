@@ -3,6 +3,7 @@ Test suite for rover domain fluent conversion.
 Ensures proper conversion between UP fluent format and PDDL string format.
 """
 
+from src.algorithms.olam_adapter import OLAMAdapter
 import pytest
 import sys
 from pathlib import Path
@@ -10,8 +11,6 @@ from pathlib import Path
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.algorithms.olam_adapter import OLAMAdapter
 
 
 class TestRoverFluentConversion:

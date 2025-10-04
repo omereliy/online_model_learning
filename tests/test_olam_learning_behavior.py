@@ -155,7 +155,8 @@ class TestOLAMLearningBehavior:
         model = olam.get_learned_model()
         actions_with_knowledge = 0
         for action_data in model['actions'].values():
-            if action_data['preconditions'].get('certain') or action_data['preconditions'].get('uncertain'):
+            if action_data['preconditions'].get(
+                    'certain') or action_data['preconditions'].get('uncertain'):
                 actions_with_knowledge += 1
 
         assert actions_with_knowledge > 0, "OLAM didn't learn any preconditions"

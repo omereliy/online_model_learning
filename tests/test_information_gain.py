@@ -35,7 +35,7 @@ def calculate_La_independently(learner, action_name: str) -> Set[str]:
     num_params = len(action.parameters)
     param_letters = 'xyzuvwpqrst'
     param_names = [f"?{param_letters[i]}" if i < len(param_letters) else f"?p{i}"
-                  for i in range(num_params)]
+                   for i in range(num_params)]
 
     # For each fluent/predicate in the domain
     for fluent in learner.pddl_handler.problem.fluents:
@@ -112,7 +112,8 @@ class TestInitialization:
             La_expected = calculate_La_independently(learner, action_name)
 
             # Verify expected La structure
-            assert len(La_expected) > 0, f"Action {action_name} has empty La (independent calculation)"
+            assert len(
+                La_expected) > 0, f"Action {action_name} has empty La (independent calculation)"
             positive_expected = {l for l in La_expected if not l.startswith('¬')}
             negative_expected = {l for l in La_expected if l.startswith('¬')}
             assert len(positive_expected) > 0
@@ -142,7 +143,6 @@ class TestInitialization:
             assert isinstance(learner.eff_maybe_del[action_name], set)
             assert learner.eff_maybe_del[action_name] == La_expected, \
                 f"Action {action_name}: eff_maybe_del should equal La"
-
 
 
 class TestParameterBoundLiterals:
@@ -374,8 +374,8 @@ class TestObservationRecording:
             # Not yet fully separated - this is OK for early learning
             # But we should see progress toward disjointness
             assert len(learner.eff_maybe_add[action_name]) < len(initial_intersection) or \
-                   len(learner.eff_maybe_del[action_name]) < len(initial_intersection), \
-                   "At least one set should have shrunk"
+                len(learner.eff_maybe_del[action_name]) < len(initial_intersection), \
+                "At least one set should have shrunk"
 
 
 class TestLearnedModelExport:
@@ -617,7 +617,11 @@ class TestUpdateRules:
         initial_constraint = learner.pre_constraints[action_name][0].copy()
 
         # Now observe success
-        success_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'available_hoist0', 'on_crate0_pallet0'}
+        success_state = {
+            'at_crate0_depot0',
+            'at_hoist0_depot0',
+            'available_hoist0',
+            'on_crate0_pallet0'}
         next_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'lifting_hoist0_crate0'}
         learner.observe(success_state, action_name, objects, success=True, next_state=next_state)
         learner.update_model()
@@ -685,7 +689,11 @@ class TestCNFIntegrationWithAlgorithm:
         # The CNF should encode: "at least one of the unsatisfied literals must be true"
 
         # After success, constraints are refined
-        success_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'available_hoist0', 'on_crate0_pallet0'}
+        success_state = {
+            'at_crate0_depot0',
+            'at_hoist0_depot0',
+            'available_hoist0',
+            'on_crate0_pallet0'}
         next_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'lifting_hoist0_crate0'}
         learner.observe(success_state, action_name, objects, success=True, next_state=next_state)
         learner.update_model()

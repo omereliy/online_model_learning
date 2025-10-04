@@ -53,7 +53,7 @@ class TestMetricsCollector:
         assert collector.metrics_df.iloc[0]['step'] == 1
         assert collector.metrics_df.iloc[0]['action'] == "pick-up"
         assert collector.metrics_df.iloc[0]['objects'] == ["a"]
-        assert collector.metrics_df.iloc[0]['success'] == True
+        assert collector.metrics_df.iloc[0]['success']
         assert collector.metrics_df.iloc[0]['runtime'] == 0.05
 
         # Record failed action
@@ -119,16 +119,16 @@ class TestMetricsCollector:
         collector = MetricsCollector(interval=10)
 
         # Should collect at step 0 (initial)
-        assert collector.should_collect(0) == True
+        assert collector.should_collect(0)
 
         # Should not collect at non-interval steps
         assert collector.should_collect(5) == False
         assert collector.should_collect(7) == False
 
         # Should collect at interval steps
-        assert collector.should_collect(10) == True
-        assert collector.should_collect(20) == True
-        assert collector.should_collect(100) == True
+        assert collector.should_collect(10)
+        assert collector.should_collect(20)
+        assert collector.should_collect(100)
 
     def test_get_snapshot(self):
         """Test getting current metrics snapshot."""
@@ -147,7 +147,7 @@ class TestMetricsCollector:
         # Check snapshot contents
         assert snapshot['step'] == 3
         assert snapshot['total_actions'] == 3
-        assert snapshot['mistake_rate'] == pytest.approx(1/3, rel=0.01)
+        assert snapshot['mistake_rate'] == pytest.approx(1 / 3, rel=0.01)
         assert snapshot['average_runtime'] == pytest.approx(0.15, rel=0.01)
         assert 'timestamp' in snapshot
 

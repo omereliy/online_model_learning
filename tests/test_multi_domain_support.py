@@ -2,6 +2,8 @@
 Test suite for multi-domain support in the online model learning framework.
 Tests various PDDL domains to ensure the framework works beyond blocksworld.
 """
+from src.experiments.metrics import MetricsCollector
+from src.core.pddl_handler import PDDLHandler
 import pytest
 from pathlib import Path
 import sys
@@ -9,9 +11,6 @@ import os
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
-
-from src.core.pddl_handler import PDDLHandler
-from src.experiments.metrics import MetricsCollector
 
 
 class TestMultiDomainSupport:
@@ -22,15 +21,44 @@ class TestMultiDomainSupport:
         """Path to benchmarks directory."""
         return Path(__file__).parent.parent / "benchmarks"
 
-    @pytest.mark.parametrize("domain_name,expected_actions,compatibility", [
-        ("blocksworld", ["pick-up", "put-down", "stack", "unstack"], "olam-compatible"),
-        ("gripper", ["move", "pick", "drop"], "olam-compatible"),
-        ("logistics", ["load-truck", "unload-truck", "drive-truck", "load-airplane", "unload-airplane", "fly-airplane"], "olam-compatible"),
-        ("rover", ["navigate", "sample_soil", "sample_rock", "drop", "calibrate",
-                   "take_image", "communicate_soil_data", "communicate_rock_data",
-                   "communicate_image_data"], "olam-incompatible"),
-        ("depots", ["drive", "lift", "drop", "load", "unload"], "olam-compatible")
-    ])
+    @pytest.mark.parametrize("domain_name,expected_actions,compatibility",
+                             [("blocksworld",
+                               ["pick-up",
+                                "put-down",
+                                "stack",
+                                "unstack"],
+                                 "olam-compatible"),
+                                 ("gripper",
+                                  ["move",
+                                   "pick",
+                                   "drop"],
+                                  "olam-compatible"),
+                                 ("logistics",
+                                  ["load-truck",
+                                   "unload-truck",
+                                   "drive-truck",
+                                   "load-airplane",
+                                   "unload-airplane",
+                                   "fly-airplane"],
+                                  "olam-compatible"),
+                                 ("rover",
+                                  ["navigate",
+                                   "sample_soil",
+                                   "sample_rock",
+                                   "drop",
+                                   "calibrate",
+                                   "take_image",
+                                   "communicate_soil_data",
+                                   "communicate_rock_data",
+                                   "communicate_image_data"],
+                                  "olam-incompatible"),
+                                 ("depots",
+                                  ["drive",
+                                   "lift",
+                                   "drop",
+                                   "load",
+                                   "unload"],
+                                  "olam-compatible")])
     def test_domain_parsing(self, benchmarks_path, domain_name, expected_actions, compatibility):
         """Test that each domain can be parsed correctly."""
         domain_file = benchmarks_path / compatibility / domain_name / "domain.pddl"
@@ -149,7 +177,8 @@ class TestMultiDomainSupport:
         # Basic validation
         if 'experiment' in config:
             assert 'domain' in config['experiment'] or 'domain' in config.get('domain_problem', {})
-            assert 'problem' in config['experiment'] or 'problem' in config.get('domain_problem', {})
+            assert 'problem' in config['experiment'] or 'problem' in config.get(
+                'domain_problem', {})
         elif 'domain_problem' in config:
             assert 'domain' in config['domain_problem']
             assert 'problem' in config['domain_problem']
@@ -169,7 +198,7 @@ class TestDomainSpecificFeatures:
         # Check that gripper type is defined
         if handler.problem:
             gripper_objects = [o.name for o in handler.problem.objects
-                             if str(o.type).lower() == 'gripper']
+                               if str(o.type).lower() == 'gripper']
             assert len(gripper_objects) == 2, "Should have exactly 2 grippers"
             assert 'left' in gripper_objects
             assert 'right' in gripper_objects
@@ -185,9 +214,9 @@ class TestDomainSpecificFeatures:
         # Check vehicle types in problem
         if handler.problem:
             trucks = [o.name for o in handler.problem.objects
-                     if str(o.type).lower() == 'truck']
+                      if str(o.type).lower() == 'truck']
             airplanes = [o.name for o in handler.problem.objects
-                        if str(o.type).lower() == 'airplane']
+                         if str(o.type).lower() == 'airplane']
 
             assert len(trucks) > 0, "Should have at least one truck"
             assert len(airplanes) > 0, "Should have at least one airplane"
@@ -206,8 +235,8 @@ class TestDomainSpecificFeatures:
 
             # Check for equipment predicates
             equipment_preds = ["equipped_for_soil_analysis",
-                             "equipped_for_rock_analysis",
-                             "equipped_for_imaging"]
+                               "equipped_for_rock_analysis",
+                               "equipped_for_imaging"]
 
             for equip in equipment_preds:
                 assert equip in fluent_names, f"Missing equipment predicate: {equip}"

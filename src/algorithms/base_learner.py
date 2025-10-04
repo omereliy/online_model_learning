@@ -157,7 +157,7 @@ class BaseActionModelLearner(ABC):
         """
         if '(' in action_str:
             name = action_str[:action_str.index('(')]
-            params_str = action_str[action_str.index('(')+1:-1]
+            params_str = action_str[action_str.index('(') + 1:-1]
             if params_str:
                 objects = [p.strip() for p in params_str.split(',')]
             else:

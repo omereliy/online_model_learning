@@ -3,6 +3,7 @@ OLAM (Online Learning of Action Models) adapter implementation.
 Integrates OLAM learner into the unified experiment framework.
 """
 
+from .base_learner import BaseActionModelLearner
 import sys
 import os
 import logging
@@ -26,7 +27,6 @@ except ImportError as e:
     logging.error(f"Failed to import OLAM components: {e}")
     raise
 
-from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,9 @@ class OLAMAdapter(BaseActionModelLearner):
             **kwargs: Additional parameters
         """
         logger.info(f"Initializing OLAM adapter with domain={domain_file}, problem={problem_file}")
-        logger.debug(f"Configuration: max_iterations={max_iterations}, eval_frequency={eval_frequency}, "
-                     f"bypass_java={bypass_java}, use_system_java={use_system_java}")
+        logger.debug(
+            f"Configuration: max_iterations={max_iterations}, eval_frequency={eval_frequency}, "
+            f"bypass_java={bypass_java}, use_system_java={use_system_java}")
 
         super().__init__(domain_file, problem_file, **kwargs)
 
@@ -97,7 +98,8 @@ class OLAMAdapter(BaseActionModelLearner):
         self.action_idx_to_str = {}
         self.action_str_to_idx = {}
         self._build_action_mappings()
-        logger.info(f"OLAM adapter initialization complete with {len(self.action_idx_to_str)} actions mapped")
+        logger.info(
+            f"OLAM adapter initialization complete with {len(self.action_idx_to_str)} actions mapped")
 
     def _initialize_olam(self):
         """Initialize OLAM learner and related components."""
@@ -244,9 +246,13 @@ class OLAMAdapter(BaseActionModelLearner):
             import os
             java_dir = os.path.join(os.path.dirname(Configuration.__file__), Configuration.JAVA_DIR)
             if os.path.exists(java_dir):
-                java_dirs = [d for d in os.listdir(java_dir) if os.path.isdir(os.path.join(java_dir, d))]
+                java_dirs = [
+                    d for d in os.listdir(java_dir) if os.path.isdir(
+                        os.path.join(
+                            java_dir, d))]
                 if java_dirs:
-                    Configuration.JAVA_BIN_PATH = os.path.join(java_dir, java_dirs[0], "bin", "java")
+                    Configuration.JAVA_BIN_PATH = os.path.join(
+                        java_dir, java_dirs[0], "bin", "java")
                 else:
                     logger.warning("No Java installation found in OLAM/Java directory")
                     Configuration.JAVA_BIN_PATH = ""
@@ -304,9 +310,12 @@ class OLAMAdapter(BaseActionModelLearner):
             non_executable_indices = []
 
             # Filter based on what OLAM has LEARNED (both certain and uncertain)
-            total_certain_ops = sum(1 for v in self.learner.operator_certain_predicates.values() if v)
-            total_uncertain_ops = sum(1 for v in self.learner.operator_uncertain_predicates.values() if v)
-            logger.debug(f"Learned model has {total_certain_ops} ops with certain, {total_uncertain_ops} with uncertain")
+            total_certain_ops = sum(
+                1 for v in self.learner.operator_certain_predicates.values() if v)
+            total_uncertain_ops = sum(
+                1 for v in self.learner.operator_uncertain_predicates.values() if v)
+            logger.debug(
+                f"Learned model has {total_certain_ops} ops with certain, {total_uncertain_ops} with uncertain")
 
             for idx, action_label in enumerate(self.action_list):
                 operator = action_label.split("(")[0]
@@ -328,7 +337,8 @@ class OLAMAdapter(BaseActionModelLearner):
                         grounded_certain.append(grounded_pred)
 
                     # Filter if ANY certain precondition is violated
-                    if grounded_certain and not all(pred in current_state_pddl for pred in grounded_certain):
+                    if grounded_certain and not all(
+                            pred in current_state_pddl for pred in grounded_certain):
                         non_executable_indices.append(idx)
                         continue
 
@@ -348,14 +358,14 @@ class OLAMAdapter(BaseActionModelLearner):
                     if satisfied < len(grounded_uncertain) * 0.25:  # Less than 25% satisfied
                         non_executable_indices.append(idx)
 
-            logger.debug(f"Learned model filtering: {len(non_executable_indices)}/{len(self.action_list)} non-executable")
+            logger.debug(
+                f"Learned model filtering: {len(non_executable_indices)}/{len(self.action_list)} non-executable")
             return non_executable_indices
 
         except Exception as e:
             logger.warning(f"Error in learned model filtering: {e}")
             # On error, high uncertainty - filter nothing
             return []
-
 
     def select_action(self, state: Any) -> Tuple[str, List[str]]:
         """
@@ -410,7 +420,8 @@ class OLAMAdapter(BaseActionModelLearner):
             next_state: State after execution (if successful)
         """
         self.observation_count += 1
-        logger.info(f"=== Observation {self.observation_count}: {action}({','.join(objects)}) -> {'SUCCESS' if success else 'FAILURE'} ===")
+        logger.info(
+            f"=== Observation {self.observation_count}: {action}({','.join(objects)}) -> {'SUCCESS' if success else 'FAILURE'} ===")
 
         # Convert to OLAM format
         action_str = self._up_action_to_olam(action, objects)
@@ -459,7 +470,8 @@ class OLAMAdapter(BaseActionModelLearner):
 
         # Check convergence periodically
         if self.observation_count % self.eval_frequency == 0:
-            logger.debug(f"Checking convergence (observation {self.observation_count}, frequency {self.eval_frequency})")
+            logger.debug(
+                f"Checking convergence (observation {self.observation_count}, frequency {self.eval_frequency})")
             self._check_convergence()
 
     def get_learned_model(self) -> Dict[str, Any]:
@@ -509,13 +521,10 @@ class OLAMAdapter(BaseActionModelLearner):
                 'preconditions': {
                     'certain': certain_precs,
                     'uncertain': uncertain_precs,
-                    'negative': neg_precs
-                },
+                    'negative': neg_precs},
                 'effects': {
                     'positive': pos_effects,
-                    'negative': neg_effects
-                }
-            }
+                    'negative': neg_effects}}
 
             # Collect all predicates
             for pred_list in model['actions'][action_label]['preconditions'].values():
@@ -526,8 +535,9 @@ class OLAMAdapter(BaseActionModelLearner):
                             pred_name = pred.strip('()').split('(')[0].split()[0]
                             model['predicates'].add(pred_name)
 
-        logger.info(f"Learned model extracted: {len(model['actions'])} grounded actions, "
-                    f"{len(operators_processed)} unique operators, {len(model['predicates'])} predicates")
+        logger.info(
+            f"Learned model extracted: {len(model['actions'])} grounded actions, "
+            f"{len(operators_processed)} unique operators, {len(model['predicates'])} predicates")
         return model
 
     def has_converged(self) -> bool:
@@ -541,7 +551,8 @@ class OLAMAdapter(BaseActionModelLearner):
         if hasattr(self.learner, 'model_convergence'):
             olam_converged = self.learner.model_convergence
             if olam_converged != self._converged:
-                logger.info(f"OLAM convergence status changed: {self._converged} -> {olam_converged}")
+                logger.info(
+                    f"OLAM convergence status changed: {self._converged} -> {olam_converged}")
             self._converged = olam_converged
 
         # Also check iteration limit
@@ -550,7 +561,8 @@ class OLAMAdapter(BaseActionModelLearner):
                 logger.info(f"Reached max iterations ({self.max_iterations}), forcing convergence")
             self._converged = True
 
-        logger.debug(f"Convergence check: converged={self._converged}, iterations={self.iteration_count}/{self.max_iterations}")
+        logger.debug(
+            f"Convergence check: converged={self._converged}, iterations={self.iteration_count}/{self.max_iterations}")
         return self._converged
 
     def _check_convergence(self):
@@ -669,7 +681,8 @@ class OLAMAdapter(BaseActionModelLearner):
                         params = self._smart_split_parameters(params_str)
                         # Keep predicate name as-is (preserving underscores)
                         result = f"({pred_name} {' '.join(params)})"
-                        logger.debug(f"  Matched predicate '{pred_name}' with params {params}: {result}")
+                        logger.debug(
+                            f"  Matched predicate '{pred_name}' with params {params}: {result}")
                         return result
 
         # Fallback: Intelligent heuristic approach
@@ -756,7 +769,8 @@ class OLAMAdapter(BaseActionModelLearner):
                 if hasattr(pddl_env_handler, 'problem') and pddl_env_handler.problem:
                     for fluent_obj in pddl_env_handler.problem.fluents:
                         predicate_names.add(fluent_obj.name)
-                    logger.debug(f"Retrieved {len(predicate_names)} predicate names from environment")
+                    logger.debug(
+                        f"Retrieved {len(predicate_names)} predicate names from environment")
 
         if not predicate_names:
             logger.debug("No predicate names available")
@@ -822,7 +836,7 @@ class OLAMAdapter(BaseActionModelLearner):
             # Try to match the longest possible object name starting at position i
             found = False
             for length in range(len(parts) - i, 0, -1):
-                candidate = '_'.join(parts[i:i+length])
+                candidate = '_'.join(parts[i:i + length])
                 if candidate in object_names:
                     result.append(candidate)
                     i += length

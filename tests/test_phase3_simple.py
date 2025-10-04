@@ -2,6 +2,8 @@
 Simple test for Phase 3 components without OLAM dependency.
 """
 
+from src.environments.mock_environment import MockEnvironment
+from src.experiments.metrics import MetricsCollector
 import pytest
 import tempfile
 import pandas as pd
@@ -9,9 +11,6 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.experiments.metrics import MetricsCollector
-from src.environments.mock_environment import MockEnvironment
 
 
 class TestPhase3Simple:
@@ -113,7 +112,7 @@ class TestPhase3Simple:
 
         # Last 3 actions: T, F, T -> mistake rate = 1/3
         mistake_rate = collector.compute_mistake_rate()
-        assert mistake_rate == pytest.approx(1/3, rel=0.01)
+        assert mistake_rate == pytest.approx(1 / 3, rel=0.01)
 
     def test_complete_workflow(self, temp_dir):
         """Test complete workflow without experiment runner."""

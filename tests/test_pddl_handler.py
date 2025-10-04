@@ -66,7 +66,8 @@ class TestPDDLHandlerParsing:
         assert len(handler._object_map) == 3  # objects a, b, c
         assert len(handler._grounded_actions) > 0
 
-    def test_problem_components_after_parsing(self, temp_dir, blocksworld_domain, blocksworld_problem):
+    def test_problem_components_after_parsing(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test that problem components are correctly parsed."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -91,7 +92,8 @@ class TestPDDLHandlerParsing:
         action_names = [action.name for action in handler.problem.actions]
         assert set(action_names) == {'pick-up', 'put-down', 'stack', 'unstack'}
 
-    def test_string_representations_after_parsing(self, temp_dir, blocksworld_domain, blocksworld_problem):
+    def test_string_representations_after_parsing(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test string representations after loading problem."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -115,7 +117,12 @@ class TestPDDLHandlerParsing:
 class TestPDDLHandlerGroundedFluents:
     """Test grounded fluent generation with expected outcomes."""
 
-    def test_get_grounded_fluents(self, temp_dir, blocksworld_domain, blocksworld_problem, expected_grounded_fluents):
+    def test_get_grounded_fluents(
+            self,
+            temp_dir,
+            blocksworld_domain,
+            blocksworld_problem,
+            expected_grounded_fluents):
         """Test grounded fluent generation."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -154,7 +161,12 @@ class TestPDDLHandlerGroundedFluents:
 class TestPDDLHandlerGroundedActions:
     """Test grounded action generation with expected outcomes."""
 
-    def test_get_grounded_actions_list(self, temp_dir, blocksworld_domain, blocksworld_problem, expected_grounded_actions):
+    def test_get_grounded_actions_list(
+            self,
+            temp_dir,
+            blocksworld_domain,
+            blocksworld_problem,
+            expected_grounded_actions):
         """Test grounded action generation."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -240,7 +252,12 @@ class TestPDDLHandlerGroundedActions:
 class TestPDDLHandlerStateConversion:
     """Test state conversion methods with expected outcomes."""
 
-    def test_get_initial_state(self, temp_dir, blocksworld_domain, blocksworld_problem, expected_initial_state):
+    def test_get_initial_state(
+            self,
+            temp_dir,
+            blocksworld_domain,
+            blocksworld_problem,
+            expected_initial_state):
         """Test initial state extraction."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -270,7 +287,12 @@ class TestPDDLHandlerStateConversion:
         assert 'ontable_a' not in initial_state  # a is on b, not on table
         assert 'ontable_b' not in initial_state  # b is on c, not on table
 
-    def test_fluent_set_to_state_conversion(self, temp_dir, blocksworld_domain, blocksworld_problem, expected_initial_state):
+    def test_fluent_set_to_state_conversion(
+            self,
+            temp_dir,
+            blocksworld_domain,
+            blocksworld_problem,
+            expected_initial_state):
         """Test conversion from fluent set to state dictionary."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -326,7 +348,8 @@ class TestPDDLHandlerStateConversion:
 class TestPDDLHandlerActionProperties:
     """Test action property extraction methods."""
 
-    def test_action_preconditions_extraction(self, temp_dir, blocksworld_domain, blocksworld_problem):
+    def test_action_preconditions_extraction(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test extraction of action preconditions."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -700,7 +723,8 @@ class TestPDDLHandlerLiftedSupport:
         stack_lifted = handler.create_lifted_action_string("stack", ["?x", "?y"])
         assert stack_lifted == "stack(?x,?y)"
 
-    def test_get_action_preconditions_lifted(self, temp_dir, blocksworld_domain, blocksworld_problem):
+    def test_get_action_preconditions_lifted(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test getting lifted action preconditions."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -742,7 +766,8 @@ class TestPDDLHandlerLiftedSupport:
             # If not fully implemented, should at least not crash
             pass
 
-    def test_extract_lifted_preconditions_cnf(self, temp_dir, blocksworld_domain, blocksworld_problem):
+    def test_extract_lifted_preconditions_cnf(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test extracting lifted preconditions as CNF."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"
@@ -780,7 +805,7 @@ class TestPDDLHandlerLiftedSupport:
 
             # Check that groundings were created
             grounded_count = sum(1 for (act, bind) in handler._grounded_actions
-                               if act.name == action_name)
+                                 if act.name == action_name)
             assert grounded_count > 0
 
             # If action has parameters, should have multiple groundings
@@ -811,7 +836,8 @@ class TestPDDLHandlerLiftedSupport:
 class TestPDDLHandlerFeatureSupport:
     """Test support for various PDDL features."""
 
-    def test_supports_negative_preconditions(self, temp_dir, blocksworld_domain, blocksworld_problem):
+    def test_supports_negative_preconditions(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test detection of negative preconditions."""
         domain_file = temp_dir / "domain.pddl"
         problem_file = temp_dir / "problem.pddl"

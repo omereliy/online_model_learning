@@ -3,6 +3,7 @@ Comprehensive test suite for OLAM adapter implementation.
 Tests all aspects of OLAM integration following TDD approach.
 """
 
+from src.algorithms.base_learner import BaseActionModelLearner
 import pytest
 import sys
 import os
@@ -13,8 +14,6 @@ from typing import Set, List, Tuple
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.algorithms.base_learner import BaseActionModelLearner
 
 
 class TestOLAMAdapter:

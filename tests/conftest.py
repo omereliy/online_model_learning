@@ -111,9 +111,9 @@ def sample_cnf_formulas():
                 {'a', 'b', 'c'}  # a=T, b=T, c=T
             ],
             'expected_count': 4,
-            'expected_prob_a': 2/4,  # a is true in 2 out of 4 solutions
-            'expected_prob_b': 3/4,  # b is true in 3 out of 4 solutions
-            'expected_prob_c': 3/4   # c is true in 3 out of 4 solutions
+            'expected_prob_a': 2 / 4,  # a is true in 2 out of 4 solutions
+            'expected_prob_b': 3 / 4,  # b is true in 3 out of 4 solutions
+            'expected_prob_c': 3 / 4   # c is true in 3 out of 4 solutions
         },
 
         # Unsatisfiable formula: (a) AND (NOT a)

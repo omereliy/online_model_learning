@@ -53,6 +53,7 @@ class MockOLAMAdapter:
     """
     Mock version of OLAMAdapter for testing without external dependencies.
     """
+
     def __init__(self, domain_file, problem_file, **kwargs):
         self.domain_file = domain_file
         self.problem_file = problem_file

@@ -1,15 +1,14 @@
 """
 Test OLAM adapter with multiple domains to ensure it's not hardcoded for blocksworld.
 """
+from src.core.pddl_handler import PDDLHandler
+from src.algorithms.olam_adapter import OLAMAdapter
 import pytest
 from pathlib import Path
 import sys
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
-
-from src.algorithms.olam_adapter import OLAMAdapter
-from src.core.pddl_handler import PDDLHandler
 
 
 class TestOLAMMultiDomain:
@@ -117,7 +116,8 @@ class TestOLAMMultiDomain:
         # Pick should have parameters (ball, room, gripper)
         for pick_action in pick_actions[:1]:  # Check at least one
             params = pick_action[5:-1].split(',')  # Extract params from pick(...)
-            assert len(params) == 3, f"Pick action should have 3 parameters, got {len(params)}: {pick_action}"
+            assert len(
+                params) == 3, f"Pick action should have 3 parameters, got {len(params)}: {pick_action}"
 
     def test_olam_grounding_rover(self, domain_paths):
         """Test that OLAM correctly grounds rover domain actions."""
@@ -152,7 +152,8 @@ class TestOLAMMultiDomain:
         if navigate_actions:
             # Navigate should have parameters (rover, from, to)
             params = navigate_actions[0][9:-1].split(',')
-            assert len(params) >= 3, f"Navigate should have at least 3 parameters: {navigate_actions[0]}"
+            assert len(
+                params) >= 3, f"Navigate should have at least 3 parameters: {navigate_actions[0]}"
 
     def test_olam_grounding_logistics(self, domain_paths):
         """Test that OLAM correctly grounds logistics domain actions."""
@@ -220,7 +221,7 @@ class TestOLAMMultiDomain:
 
                 # Check no spaces in parameter list
                 if '(' in action and ')' in action:
-                    params_str = action[action.index('(')+1:action.rindex(')')]
+                    params_str = action[action.index('(') + 1:action.rindex(')')]
                     if params_str:  # If there are parameters
                         assert ' ' not in params_str, f"Spaces in parameters: '{action}' in {domain_name}"
 

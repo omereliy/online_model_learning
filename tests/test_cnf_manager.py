@@ -328,7 +328,7 @@ class TestCNFManagerOperations:
         """Test getting a model from satisfiable formula."""
         cnf = CNFManager()
         cnf.add_clause(['a'])  # a must be true
-        cnf.add_clause(['-b']) # b must be false
+        cnf.add_clause(['-b'])  # b must be false
 
         model = cnf.get_model()
 
@@ -545,7 +545,9 @@ class TestCNFManagerLiftedFluents:
 
         # Expected: Independent copies
         cnf2.ground_lifted_fluent("on", ["c", "d"])
-        assert len(cnf2.lifted_to_grounded["on(?x,?y)"]) == len(cnf1.lifted_to_grounded["on(?x,?y)"]) + 1
+        assert len(
+            cnf2.lifted_to_grounded["on(?x,?y)"]) == len(
+            cnf1.lifted_to_grounded["on(?x,?y)"]) + 1
 
     def test_lifted_satisfiability(self):
         """Test satisfiability with lifted clauses."""

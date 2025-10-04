@@ -3,6 +3,7 @@ Test suite for OLAM Java dependency workaround.
 Ensures OLAM can function without Java for validation purposes.
 """
 
+from src.algorithms.olam_adapter import OLAMAdapter
 import pytest
 import sys
 import os
@@ -12,8 +13,6 @@ from unittest.mock import patch, MagicMock
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.algorithms.olam_adapter import OLAMAdapter
 
 
 class TestOLAMJavaWorkaround:
@@ -175,7 +174,7 @@ class TestOLAMJavaWorkaround:
 
             # Should log bypass mode activation
             assert any('bypass' in record.message.lower() or 'java' in record.message.lower()
-                      for record in caplog.records)
+                       for record in caplog.records)
 
     def test_compatibility_with_experiment_runner(self, domain_problem_files):
         """Test OLAM adapter with bypass works in experiment runner context."""

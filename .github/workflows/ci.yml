@@ -66,6 +66,12 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-timeout
 
+      - name: Clone OLAM repository
+        run: |
+          cd $HOME
+          git clone https://github.com/LamannaLeonardo/OLAM.git || true
+          echo "PYTHONPATH=$HOME/OLAM:$PYTHONPATH" >> $GITHUB_ENV
+
       - name: Run unit tests
         run: |
           pytest tests/test_cnf_manager.py \
