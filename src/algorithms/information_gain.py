@@ -42,13 +42,19 @@ class InformationGainLearner(BaseActionModelLearner):
             max_iterations: Maximum learning iterations
             **kwargs: Additional parameters
         """
+        logger.info(f"Initializing Information Gain learner: domain={domain_file}, problem={problem_file}")
+        logger.debug(f"Configuration: max_iterations={max_iterations}, kwargs={kwargs}")
+
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
 
         # Initialize PDDL handler for lifted action/fluent support
+        logger.debug("Parsing PDDL domain and problem files")
         self.pddl_handler = PDDLHandler()
         self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+        logger.debug(f"PDDL parsing complete: {len(self.pddl_handler._lifted_actions)} lifted actions, "
+                    f"{len(self.pddl_handler.problem.fluents)} fluents")
 
         # Action model state variables (per action schema)
         # Structure: Dict[action_name, data]
@@ -66,16 +72,22 @@ class InformationGainLearner(BaseActionModelLearner):
         self.cnf_managers: Dict[str, CNFManager] = {}
 
         # Initialize action models
+        logger.debug("Initializing action models")
         self._initialize_action_models()
 
-        logger.info(f"Initialized Information Gain learner with {len(self.pre)} actions")
+        logger.info(f"Initialization complete: {len(self.pre)} actions initialized")
 
     def _initialize_action_models(self):
         """Initialize action model state variables for all actions."""
+        logger.debug(f"Initializing models for {len(self.pddl_handler._lifted_actions)} actions")
+
         # Get all lifted actions from domain
         for action_name, action in self.pddl_handler._lifted_actions.items():
+            logger.debug(f"Processing action: {action_name}, parameters: {[p.name for p in action.parameters]}")
+
             # Get La: all parameter-bound literals for this action
             La = self._get_parameter_bound_literals(action_name)
+            logger.debug(f"Generated {len(La)} parameter-bound literals for {action_name}")
 
             # Initialize state variables according to algorithm
             self.pre[action_name] = La.copy()  # Initially all literals possible
@@ -88,7 +100,7 @@ class InformationGainLearner(BaseActionModelLearner):
             # Initialize CNF manager for this action (Phase 2)
             self.cnf_managers[action_name] = CNFManager()
 
-            logger.debug(f"Initialized action {action_name} with |La|={len(La)}")
+            logger.info(f"Initialized action '{action_name}': |La|={len(La)}, |pre|={len(self.pre[action_name])}")
 
     def _get_parameter_bound_literals(self, action_name: str) -> Set[str]:
         """
@@ -160,6 +172,7 @@ class InformationGainLearner(BaseActionModelLearner):
             bindP_inverse({'on(?x,?y)'}, ['a', 'b']) → {'on_a_b'}
             bindP_inverse({'¬on(?x,?y)'}, ['a', 'b']) → {'¬on_a_b'}
         """
+        logger.debug(f"bindP_inverse: Grounding {len(literals)} literals with objects {objects}")
         grounded = set()
 
         for literal in literals:
@@ -177,6 +190,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
             grounded.add(grounded_literal)
 
+        logger.debug(f"bindP_inverse: Produced {len(grounded)} grounded literals")
         return grounded
 
     def bindP(self, fluents: Set[str], objects: List[str]) -> Set[str]:
@@ -197,6 +211,7 @@ class InformationGainLearner(BaseActionModelLearner):
             bindP({'on_a_b'}, ['a', 'b']) → {'on(?x,?y)'}
             bindP({'¬on_a_b'}, ['a', 'b']) → {'¬on(?x,?y)'}
         """
+        logger.debug(f"bindP: Lifting {len(fluents)} fluents with objects {objects}")
         lifted = set()
 
         for fluent in fluents:
@@ -214,6 +229,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
             lifted.add(lifted_literal)
 
+        logger.debug(f"bindP: Produced {len(lifted)} lifted literals")
         return lifted
 
     def _ground_lifted_literal(self, literal: str, objects: List[str]) -> str:
@@ -230,6 +246,7 @@ class InformationGainLearner(BaseActionModelLearner):
         # Parse literal: predicate(param1,param2,...)
         if '(' not in literal:
             # Propositional literal
+            logger.debug(f"_ground_lifted_literal: '{literal}' is propositional")
             return literal
 
         predicate = literal[:literal.index('(')]
@@ -237,6 +254,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         if not params_str:
             # No parameters
+            logger.debug(f"_ground_lifted_literal: '{literal}' has no parameters")
             return predicate
 
         params = [p.strip() for p in params_str.split(',')]
@@ -259,7 +277,9 @@ class InformationGainLearner(BaseActionModelLearner):
                 grounded_params.append(param)
 
         # Create grounded fluent string
-        return '_'.join([predicate] + grounded_params)
+        result = '_'.join([predicate] + grounded_params)
+        logger.debug(f"_ground_lifted_literal: '{literal}' + {objects} → '{result}'")
+        return result
 
     def _lift_grounded_fluent(self, fluent: str, objects: List[str]) -> str:
         """
@@ -277,6 +297,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         if len(parts) == 1:
             # Propositional fluent
+            logger.debug(f"_lift_grounded_fluent: '{fluent}' is propositional")
             return parts[0]
 
         # First part is predicate, rest are object names
@@ -295,9 +316,12 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Create lifted literal
         if params:
-            return f"{predicate}({','.join(params)})"
+            result = f"{predicate}({','.join(params)})"
         else:
-            return predicate
+            result = predicate
+
+        logger.debug(f"_lift_grounded_fluent: '{fluent}' + {objects} → '{result}'")
+        return result
 
     def _get_parameter_index(self, param_name: str, objects: List[str]) -> int:
         """
@@ -358,14 +382,17 @@ class InformationGainLearner(BaseActionModelLearner):
             Tuple of (action_name, objects)
         """
         self.iteration_count += 1
+        logger.debug(f"Selecting action for iteration {self.iteration_count}")
 
         # Placeholder: return first grounded action
         if self.pddl_handler._grounded_actions:
             action, binding = self.pddl_handler._grounded_actions[0]
             objects = [obj.name for obj in binding.values()] if binding else []
+            logger.info(f"Selected action: {action.name}({','.join(objects)}) [iteration {self.iteration_count}]")
             return action.name, objects
 
         # Fallback
+        logger.warning(f"No grounded actions available at iteration {self.iteration_count}")
         return "no_action", []
 
     def observe(self,
@@ -389,6 +416,11 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         self.observation_count += 1
 
+        logger.info(f"Observation {self.observation_count}: {action}({','.join(objects)}) - {'SUCCESS' if success else 'FAILURE'}")
+        logger.debug(f"  State size: {len(state) if isinstance(state, (set, list)) else 'N/A'}")
+        if success and next_state:
+            logger.debug(f"  Next state size: {len(next_state) if isinstance(next_state, (set, list)) else 'N/A'}")
+
         # Record observation
         observation = {
             'iteration': self.iteration_count,
@@ -400,7 +432,7 @@ class InformationGainLearner(BaseActionModelLearner):
         }
         self.observation_history[action].append(observation)
 
-        logger.debug(f"Recorded observation {self.observation_count}: {action}({','.join(objects)}) - {'success' if success else 'failure'}")
+        logger.debug(f"Total observations for '{action}': {len(self.observation_history[action])}")
 
     def update_model(self) -> None:
         """
@@ -409,6 +441,8 @@ class InformationGainLearner(BaseActionModelLearner):
         This method processes the most recent observation and updates the
         action model according to the Information Gain algorithm update rules.
         """
+        logger.debug("Starting model update")
+
         # Get the most recent observation across all actions
         latest_action = None
         latest_obs = None
@@ -421,6 +455,7 @@ class InformationGainLearner(BaseActionModelLearner):
                 latest_obs = obs_list[-1]
 
         if not latest_obs:
+            logger.debug("No observations to process")
             return
 
         # Extract observation details
@@ -430,13 +465,17 @@ class InformationGainLearner(BaseActionModelLearner):
         state = latest_obs['state']
         next_state = latest_obs.get('next_state')
 
+        logger.info(f"Updating model for action '{action}' based on {'success' if success else 'failure'} observation")
+
         if success:
             self._update_success(action, objects, state, next_state)
         else:
             self._update_failure(action, objects, state)
 
         # Rebuild CNF formula after updates
+        logger.debug(f"Rebuilding CNF formula for '{action}'")
         self._build_cnf_formula(action)
+        logger.info(f"Model update complete for '{action}'")
 
     def _update_success(self, action: str, objects: List[str],
                        state: Set[str], next_state: Set[str]) -> None:
@@ -451,29 +490,41 @@ class InformationGainLearner(BaseActionModelLearner):
         - eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)
         - pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
         """
+        logger.debug(f"_update_success: Processing {action} with objects {objects}")
+
         # Convert state to internal format
         state_internal = self._state_to_internal(state)
         next_state_internal = self._state_to_internal(next_state)
+        logger.debug(f"  State: {len(state_internal)} fluents, Next state: {len(next_state_internal)} fluents")
 
         # Get satisfied literals in state (considering negative literals)
         satisfied_in_state = self._get_satisfied_literals(action, state_internal, objects)
+        logger.debug(f"  Satisfied literals: {len(satisfied_in_state)}/{len(self.pre[action])}")
 
         # Update preconditions: keep only satisfied literals
         # pre(a) = pre(a) ∩ bindP⁻¹(s, O)
+        pre_before = len(self.pre[action])
         self.pre[action] = self.pre[action].intersection(satisfied_in_state)
+        logger.debug(f"  Preconditions reduced: {pre_before} → {len(self.pre[action])}")
 
         # Update effects based on state changes
         # eff+(a) = eff+(a) ∪ bindP(s' \ s, O)
         added_fluents = next_state_internal - state_internal
         if added_fluents:
+            logger.debug(f"  Added fluents: {len(added_fluents)}")
             lifted_adds = self.bindP(added_fluents, objects)
+            eff_add_before = len(self.eff_add[action])
             self.eff_add[action] = self.eff_add[action].union(lifted_adds)
+            logger.debug(f"  Add effects updated: {eff_add_before} → {len(self.eff_add[action])}")
 
         # eff-(a) = eff-(a) ∪ bindP(s \ s', O)
         deleted_fluents = state_internal - next_state_internal
         if deleted_fluents:
+            logger.debug(f"  Deleted fluents: {len(deleted_fluents)}")
             lifted_dels = self.bindP(deleted_fluents, objects)
+            eff_del_before = len(self.eff_del[action])
             self.eff_del[action] = self.eff_del[action].union(lifted_dels)
+            logger.debug(f"  Delete effects updated: {eff_del_before} → {len(self.eff_del[action])}")
 
         # Update possible effects
         # eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)
@@ -503,6 +554,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Update constraint sets
         # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+        constraints_before = len(self.pre_constraints[action])
         updated_constraints = []
         for constraint in self.pre_constraints[action]:
             # Keep only literals from constraint that were satisfied
@@ -510,8 +562,9 @@ class InformationGainLearner(BaseActionModelLearner):
             if updated:  # Don't add empty constraints
                 updated_constraints.append(updated)
         self.pre_constraints[action] = updated_constraints
+        logger.debug(f"  Constraints updated: {constraints_before} → {len(self.pre_constraints[action])}")
 
-        logger.debug(f"Updated {action} after success: |pre|={len(self.pre[action])}, "
+        logger.info(f"Success update complete for {action}: |pre|={len(self.pre[action])}, "
                     f"|eff+|={len(self.eff_add[action])}, |eff-|={len(self.eff_del[action])}")
 
     def _update_failure(self, action: str, objects: List[str], state: Set[str]) -> None:
@@ -521,19 +574,25 @@ class InformationGainLearner(BaseActionModelLearner):
         According to algorithm:
         - pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
         """
+        logger.debug(f"_update_failure: Processing {action} with objects {objects}")
+
         # Convert state to internal format
         state_internal = self._state_to_internal(state)
+        logger.debug(f"  State: {len(state_internal)} fluents")
 
         # Get satisfied literals in state
         satisfied_in_state = self._get_satisfied_literals(action, state_internal, objects)
+        logger.debug(f"  Satisfied literals: {len(satisfied_in_state)}/{len(self.pre[action])}")
 
         # Add new constraint: unsatisfied literals from pre(a)
         # pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
         unsatisfied = self.pre[action] - satisfied_in_state
 
         if unsatisfied:
+            constraints_before = len(self.pre_constraints[action])
             self.pre_constraints[action].append(unsatisfied)
-            logger.debug(f"Added constraint for {action}: {len(unsatisfied)} unsatisfied literals")
+            logger.info(f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
+                       f"(total constraints: {constraints_before} → {len(self.pre_constraints[action])})")
         else:
             # This shouldn't happen - if all preconditions were satisfied, action should succeed
             logger.warning(f"Failed action {action} had all preconditions satisfied - possible environment issue")
@@ -611,17 +670,23 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             CNF manager with the formula
         """
+        logger.debug(f"_build_cnf_formula: Building CNF for action '{action}'")
         cnf = self.cnf_managers[action]
 
         # Clear existing clauses
+        clauses_before = len(cnf.cnf.clauses)
         cnf.cnf.clauses = []
         cnf.fluent_to_var = {}
         cnf.var_to_fluent = {}
         cnf.next_var = 1
+        logger.debug(f"  Cleared {clauses_before} existing clauses")
 
         # Build CNF from constraints
-        for constraint_set in self.pre_constraints[action]:
+        logger.debug(f"  Processing {len(self.pre_constraints[action])} constraint sets")
+        clauses_added = 0
+        for i, constraint_set in enumerate(self.pre_constraints[action]):
             if not constraint_set:
+                logger.debug(f"  Constraint {i}: empty, skipping")
                 continue
 
             # Each constraint set becomes a clause
@@ -637,8 +702,11 @@ class InformationGainLearner(BaseActionModelLearner):
 
             if clause:
                 cnf.add_clause(clause)
+                clauses_added += 1
+                logger.debug(f"  Constraint {i}: added clause with {len(clause)} literals")
 
-        logger.debug(f"Built CNF for {action}: {len(cnf.cnf.clauses)} clauses")
+        logger.info(f"CNF formula built for '{action}': {clauses_added} clauses, "
+                   f"{len(cnf.fluent_to_var)} unique variables")
         return cnf
 
     def get_learned_model(self) -> Dict[str, Any]:
@@ -648,6 +716,8 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Dictionary containing the learned model
         """
+        logger.debug("Exporting learned model")
+
         model = {
             'actions': {},
             'predicates': set(),
@@ -671,12 +741,19 @@ class InformationGainLearner(BaseActionModelLearner):
                 'observations': len(self.observation_history[action_name])
             }
 
+            logger.debug(f"Exported action '{action_name}': {len(self.pre[action_name])} preconditions, "
+                        f"{len(self.eff_add[action_name])} add effects, "
+                        f"{len(self.eff_del[action_name])} delete effects, "
+                        f"{len(self.observation_history[action_name])} observations")
+
             # Extract predicates from literals
             for literal in self.pre[action_name]:
                 pred_name = self._extract_predicate_name(literal)
                 if pred_name:
                     model['predicates'].add(pred_name)
 
+        logger.info(f"Model export complete: {len(model['actions'])} actions, "
+                   f"{len(model['predicates'])} predicates")
         return model
 
     def _extract_predicate_name(self, literal: str) -> Optional[str]:
@@ -708,18 +785,27 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         # Check iteration limit
         if self.iteration_count >= self.max_iterations:
+            logger.info(f"Convergence: Reached max iterations ({self.max_iterations})")
             self._converged = True
             return True
 
         # Future: Add convergence criteria based on model uncertainty
 
+        if self._converged:
+            logger.info("Convergence: Model has converged")
+
         return self._converged
 
     def reset(self) -> None:
         """Reset the learner to initial state."""
+        logger.info("Resetting learner to initial state")
+
         super().reset()
 
         # Clear all state variables
+        num_actions = len(self.pre)
+        num_observations = sum(len(obs) for obs in self.observation_history.values())
+
         self.pre.clear()
         self.pre_constraints.clear()
         self.eff_add.clear()
@@ -729,5 +815,8 @@ class InformationGainLearner(BaseActionModelLearner):
         self.observation_history.clear()
         self.cnf_managers.clear()
 
+        logger.debug(f"Cleared {num_actions} action models and {num_observations} observations")
+
         # Reinitialize
         self._initialize_action_models()
+        logger.info("Reset complete")
