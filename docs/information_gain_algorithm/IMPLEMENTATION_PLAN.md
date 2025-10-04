@@ -15,165 +15,171 @@ A phase-based implementation guide for the CNF-based Information-Theoretic actio
 | Phase | Status | Duration |
 |-------|--------|----------|
 | Phase 1: Core Data Structures | ✅ Complete | 1 session |
-| Phase 2: CNF & Update Rules | 🔵 Current | 3-4 sessions |
-| Phase 3: Information Gain | ⏳ Pending | 3-4 sessions |
+| Phase 2: CNF & Update Rules | ✅ Complete | 1 session |
+| Phase 3: Information Gain | 🔵 Current | 3-4 sessions |
 | Phase 4: Integration & Testing | ⏳ Pending | 2-3 sessions |
 | Phase 5: Performance | ⏳ Pending | 2 sessions |
 | Phase 6: Comparative Analysis | ⏳ Pending | 1-2 sessions |
 
 ---
 
-## 🔵 Current Phase: Phase 2 - CNF Formula Construction & Update Rules
+## 🔵 Current Phase: Phase 3 - Information Gain Calculation & Action Selection
 
-**Model**: Opus 4.1 (complex logic, mathematical correctness)
+**Model**: Sonnet 4.5 (straightforward implementation)
 **Duration**: 3-4 sessions
-**Previous Phase**: Phase 1 complete - Core data structures and binding functions implemented
+**Previous Phases**: Phase 1 & 2 complete - Core structures, CNF formulas, and update rules implemented
 
-### Phase 1 Completion Summary
+### Phase 2 Completion Summary
 
 **What was completed**:
-- ✅ `InformationGainLearner` class with all state variables
-- ✅ Binding functions (`bindP`, `bindP_inverse`) working correctly
-- ✅ La generation for all actions
-- ✅ Observation recording infrastructure
-- ✅ 24 passing tests with independent La validation
+- ✅ CNF Manager integration for formula management
+- ✅ Success update rules (preconditions + effects)
+- ✅ Failure update rules (constraint addition)
+- ✅ CNF formula construction from constraint sets
+- ✅ State format conversion (PDDL ↔ internal)
+- ✅ 38 passing tests (100% pass rate)
 
-**Key files**:
-- `src/algorithms/information_gain.py` - Main implementation (442 lines)
-- `tests/test_information_gain.py` - Test suite (395 lines, 25 tests)
+**Key achievements**:
+- All update rules match algorithm specification precisely
+- Negative preconditions properly handled in CNF
+- eff_maybe sets correctly become disjoint after observations
+- Clean separation between internal and external formats
 
-**What's placeholder**:
+**What's still placeholder**:
 - `select_action()` - Returns first action (Phase 3 will add info gain logic)
-- `observe()` - Only records observations (Phase 2 will add update rules)
 
-### Phase 2 Tasks
+### Phase 3 Tasks
 
-#### 1. Integrate with CNFManager
-- [ ] Import and initialize `CNFManager` from `src/core/cnf_manager.py`
-- [ ] Create CNF formula for each action's precondition constraints (`pre?`)
-- [ ] Handle PDDL ↔ internal negation conversion (¬ vs `(not ...)`)
-
-#### 2. Implement Success Update Rules
-When action succeeds from state s → s':
+#### 1. Implement Applicability Probability Calculation
+Calculate probability that action is applicable in current state:
 
 ```python
-# Update preconditions (narrow down)
-pre(a) = pre(a) ∩ bindP(s, O)
-
-# Update confirmed effects
-eff+(a) = eff+(a) ∪ bindP(s' \ s, O)  # Added fluents
-eff-(a) = eff-(a) ∪ bindP(s \ s', O)  # Deleted fluents
-
-# Update possible effects
-eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)  # Keep unchanged
-eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)  # Remove if was/became true
-
-# Update constraint sets
-pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+# P(a applicable in s) = |models of cnf_pre?(a) where bindP(s,O) is true| / |all models|
+# Use SAT model counting on CNF formula
 ```
 
-- [ ] Implement `_update_success()` method with all rules
-- [ ] Test with realistic state transitions from depots domain
+- [ ] Implement `_calculate_applicability_probability(action, state)` method
+- [ ] Use CNFManager's model counting capabilities
+- [ ] Handle edge cases (empty formulas, contradictions)
+- [ ] Test with various precondition certainty levels
 
-#### 3. Implement Failure Update Rules
-When action fails from state s:
+#### 2. Implement Potential Information Gain Functions
+Calculate expected reduction in uncertainty:
 
 ```python
-# Add constraint: at least one unsatisfied literal is a precondition
-pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
+# Info gain from successful execution
+gain_success = entropy(current_model) - entropy(model_after_success)
+
+# Info gain from failed execution
+gain_failure = entropy(current_model) - entropy(model_after_failure)
+
+# Expected information gain
+E[gain] = P(success) * gain_success + P(failure) * gain_failure
 ```
 
-- [ ] Implement `_update_failure()` method
-- [ ] Build CNF formula from constraint sets
-- [ ] Test constraint accumulation over multiple failures
+- [ ] Implement `_calculate_entropy(action)` method
+- [ ] Implement `_calculate_potential_gain_success(action, state)` method
+- [ ] Implement `_calculate_potential_gain_failure(action, state)` method
+- [ ] Implement `_calculate_expected_information_gain(action, state)` method
 
-#### 4. CNF Construction from Constraints
-Build CNF formula representing precondition uncertainty:
+#### 3. Implement Action Selection Strategies
+Replace placeholder with actual selection logic:
 
 ```python
-cnf_pre?(a) = ⋀(⋁xl) for B ∈ pre?(a), l ∈ B
-# Each constraint set B becomes a clause (disjunction)
+# Greedy: Select action with maximum expected information gain
+# Epsilon-greedy: Explore with probability ε, exploit otherwise
+# Boltzmann: Probabilistic selection based on gain values
 ```
 
-- [ ] Implement `_build_cnf_formula(action_name)` method
-- [ ] Convert internal ¬ notation to CNFManager format
-- [ ] Handle both positive and negative literals in clauses
+- [ ] Implement greedy selection in `select_action()`
+- [ ] Add epsilon-greedy variant (configurable)
+- [ ] Add Boltzmann/softmax selection (optional)
+- [ ] Test selection strategies with different scenarios
 
-#### 5. State Format Conversion
-- [ ] Implement `_state_to_internal(state)` - converts UP/set format to internal
-- [ ] Implement `_internal_to_pddl(literals)` - converts internal ¬ to PDDL `(not ...)`
-- [ ] Test conversions preserve semantics
+#### 4. Handle Edge Cases
+- [ ] Actions with no uncertainty (known preconditions)
+- [ ] States where no actions are possibly applicable
+- [ ] Tie-breaking when multiple actions have same gain
+- [ ] Computational limits for large CNF formulas
+
+#### 5. Integration and Validation
+- [ ] Ensure convergence detection works with info gain
+- [ ] Validate that high-gain actions actually reduce uncertainty
+- [ ] Test on domains with negative preconditions (rover)
+- [ ] Compare with random action selection baseline
 
 ### What to Avoid
 
-- **Don't** implement model counting yet (Phase 3)
-- **Don't** implement applicability probability calculation (Phase 3)
-- **Don't** add performance optimizations (Phase 5)
-- **Don't** modify CNFManager internals (use as-is)
+- **Don't** implement caching optimizations yet (Phase 5)
+- **Don't** modify core update rules from Phase 2
+- **Don't** add approximate counting yet (Phase 5)
+- **Don't** implement full experiment runner integration (Phase 4)
 
 ### Success Criteria
 
-- [ ] CNF formulas correctly updated on observations
-- [ ] Negative preconditions properly handled in CNF
-- [ ] All update rules match algorithm specification
-- [ ] Test `test_eff_maybe_sets_become_disjoint_after_success` passes (currently skipped)
-- [ ] New tests validate update rules correctness
-- [ ] All existing tests still pass
+- [ ] Information gain correctly calculated from CNF formulas
+- [ ] Action selection chooses high-information actions
+- [ ] Algorithm converges faster than random selection
+- [ ] All Phase 1-2 tests still pass
+- [ ] New tests validate info gain calculations
+- [ ] Handles domains with negative preconditions
 
-### Initialization Prompt for Phase 2
+### Initialization Prompt for Phase 3
 
 ```
-I need to implement Phase 2 of the Information Gain Algorithm.
+I need to implement Phase 3 of the Information Gain Algorithm.
 
-Phase 1 Status: ✅ COMPLETE
+Phase 1 & 2 Status: ✅ COMPLETE
 - Core data structures implemented
-- Binding functions (bindP, bindP_inverse) working
-- La generation correct
-- 24 tests passing
+- Binding functions working correctly
+- CNF formulas and update rules implemented
+- 38 tests passing (100% pass rate)
 
-Phase 2 Goal: Implement CNF formulas and observation update rules
+Phase 3 Goal: Implement information gain calculation and action selection
 
 Read:
-- @docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md (sections: Update Rules, CNF Construction)
-- @docs/information_gain_algorithm/COMPLETED_PHASES.md (Phase 1 summary)
-- @src/core/cnf_manager.py (CNF integration)
+- @docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md (sections: Information Gain, Action Selection)
+- @docs/information_gain_algorithm/COMPLETED_PHASES.md (Phase 1-2 summaries)
 - @src/algorithms/information_gain.py (current implementation)
+- @tests/test_information_gain.py (existing tests)
 
 Tasks:
-1. Integrate CNFManager for formula management
-2. Implement success update rules (preconditions + effects)
-3. Implement failure update rules (constraint addition)
-4. Build CNF formulas from constraint sets
-5. Handle PDDL ↔ internal negation conversion
+1. Implement applicability probability using SAT model counting
+2. Calculate entropy and potential information gain
+3. Implement expected information gain calculation
+4. Replace placeholder select_action() with greedy selection
+5. Add alternative selection strategies (epsilon-greedy, Boltzmann)
 
-Focus: Mathematical correctness of update rules, not performance.
+Focus: Correct information gain calculation that drives learning efficiency.
 ```
 
-### Test Requirements for Phase 2
+### Test Requirements for Phase 3
 
-1. **Update Rule Tests**:
-   - Test precondition narrowing on success
-   - Test effect learning (add/delete)
-   - Test eff_maybe set separation
-   - Test constraint accumulation on failure
+1. **Applicability Probability Tests**:
+   - Test probability calculation with known preconditions
+   - Test with partial knowledge (constraints)
+   - Test edge cases (empty CNF, contradictions)
+   - Test with negative preconditions
 
-2. **CNF Construction Tests**:
-   - Test CNF building from constraints
-   - Test negative literal handling
-   - Test formula validity
+2. **Information Gain Tests**:
+   - Test entropy calculation
+   - Test potential gain calculations
+   - Test expected information gain
+   - Verify gain is positive for uncertain actions
 
-3. **Integration Tests**:
-   - Enable skipped test: `test_eff_maybe_sets_become_disjoint_after_success`
-   - Test realistic observation sequences
-   - Verify invariants maintained
+3. **Action Selection Tests**:
+   - Test greedy selection chooses max gain action
+   - Test epsilon-greedy exploration
+   - Test handling of ties
+   - Test convergence improvement over random
 
 ### Key Algorithm Sections to Reference
 
 **From INFORMATION_GAIN_ALGORITHM.md**:
-- Lines 107-129: Success update rules
-- Lines 131-139: Failure update rules
-- Lines 141-201: CNF formula construction
-- Lines 46-78: Negative precondition handling
+- Lines 203-240: Information gain calculation
+- Lines 242-280: Action selection strategies
+- Lines 282-320: Applicability probability
+- Lines 322-360: Entropy and model counting
 
 ---
 
@@ -206,20 +212,20 @@ After each session:
 
 ---
 
-## 🔍 Phase 2 Validation Checkpoints
+## 🔍 Phase 3 Validation Checkpoints
 
 ### During Implementation
-- [ ] Update rules match algorithm specification line-by-line
-- [ ] CNF formulas correctly represent uncertainty
-- [ ] Negative preconditions handled in CNF clauses
-- [ ] State conversions preserve semantics
+- [ ] Applicability probability correctly uses model counting
+- [ ] Entropy calculation matches information theory principles
+- [ ] Expected information gain combines success/failure gains
+- [ ] Action selection prioritizes high-information actions
 
 ### After Implementation
-- [ ] All Phase 1 tests still pass (24 tests)
-- [ ] New update rule tests pass
-- [ ] Skipped test now passes
+- [ ] All Phase 1-2 tests still pass (38 tests)
+- [ ] New information gain tests pass
+- [ ] Algorithm converges faster than random baseline
 - [ ] `make test` shows no regressions
-- [ ] Manual inspection: eff_maybe_add and eff_maybe_del separate after observations
+- [ ] Manual inspection: Selected actions reduce model uncertainty
 
 ---
 
@@ -260,12 +266,6 @@ After each session:
 ---
 
 ## 🔄 Next Phases Preview
-
-### Phase 3: Information Gain Calculation & Action Selection
-- Implement applicability probability using SAT model counting
-- Create potential gain functions
-- Implement expected information gain calculation
-- Add greedy and probabilistic selection strategies
 
 ### Phase 4: Integration & Testing
 - Comprehensive test suite
