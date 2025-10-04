@@ -16,171 +16,110 @@ A phase-based implementation guide for the CNF-based Information-Theoretic actio
 |-------|--------|----------|
 | Phase 1: Core Data Structures | ✅ Complete | 1 session |
 | Phase 2: CNF & Update Rules | ✅ Complete | 1 session |
-| Phase 3: Information Gain | 🔵 Current | 3-4 sessions |
-| Phase 4: Integration & Testing | ⏳ Pending | 2-3 sessions |
+| Phase 3: Information Gain | ✅ Complete | 1 session |
+| Phase 4: Integration & Testing | 🔵 Current | 2-3 sessions |
 | Phase 5: Performance | ⏳ Pending | 2 sessions |
 | Phase 6: Comparative Analysis | ⏳ Pending | 1-2 sessions |
 
 ---
 
-## 🔵 Current Phase: Phase 3 - Information Gain Calculation & Action Selection
+## 🔵 Current Phase: Phase 4 - Integration & Testing
 
-**Model**: Sonnet 4.5 (straightforward implementation)
-**Duration**: 3-4 sessions
-**Previous Phases**: Phase 1 & 2 complete - Core structures, CNF formulas, and update rules implemented
+**Model**: Sonnet 4.5 (integration and testing focus)
+**Duration**: 2-3 sessions
+**Previous Phases**: Phase 1-3 complete - Full information gain algorithm implemented
 
-### Phase 2 Completion Summary
+### Phase 3 Completion Summary
 
 **What was completed**:
-- ✅ CNF Manager integration for formula management
-- ✅ Success update rules (preconditions + effects)
-- ✅ Failure update rules (constraint addition)
-- ✅ CNF formula construction from constraint sets
-- ✅ State format conversion (PDDL ↔ internal)
-- ✅ 38 passing tests (100% pass rate)
+- ✅ Applicability probability calculation using SAT model counting
+- ✅ Entropy calculation for action model uncertainty
+- ✅ Potential information gain from success/failure
+- ✅ Expected information gain calculation
+- ✅ Three action selection strategies (greedy, epsilon-greedy, Boltzmann)
+- ✅ Replaced placeholder select_action() with full implementation
+- ✅ ~60 total tests across all phases
 
 **Key achievements**:
-- All update rules match algorithm specification precisely
-- Negative preconditions properly handled in CNF
-- eff_maybe sets correctly become disjoint after observations
-- Clean separation between internal and external formats
+- Information gain correctly drives action selection
+- Handles edge cases (empty state, no constraints, zero gains)
+- Numerical stability in probability calculations
+- Main test suite still passes (165 tests)
 
-**What's still placeholder**:
-- `select_action()` - Returns first action (Phase 3 will add info gain logic)
+**Ready for Phase 4**:
+- Full algorithm implementation complete
+- Ready for integration with experiment runner
+- Can be compared against OLAM and other baselines
 
-### Phase 3 Tasks
+### Phase 4 Tasks
 
-#### 1. Implement Applicability Probability Calculation
-Calculate probability that action is applicable in current state:
+#### 1. Integration with Experiment Runner
+- [ ] Ensure InformationGainLearner works with experiment runner
+- [ ] Add configuration options for selection strategies
+- [ ] Integrate with metrics collection
+- [ ] Test end-to-end pipeline
 
-```python
-# P(a applicable in s) = |models of cnf_pre?(a) where bindP(s,O) is true| / |all models|
-# Use SAT model counting on CNF formula
-```
+#### 2. Comprehensive Testing
+- [ ] Test on multiple domains (blocksworld, gripper, rover, depots)
+- [ ] Validate convergence behavior
+- [ ] Compare against random baseline
+- [ ] Stress test with large state spaces
 
-- [ ] Implement `_calculate_applicability_probability(action, state)` method
-- [ ] Use CNFManager's model counting capabilities
-- [ ] Handle edge cases (empty formulas, contradictions)
-- [ ] Test with various precondition certainty levels
+#### 3. Performance Profiling
+- [ ] Identify bottlenecks in SAT counting
+- [ ] Measure time per action selection
+- [ ] Profile memory usage
+- [ ] Document performance characteristics
 
-#### 2. Implement Potential Information Gain Functions
-Calculate expected reduction in uncertainty:
-
-```python
-# Info gain from successful execution
-gain_success = entropy(current_model) - entropy(model_after_success)
-
-# Info gain from failed execution
-gain_failure = entropy(current_model) - entropy(model_after_failure)
-
-# Expected information gain
-E[gain] = P(success) * gain_success + P(failure) * gain_failure
-```
-
-- [ ] Implement `_calculate_entropy(action)` method
-- [ ] Implement `_calculate_potential_gain_success(action, state)` method
-- [ ] Implement `_calculate_potential_gain_failure(action, state)` method
-- [ ] Implement `_calculate_expected_information_gain(action, state)` method
-
-#### 3. Implement Action Selection Strategies
-Replace placeholder with actual selection logic:
-
-```python
-# Greedy: Select action with maximum expected information gain
-# Epsilon-greedy: Explore with probability ε, exploit otherwise
-# Boltzmann: Probabilistic selection based on gain values
-```
-
-- [ ] Implement greedy selection in `select_action()`
-- [ ] Add epsilon-greedy variant (configurable)
-- [ ] Add Boltzmann/softmax selection (optional)
-- [ ] Test selection strategies with different scenarios
-
-#### 4. Handle Edge Cases
-- [ ] Actions with no uncertainty (known preconditions)
-- [ ] States where no actions are possibly applicable
-- [ ] Tie-breaking when multiple actions have same gain
-- [ ] Computational limits for large CNF formulas
-
-#### 5. Integration and Validation
-- [ ] Ensure convergence detection works with info gain
-- [ ] Validate that high-gain actions actually reduce uncertainty
-- [ ] Test on domains with negative preconditions (rover)
-- [ ] Compare with random action selection baseline
-
-### What to Avoid
-
-- **Don't** implement caching optimizations yet (Phase 5)
-- **Don't** modify core update rules from Phase 2
-- **Don't** add approximate counting yet (Phase 5)
-- **Don't** implement full experiment runner integration (Phase 4)
+#### 4. Documentation
+- [ ] Update API documentation
+- [ ] Add usage examples
+- [ ] Document configuration options
+- [ ] Create comparison with OLAM
 
 ### Success Criteria
 
-- [ ] Information gain correctly calculated from CNF formulas
-- [ ] Action selection chooses high-information actions
-- [ ] Algorithm converges faster than random selection
-- [ ] All Phase 1-2 tests still pass
-- [ ] New tests validate info gain calculations
-- [ ] Handles domains with negative preconditions
+- [ ] Algorithm runs in experiment framework
+- [ ] Converges on all test domains
+- [ ] Outperforms random selection
+- [ ] Performance acceptable for experiments
+- [ ] Documentation complete
 
-### Initialization Prompt for Phase 3
+### Initialization Prompt for Phase 4
 
 ```
-I need to implement Phase 3 of the Information Gain Algorithm.
+I need to implement Phase 4 of the Information Gain Algorithm.
 
-Phase 1 & 2 Status: ✅ COMPLETE
-- Core data structures implemented
-- Binding functions working correctly
-- CNF formulas and update rules implemented
-- 38 tests passing (100% pass rate)
+Phase 1-3 Status: ✅ COMPLETE
+- Full information gain algorithm implemented
+- Applicability probability, entropy, and gain calculations working
+- Three selection strategies implemented
+- ~60 tests passing
 
-Phase 3 Goal: Implement information gain calculation and action selection
+Phase 4 Goal: Integration, testing, and validation
 
 Read:
-- @docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md (sections: Information Gain, Action Selection)
-- @docs/information_gain_algorithm/COMPLETED_PHASES.md (Phase 1-2 summaries)
-- @docs/information_gain_algorithm/IMPLEMENTATION_PLAN.md (phase 3 - completion)
-- @src/algorithms/information_gain.py (current implementation)
-- @tests/test_information_gain.py (existing tests)
+- @docs/information_gain_algorithm/COMPLETED_PHASES.md (Phase 1-3 summaries)
+- @src/algorithms/information_gain.py (complete implementation)
+- @src/experiments/runner.py (experiment framework)
+- @tests/ (existing test structure)
 
 Tasks:
-1. Implement applicability probability using SAT model counting
-2. Calculate entropy and potential information gain
-3. Implement expected information gain calculation
-4. Replace placeholder select_action() with greedy selection
-5. Add alternative selection strategies (epsilon-greedy, Boltzmann)
-
-Focus: Correct information gain calculation that drives learning efficiency.
+1. Integrate with experiment runner
+2. Test on multiple domains
+3. Profile performance
+4. Complete documentation
 ```
 
-### Test Requirements for Phase 3
+---
 
-1. **Applicability Probability Tests**:
-   - Test probability calculation with known preconditions
-   - Test with partial knowledge (constraints)
-   - Test edge cases (empty CNF, contradictions)
-   - Test with negative preconditions
+## Previous Phase Archives
 
-2. **Information Gain Tests**:
-   - Test entropy calculation
-   - Test potential gain calculations
-   - Test expected information gain
-   - Verify gain is positive for uncertain actions
+For detailed information about completed phases, see [COMPLETED_PHASES.md](COMPLETED_PHASES.md).
 
-3. **Action Selection Tests**:
-   - Test greedy selection chooses max gain action
-   - Test epsilon-greedy exploration
-   - Test handling of ties
-   - Test convergence improvement over random
-
-### Key Algorithm Sections to Reference
-
-**From INFORMATION_GAIN_ALGORITHM.md**:
-- Lines 203-240: Information gain calculation
-- Lines 242-280: Action selection strategies
-- Lines 282-320: Applicability probability
-- Lines 322-360: Entropy and model counting
+- **Phase 1**: Core Data Structures & State Management
+- **Phase 2**: CNF Formula Management & Update Rules
+- **Phase 3**: Information Gain Calculation & Action Selection
 
 ---
 
@@ -212,22 +151,6 @@ After each session:
 
 ---
 
-## 🔍 Phase 3 Validation Checkpoints
-
-### During Implementation
-- [ ] Applicability probability correctly uses model counting
-- [ ] Entropy calculation matches information theory principles
-- [ ] Expected information gain combines success/failure gains
-- [ ] Action selection prioritizes high-information actions
-
-### After Implementation
-- [ ] All Phase 1-2 tests still pass (38 tests)
-- [ ] New information gain tests pass
-- [ ] Algorithm converges faster than random baseline
-- [ ] `make test` shows no regressions
-- [ ] Manual inspection: Selected actions reduce model uncertainty
-
----
 
 ## 📌 Quick Reference Links
 

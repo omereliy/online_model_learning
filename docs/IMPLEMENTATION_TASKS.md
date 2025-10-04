@@ -37,12 +37,15 @@ Building experiment framework to compare three online action model learning algo
 - **Metrics** (`src/experiments/metrics.py`) - Comprehensive tracking
 - **Results export** - CSV/JSON formats
 
-### ⏳ TODO Components
-
 #### Information Gain Algorithm
-- `src/algorithms/information_gain.py` - Main algorithm
-- `src/algorithms/entropy_calculator.py` - Entropy computation
+- **Information Gain Learner** (`src/algorithms/information_gain.py`) - Complete with Phase 3
+  - Applicability probability calculation using SAT model counting
+  - Entropy and information gain calculations
+  - Three selection strategies (greedy, epsilon-greedy, Boltzmann)
+  - ~60 tests passing
 - See [INFORMATION_GAIN_ALGORITHM.md](information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md)
+
+### ⏳ TODO Components
 
 #### ModelLearner Integration
 - `src/algorithms/optimistic_adapter.py` - Adapter implementation
@@ -62,13 +65,19 @@ Building experiment framework to compare three online action model learning algo
 
 ## Next Implementation Tasks
 
-### Phase 1: Information Gain Algorithm
-1. Implement `InformationGainLearner` class
-2. Integrate with existing `CNFManager`
-3. Add entropy-based action selection
-4. Test with negative precondition domains
+### Phase 4: Information Gain Integration & Testing
+1. Integrate `InformationGainLearner` with experiment runner
+2. Add configuration for selection strategies (greedy/epsilon-greedy/Boltzmann)
+3. Test on multiple domains (blocksworld, gripper, rover, depots)
+4. Profile performance and optimize if needed
 
-### Phase 2: ModelLearner Adapter (BLOCKED)
+### Phase 5: Comparative Experiments
+1. Create experiment configs for Information Gain vs OLAM
+2. Run on multiple domains (blocksworld, gripper, rover, depots)
+3. Analyze sample complexity and convergence
+4. Generate comparison reports
+
+### Phase 6: ModelLearner Adapter (BLOCKED - Low Priority)
 ⚠️ **Blocked**: Repository https://github.com/kcleung/ModelLearner.git not accessible
 1. Find correct repository URL or alternative implementation
 2. Create `OptimisticAdapter` class
@@ -76,7 +85,7 @@ Building experiment framework to compare three online action model learning algo
 4. Implement optimistic exploration strategy
 5. Validate against ModelLearner paper
 
-### Phase 3: Comparative Experiments
+### Phase 7: Three-Way Comparison
 1. Create experiment configs for all algorithms
 2. Run on multiple domains (blocksworld, gripper, rover)
 3. Analyze sample complexity and convergence

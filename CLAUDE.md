@@ -45,9 +45,9 @@
 | **OLAM Adapter** | `src/algorithms/olam_adapter.py` | ✅ Complete |
 | **Experiment Runner** | `src/experiments/runner.py` | ✅ Complete |
 | **Metrics Collector** | `src/experiments/metrics.py` | ✅ Complete |
-| **Info Gain Learner** | `src/algorithms/information_gain.py` | ⏳ TODO |
+| **Info Gain Learner** | `src/algorithms/information_gain.py` | ✅ Complete (Phase 3) |
 | **ModelLearner Adapter** | `src/algorithms/optimistic_adapter.py` | ⏳ TODO (blocked - repo unavailable) |
-| **PDDL Environment** | `src/environments/pddl_environment.py` | ⏳ TODO |
+| **PDDL Environment** | `src/environments/pddl_environment.py` | ✅ Complete |
 
 ## 🔗 External Resources
 

@@ -6,6 +6,8 @@ using expected information gain for action selection.
 """
 
 import logging
+import math
+import random
 from typing import Tuple, List, Dict, Optional, Any, Set
 from collections import defaultdict
 from pathlib import Path
@@ -72,6 +74,11 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # CNF managers for each action (Phase 2)
         self.cnf_managers: Dict[str, CNFManager] = {}
+
+        # Phase 3: Action selection strategy
+        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
+        self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
+        self.temperature = kwargs.get('temperature', 1.0)  # For Boltzmann
 
         # Initialize action models
         logger.debug("Initializing action models")
@@ -374,12 +381,278 @@ class InformationGainLearner(BaseActionModelLearner):
         else:
             return f"?p{index}"
 
+    def _calculate_applicability_probability(self, action: str, objects: List[str], state: Set[str]) -> float:
+        """
+        Calculate probability that action is applicable in current state.
+
+        According to algorithm:
+        pr(app(a, O, s) = 1) = {
+            1,                                             if pre?(a) = ∅
+            |SAT(cnf_pre?(a,O,s))| / |SAT(cnf_pre?(a))|,  otherwise
+        }
+
+        Args:
+            action: Action name
+            objects: Object binding
+            state: Current state
+
+        Returns:
+            Probability between 0 and 1
+        """
+        # If no constraints, action is always applicable
+        if len(self.pre_constraints[action]) == 0:
+            logger.debug(f"Action {action} has no constraints, probability = 1.0")
+            return 1.0
+
+        # Build CNF formula if needed
+        if len(self.cnf_managers[action].cnf.clauses) == 0:
+            self._build_cnf_formula(action)
+
+        cnf = self.cnf_managers[action]
+
+        # If CNF is still empty after building, no real constraints
+        if len(cnf.cnf.clauses) == 0:
+            logger.debug(f"Action {action} has empty CNF, probability = 1.0")
+            return 1.0
+
+        # Count satisfying models for unrestricted formula
+        total_models = cnf.count_solutions()
+        if total_models == 0:
+            # Contradiction in formula
+            logger.warning(f"Action {action} has contradictory constraints")
+            return 0.0
+
+        # Now add constraints for unsatisfied literals in current state
+        # cnf_pre?(a,O,s) = cnf_pre?(a) ∧ (¬xl) for l ∈ (⋃pre?(a)) \ bindP(s, O)
+        state_internal = self._state_to_internal(state)
+        satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
+
+        # Create a copy of CNF to add state constraints
+        cnf_with_state = CNFManager()
+        cnf_with_state.cnf.clauses = cnf.cnf.clauses.copy()
+        cnf_with_state.fluent_to_var = cnf.fluent_to_var.copy()
+        cnf_with_state.var_to_fluent = cnf.var_to_fluent.copy()
+        cnf_with_state.next_var = cnf.next_var
+
+        # Add unit clauses for unsatisfied literals
+        all_constraint_literals = set()
+        for constraint_set in self.pre_constraints[action]:
+            all_constraint_literals.update(constraint_set)
+
+        unsatisfied = all_constraint_literals - satisfied_literals
+        for literal in unsatisfied:
+            # Add unit clause asserting this literal is false
+            if literal.startswith('¬'):
+                # Negative literal is unsatisfied, so positive must be true
+                positive = literal[1:]
+                cnf_with_state.add_clause([positive])
+            else:
+                # Positive literal is unsatisfied, so it must be false
+                cnf_with_state.add_clause(['-' + literal])
+
+        # Count satisfying models with state constraints
+        state_models = cnf_with_state.count_solutions()
+
+        probability = state_models / total_models if total_models > 0 else 0.0
+        logger.debug(f"Applicability probability for {action}: {state_models}/{total_models} = {probability:.3f}")
+        return probability
+
+    def _calculate_entropy(self, action: str) -> float:
+        """
+        Calculate entropy of action model to measure uncertainty.
+
+        Higher entropy means more uncertainty about the action's preconditions and effects.
+
+        Args:
+            action: Action name
+
+        Returns:
+            Entropy value (non-negative)
+        """
+        # Entropy based on size of uncertain sets
+        # H = -Σ p(x) * log(p(x))
+
+        # Calculate entropy from possible preconditions
+        la_size = len(self.pre[action])
+        if la_size == 0:
+            pre_entropy = 0.0
+        else:
+            # Uncertain preconditions contribute to entropy
+            uncertain_pre = len(self.pre[action]) - len(self.eff_add[action]) - len(self.eff_del[action])
+            p_uncertain = uncertain_pre / la_size if la_size > 0 else 0
+            p_certain = 1.0 - p_uncertain
+
+            pre_entropy = 0.0
+            if p_uncertain > 0:
+                pre_entropy -= p_uncertain * math.log2(p_uncertain)
+            if p_certain > 0:
+                pre_entropy -= p_certain * math.log2(p_certain)
+
+        # Calculate entropy from possible effects
+        eff_entropy = 0.0
+        for eff_set in [self.eff_maybe_add[action], self.eff_maybe_del[action]]:
+            if len(eff_set) > 0:
+                # Each undetermined effect adds to entropy
+                p = len(eff_set) / la_size if la_size > 0 else 0
+                if p > 0:
+                    eff_entropy -= p * math.log2(p)
+
+        total_entropy = pre_entropy + eff_entropy
+        logger.debug(f"Entropy for {action}: {total_entropy:.3f} (pre: {pre_entropy:.3f}, eff: {eff_entropy:.3f})")
+        return total_entropy
+
+    def _calculate_potential_gain_success(self, action: str, objects: List[str], state: Set[str]) -> float:
+        """
+        Calculate potential information gain from successful execution.
+
+        According to algorithm:
+        - preAppPotential(a, O, s) = |pre(a) \ bindP(s, O)|
+        - effPotential(a, O, s) = eff+Potential + eff-Potential
+        - sucPotential(a, O, s) = effPotential + preAppPotential
+
+        Args:
+            action: Action name
+            objects: Object binding
+            state: Current state
+
+        Returns:
+            Potential information gain (normalized)
+        """
+        state_internal = self._state_to_internal(state)
+        satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
+
+        # Precondition knowledge gain: literals that would be ruled out
+        pre_gain = len(self.pre[action] - satisfied_literals)
+
+        # Effect knowledge gain
+        # eff+Potential(a, O, s) = |eff?+(a) \ bindP(s, O)| / |La|
+        # eff-Potential(a, O, s) = |eff?-(a) ∩ bindP(s, O)| / |La|
+
+        # Get lifted versions of state fluents
+        lifted_state = self.bindP(state_internal, objects)
+
+        # Add effects we can rule out (not in unchanged fluents)
+        eff_add_gain = len(self.eff_maybe_add[action] - lifted_state)
+
+        # Delete effects we can confirm (are in current state)
+        eff_del_gain = len(self.eff_maybe_del[action].intersection(lifted_state))
+
+        # Normalize by La size
+        la_size = len(self._get_parameter_bound_literals(action))
+        if la_size == 0:
+            return 0.0
+
+        normalized_gain = (pre_gain + eff_add_gain + eff_del_gain) / la_size
+        logger.debug(f"Success potential for {action}: {normalized_gain:.3f} "
+                    f"(pre: {pre_gain}, eff+: {eff_add_gain}, eff-: {eff_del_gain})")
+        return normalized_gain
+
+    def _calculate_potential_gain_failure(self, action: str, objects: List[str], state: Set[str]) -> float:
+        """
+        Calculate potential information gain from failed execution.
+
+        According to algorithm:
+        preFailPotential(a, O, s) = 1 - (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 2^|La|
+
+        Args:
+            action: Action name
+            objects: Object binding
+            state: Current state
+
+        Returns:
+            Potential information gain (normalized)
+        """
+        # If no constraints yet, failure would provide maximum information
+        if len(self.pre_constraints[action]) == 0:
+            return 1.0
+
+        state_internal = self._state_to_internal(state)
+        satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
+
+        # Build CNF formula if needed
+        if len(self.cnf_managers[action].cnf.clauses) == 0:
+            self._build_cnf_formula(action)
+
+        # Current CNF model count
+        cnf = self.cnf_managers[action]
+
+        # If CNF is empty, use maximum possible models
+        if len(cnf.cnf.clauses) == 0:
+            la_size = len(self._get_parameter_bound_literals(action))
+            current_models = 2 ** la_size if la_size > 0 else 1
+        else:
+            current_models = cnf.count_solutions()
+
+        # Simulate adding failure constraint
+        unsatisfied = self.pre[action] - satisfied_literals
+        if len(unsatisfied) == 0:
+            # All preconditions satisfied but action failed - shouldn't happen
+            return 0.0
+
+        # Create temporary CNF with new constraint
+        temp_cnf = CNFManager()
+        temp_cnf.cnf.clauses = cnf.cnf.clauses.copy()
+        temp_cnf.fluent_to_var = cnf.fluent_to_var.copy()
+        temp_cnf.var_to_fluent = cnf.var_to_fluent.copy()
+        temp_cnf.next_var = cnf.next_var
+
+        # Add the new constraint as a clause
+        clause = []
+        for literal in unsatisfied:
+            if literal.startswith('¬'):
+                positive = literal[1:]
+                clause.append('-' + positive)
+            else:
+                clause.append(literal)
+        temp_cnf.add_clause(clause)
+
+        # Count models with new constraint
+        new_models = temp_cnf.count_solutions()
+
+        # Calculate information gain
+        la_size = len(self._get_parameter_bound_literals(action))
+        max_models = 2 ** la_size if la_size > 0 else 1
+
+        model_reduction = current_models - new_models
+        normalized_gain = 1.0 - (model_reduction / max_models)
+
+        logger.debug(f"Failure potential for {action}: {normalized_gain:.3f} "
+                    f"(models: {current_models} → {new_models})")
+        return max(0.0, normalized_gain)  # Ensure non-negative
+
+    def _calculate_expected_information_gain(self, action: str, objects: List[str], state: Set[str]) -> float:
+        """
+        Calculate expected information gain for an action in current state.
+
+        E[X(a,O,s)] = pr(app(a,O,s)=1) * sucPotential(a,O,s) +
+                      pr(app(a,O,s)=0) * preFailPotential(a,O,s)
+
+        Args:
+            action: Action name
+            objects: Object binding
+            state: Current state
+
+        Returns:
+            Expected information gain
+        """
+        prob_success = self._calculate_applicability_probability(action, objects, state)
+        gain_success = self._calculate_potential_gain_success(action, objects, state)
+        gain_failure = self._calculate_potential_gain_failure(action, objects, state)
+
+        expected_gain = prob_success * gain_success + (1.0 - prob_success) * gain_failure
+
+        logger.debug(f"Expected gain for {action}({','.join(objects)}): {expected_gain:.3f} "
+                    f"(P={prob_success:.2f}, S={gain_success:.2f}, F={gain_failure:.2f})")
+        return expected_gain
+
     def select_action(self, state: Any) -> Tuple[str, List[str]]:
         """
-        Select next action to execute.
+        Select next action to execute based on expected information gain.
 
-        Phase 1: Returns first action (placeholder).
-        Phase 3 will implement information gain-based selection.
+        Phase 3: Implements information gain-based selection with multiple strategies:
+        - greedy: Always select action with maximum expected gain
+        - epsilon_greedy: Explore with probability epsilon, exploit otherwise
+        - boltzmann: Probabilistic selection based on gain values
 
         Args:
             state: Current state
@@ -388,19 +661,114 @@ class InformationGainLearner(BaseActionModelLearner):
             Tuple of (action_name, objects)
         """
         self.iteration_count += 1
-        logger.debug(f"Selecting action for iteration {self.iteration_count}")
+        logger.debug(f"Selecting action for iteration {self.iteration_count}, strategy: {self.selection_strategy}")
 
-        # Placeholder: return first grounded action
-        if self.pddl_handler._grounded_actions:
-            action, binding = self.pddl_handler._grounded_actions[0]
+        # Convert state to set if needed
+        if not isinstance(state, set):
+            state = set(state) if state else set()
+
+        # Get all grounded actions
+        # Use the existing grounded actions from initialization
+        grounded_actions = self.pddl_handler._grounded_actions
+        if not grounded_actions:
+            logger.warning(f"No grounded actions available at iteration {self.iteration_count}")
+            return "no_action", []
+
+        # Calculate expected information gain for each action
+        action_gains = []
+        for action, binding in grounded_actions:
             objects = [obj.name for obj in binding.values()] if binding else []
-            logger.info(
-                f"Selected action: {action.name}({','.join(objects)}) [iteration {self.iteration_count}]")
-            return action.name, objects
 
-        # Fallback
-        logger.warning(f"No grounded actions available at iteration {self.iteration_count}")
-        return "no_action", []
+            try:
+                expected_gain = self._calculate_expected_information_gain(action.name, objects, state)
+                action_gains.append((action.name, objects, expected_gain))
+            except Exception as e:
+                logger.warning(f"Error calculating gain for {action.name}: {e}")
+                # Add with zero gain as fallback
+                action_gains.append((action.name, objects, 0.0))
+
+        # Sort by gain (highest first)
+        action_gains.sort(key=lambda x: x[2], reverse=True)
+
+        # Select action based on strategy
+        selected_action, selected_objects = self._select_by_strategy(action_gains)
+
+        logger.info(f"Selected action: {selected_action}({','.join(selected_objects)}) "
+                   f"[iteration {self.iteration_count}, gain: {action_gains[0][2]:.3f}]")
+        return selected_action, selected_objects
+
+    def _select_by_strategy(self, action_gains: List[Tuple[str, List[str], float]]) -> Tuple[str, List[str]]:
+        """
+        Select action based on configured strategy.
+
+        Args:
+            action_gains: List of (action_name, objects, expected_gain) tuples sorted by gain
+
+        Returns:
+            Tuple of (action_name, objects)
+        """
+        if not action_gains:
+            return "no_action", []
+
+        if self.selection_strategy == 'greedy':
+            # Always select action with highest gain
+            return action_gains[0][0], action_gains[0][1]
+
+        elif self.selection_strategy == 'epsilon_greedy':
+            # Explore with probability epsilon
+            if random.random() < self.epsilon:
+                # Random exploration
+                idx = random.randint(0, len(action_gains) - 1)
+                logger.debug(f"Epsilon-greedy: Exploring (selected index {idx})")
+                return action_gains[idx][0], action_gains[idx][1]
+            else:
+                # Exploit: select best
+                logger.debug("Epsilon-greedy: Exploiting (selected best)")
+                return action_gains[0][0], action_gains[0][1]
+
+        elif self.selection_strategy == 'boltzmann':
+            # Probabilistic selection based on gains
+            # Convert gains to probabilities using softmax with temperature
+            gains = [gain for _, _, gain in action_gains]
+
+            # Handle case where all gains are zero
+            if max(gains) == 0:
+                # Uniform random selection
+                idx = random.randint(0, len(action_gains) - 1)
+                return action_gains[idx][0], action_gains[idx][1]
+
+            # Compute softmax probabilities
+            # Scale gains by temperature
+            scaled_gains = [g / self.temperature for g in gains]
+
+            # Subtract max for numerical stability
+            max_gain = max(scaled_gains)
+            exp_gains = [math.exp(g - max_gain) for g in scaled_gains]
+            sum_exp = sum(exp_gains)
+
+            if sum_exp == 0:
+                # Fallback to uniform
+                idx = random.randint(0, len(action_gains) - 1)
+                return action_gains[idx][0], action_gains[idx][1]
+
+            probabilities = [e / sum_exp for e in exp_gains]
+
+            # Sample from distribution
+            r = random.random()
+            cumsum = 0.0
+            for i, prob in enumerate(probabilities):
+                cumsum += prob
+                if r <= cumsum:
+                    logger.debug(f"Boltzmann: Selected index {i} with probability {prob:.3f}")
+                    return action_gains[i][0], action_gains[i][1]
+
+            # Fallback to last action
+            return action_gains[-1][0], action_gains[-1][1]
+
+        else:
+            # Unknown strategy, default to greedy
+            logger.warning(f"Unknown selection strategy '{self.selection_strategy}', defaulting to greedy")
+            return action_gains[0][0], action_gains[0][1]
 
     def observe(self,
                 state: Any,

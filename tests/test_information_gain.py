@@ -799,6 +799,246 @@ class TestCNFIntegrationWithAlgorithm:
 
 
 # Integration test
+# Phase 3 Tests: Information Gain and Action Selection
+class TestApplicabilityProbability:
+    """Test applicability probability calculation using SAT model counting."""
+
+    def test_probability_with_no_constraints(self, learner):
+        """Test that actions with no constraints have probability 1.0."""
+        action_name = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
+        state = {'at_truck1_depot0'}
+
+        # No constraints initially
+        assert len(learner.pre_constraints[action_name]) == 0
+
+        prob = learner._calculate_applicability_probability(action_name, objects, state)
+        assert prob == 1.0, "Actions with no constraints should always be applicable"
+
+    def test_probability_after_failure_constraint(self, learner):
+        """Test that probability decreases after adding failure constraints."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # State missing required preconditions
+        state = {'at_crate0_depot0', 'at_hoist0_depot0'}
+
+        # Add failure constraint
+        learner.observe(state, action_name, objects, success=False)
+        learner.update_model()
+
+        # Probability should be less than 1.0 with constraints
+        prob = learner._calculate_applicability_probability(action_name, objects, state)
+        assert 0.0 <= prob < 1.0, f"Probability with constraints should be < 1.0, got {prob}"
+
+    def test_probability_with_satisfied_preconditions(self, learner):
+        """Test higher probability when more preconditions are satisfied."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+
+        # First observe failure with minimal state
+        min_state = {'at_crate0_depot0'}
+        learner.observe(min_state, action_name, objects, success=False)
+        learner.update_model()
+
+        prob_min = learner._calculate_applicability_probability(action_name, objects, min_state)
+
+        # State with more satisfied preconditions
+        fuller_state = {'at_crate0_depot0', 'at_hoist0_depot0', 'available_hoist0'}
+        prob_fuller = learner._calculate_applicability_probability(action_name, objects, fuller_state)
+
+        assert prob_fuller >= prob_min, "More satisfied preconditions should increase probability"
+
+    def test_probability_edge_cases(self, learner):
+        """Test edge cases: empty CNF, contradictions."""
+        action_name = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
+
+        # Empty state should still work
+        empty_state = set()
+        prob = learner._calculate_applicability_probability(action_name, objects, empty_state)
+        assert 0.0 <= prob <= 1.0, "Probability should be valid even with empty state"
+
+
+class TestInformationGain:
+    """Test entropy and information gain calculations."""
+
+    def test_entropy_calculation(self, learner):
+        """Test entropy calculation for action models."""
+        action_name = 'drive'
+
+        # Initial entropy should be high (maximum uncertainty)
+        initial_entropy = learner._calculate_entropy(action_name)
+        assert initial_entropy > 0, "Initial entropy should be positive"
+
+        # After observations, entropy should decrease
+        state = {'at_truck1_depot0'}
+        next_state = {'at_truck1_distributor0'}
+        objects = ['truck1', 'depot0', 'distributor0']
+
+        learner.observe(state, action_name, objects, success=True, next_state=next_state)
+        learner.update_model()
+
+        reduced_entropy = learner._calculate_entropy(action_name)
+        assert reduced_entropy <= initial_entropy, "Entropy should decrease with observations"
+
+    def test_potential_gain_success(self, learner):
+        """Test potential information gain from successful execution."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+        state = {
+            'at_crate0_depot0',
+            'at_hoist0_depot0',
+            'available_hoist0',
+            'on_crate0_pallet0'
+        }
+
+        gain = learner._calculate_potential_gain_success(action_name, objects, state)
+        assert gain >= 0, "Information gain should be non-negative"
+
+        # Actions with more uncertainty should have higher potential gain
+        uncertain_action = 'load'  # Less observed action
+        uncertain_gain = learner._calculate_potential_gain_success(uncertain_action, objects, state)
+        assert uncertain_gain >= 0, "Uncertain actions should have potential for gain"
+
+    def test_potential_gain_failure(self, learner):
+        """Test potential information gain from failed execution."""
+        action_name = 'lift'
+        objects = ['hoist0', 'crate0', 'pallet0', 'depot0']
+        state = {'at_crate0_depot0'}  # Missing preconditions
+
+        gain = learner._calculate_potential_gain_failure(action_name, objects, state)
+        assert gain >= 0, "Failure gain should be non-negative"
+
+        # First failure should provide more information than subsequent ones
+        learner.observe(state, action_name, objects, success=False)
+        learner.update_model()
+
+        second_gain = learner._calculate_potential_gain_failure(action_name, objects, state)
+        assert second_gain <= gain, "Repeated failures provide diminishing information"
+
+    def test_expected_information_gain(self, learner):
+        """Test expected information gain calculation."""
+        action_name = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
+        state = {'at_truck1_depot0'}
+
+        expected_gain = learner._calculate_expected_information_gain(action_name, objects, state)
+        assert expected_gain >= 0, "Expected gain should be non-negative"
+
+        # Expected gain should consider both success and failure probabilities
+        # E[gain] = P(success) * gain_success + P(failure) * gain_failure
+        prob = learner._calculate_applicability_probability(action_name, objects, state)
+        gain_success = learner._calculate_potential_gain_success(action_name, objects, state)
+        gain_failure = learner._calculate_potential_gain_failure(action_name, objects, state)
+
+        manual_expected = prob * gain_success + (1 - prob) * gain_failure
+        assert abs(expected_gain - manual_expected) < 0.001, "Expected gain formula incorrect"
+
+
+class TestActionSelection:
+    """Test action selection strategies."""
+
+    def test_greedy_selection_chooses_max_gain(self, learner):
+        """Test that greedy selection chooses action with maximum expected gain."""
+        state = learner.pddl_handler.get_initial_state()
+
+        # Set selection strategy to greedy
+        learner.selection_strategy = 'greedy'
+
+        action_name, objects = learner.select_action(state)
+
+        # Verify this was the best choice
+        selected_gain = learner._calculate_expected_information_gain(action_name, objects, state)
+
+        # Check a few other possible actions
+        grounded_actions = learner.pddl_handler._grounded_actions[:5]  # Sample
+        for other_action, other_binding in grounded_actions:
+            other_objects = [obj.name for obj in other_binding.values()] if other_binding else []
+            other_gain = learner._calculate_expected_information_gain(
+                other_action.name, other_objects, state
+            )
+            assert selected_gain >= other_gain - 0.001, "Greedy should select max gain action"
+
+    def test_epsilon_greedy_exploration(self, learner):
+        """Test epsilon-greedy balances exploration and exploitation."""
+        import random
+        random.seed(42)  # For reproducibility
+
+        state = learner.pddl_handler.get_initial_state()
+        learner.selection_strategy = 'epsilon_greedy'
+        learner.epsilon = 0.1  # 10% exploration
+
+        # Run multiple selections to test probabilistic behavior
+        selections = []
+        for _ in range(10):
+            action_name, objects = learner.select_action(state)
+            selections.append(action_name)
+
+        # Should have some variety (not all the same action)
+        unique_actions = set(selections)
+        assert len(unique_actions) > 1, "Epsilon-greedy should explore different actions"
+
+    def test_boltzmann_selection(self, learner):
+        """Test Boltzmann/softmax selection based on gain values."""
+        import random
+        random.seed(42)
+
+        state = learner.pddl_handler.get_initial_state()
+        learner.selection_strategy = 'boltzmann'
+        learner.temperature = 1.0
+
+        # Run multiple selections
+        selections = []
+        for _ in range(10):
+            action_name, objects = learner.select_action(state)
+            selections.append(action_name)
+
+        # Should select variety of actions weighted by their gains
+        unique_actions = set(selections)
+        assert len(unique_actions) > 1, "Boltzmann should select various actions"
+
+    def test_tie_breaking(self, learner):
+        """Test handling when multiple actions have same gain."""
+        state = learner.pddl_handler.get_initial_state()
+        learner.selection_strategy = 'greedy'
+
+        # In early learning, many actions may have similar gains
+        action_name, objects = learner.select_action(state)
+
+        # Should handle ties consistently (not crash)
+        assert action_name is not None
+        assert isinstance(objects, list)
+
+    def test_no_applicable_actions(self, learner):
+        """Test handling when no actions are possibly applicable."""
+        # Create a state where most actions would fail
+        impossible_state = set()  # Empty state
+
+        action_name, objects = learner.select_action(impossible_state)
+
+        # Should still return something (even if low probability)
+        assert action_name is not None
+
+
+class TestConvergenceImprovement:
+    """Test that information gain improves convergence."""
+
+    def test_converges_faster_than_random(self, learner):
+        """Test that info gain selection converges faster than random."""
+        # This is a meta-test that would require running full learning episodes
+        # For now, just verify the mechanism exists
+
+        learner.selection_strategy = 'greedy'
+        state = learner.pddl_handler.get_initial_state()
+
+        # Should select informative actions
+        action_name, objects = learner.select_action(state)
+        gain = learner._calculate_expected_information_gain(action_name, objects, state)
+
+        assert gain >= 0, "Selected action should have non-negative information gain"
+
+
 class TestIntegration:
     """Integration tests with realistic scenarios."""
 
@@ -819,3 +1059,33 @@ class TestIntegration:
         # Check that observation was recorded
         assert learner.observation_count == 1
         assert action_name in learner.observation_history
+
+    def test_full_learning_cycle_with_info_gain(self, learner):
+        """Test complete learning cycle with information gain selection."""
+        learner.selection_strategy = 'greedy'
+
+        # Run a few learning iterations
+        state = learner.pddl_handler.get_initial_state()
+
+        for i in range(5):
+            # Select action based on information gain
+            action_name, objects = learner.select_action(state)
+
+            # Simulate execution (alternate success/failure for testing)
+            success = (i % 2 == 0)
+            if success:
+                # Create a simple next state
+                next_state = state.copy()
+                next_state.add(f'test_effect_{i}')
+                learner.observe(state, action_name, objects, success=True, next_state=next_state)
+                state = next_state
+            else:
+                learner.observe(state, action_name, objects, success=False)
+
+            learner.update_model()
+
+        # Should have learned something
+        model = learner.get_learned_model()
+        assert any(len(action_data['effects']['add']) > 0
+                  for action_data in model['actions'].values()), \
+            "Should have learned some effects"

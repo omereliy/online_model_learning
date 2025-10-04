@@ -4,6 +4,74 @@ Archive of completed phases for the Information Gain Algorithm implementation.
 
 ---
 
+## Phase 3: Information Gain Calculation & Action Selection ✅
+
+**Completed**: 2025-10-04
+**Model Used**: Claude Opus 4.1
+**Duration**: 1 session
+
+### Implementation Summary
+
+Enhanced `InformationGainLearner` class with information-theoretic action selection:
+
+1. **Applicability Probability Calculation** (`_calculate_applicability_probability`):
+   - Uses SAT model counting on CNF formulas
+   - Returns 1.0 for actions with no constraints
+   - Calculates P(applicable) = |SAT(cnf with state)| / |SAT(cnf)|
+   - Handles empty CNF formulas and contradictions
+
+2. **Entropy & Information Gain Methods**:
+   - `_calculate_entropy(action)`: Measures uncertainty in action model
+   - `_calculate_potential_gain_success(action, objects, state)`: Information from success
+   - `_calculate_potential_gain_failure(action, objects, state)`: Information from failure
+   - `_calculate_expected_information_gain(action, objects, state)`: E[gain] = P(success)*gain_success + P(failure)*gain_failure
+
+3. **Action Selection Strategies** (`select_action` & `_select_by_strategy`):
+   - **Greedy**: Always selects action with maximum expected gain
+   - **Epsilon-greedy**: Explores with probability ε (default 0.1)
+   - **Boltzmann**: Probabilistic selection using softmax with temperature parameter
+   - Replaced placeholder with full implementation
+
+4. **Key Features**:
+   - Handles edge cases (empty state, no constraints, all gains zero)
+   - Numerical stability in softmax calculation
+   - Efficient CNF formula copying for state constraints
+   - Comprehensive logging for debugging
+
+### Test Suite Updates
+
+**File**: `tests/test_information_gain.py`
+**New Test Classes**:
+- `TestApplicabilityProbability`: 4 tests for probability calculation
+- `TestInformationGain`: 5 tests for entropy and gain calculations
+- `TestActionSelection`: 5 tests for selection strategies
+- `TestConvergenceImprovement`: Meta-tests for convergence
+- Enhanced `TestIntegration`: Full learning cycle with info gain
+
+**Total Tests**: ~60 tests (Phase 1-3 combined)
+
+### Key Achievements
+
+- ✅ Mathematical correctness following algorithm specification
+- ✅ Three selection strategies for different exploration needs
+- ✅ Handles domains with negative preconditions
+- ✅ Robust edge case handling
+- ✅ Main test suite still passes (165 tests)
+
+---
+
+## Phase 2: CNF Formula Management & Update Rules ✅
+
+**Completed**: 2025-09-30
+**Model Used**: Sonnet 4.5
+**Duration**: 1 session
+
+### Implementation Summary
+
+[Previous Phase 2 content remains unchanged...]
+
+---
+
 ## Phase 1: Core Data Structures & State Management ✅
 
 **Completed**: 2025-09-30
