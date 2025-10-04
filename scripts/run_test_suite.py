@@ -40,7 +40,7 @@ def run_single_test(name: str, test_path: str, timeout: int = 30, verbose: bool 
     """
     start_time = time.time()
 
-    cmd = ["python", "-m", "pytest", test_path, "-v" if verbose else "-q", "--tb=short"]
+    cmd = [sys.executable, "-m", "pytest", test_path, "-v" if verbose else "-q", "--tb=short"]
 
     # Add timeout if pytest-timeout is available
     try:

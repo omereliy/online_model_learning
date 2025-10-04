@@ -61,6 +61,10 @@ class OLAMAdapter(BaseActionModelLearner):
             use_system_java: If True, try to use system Java instead of bundled
             **kwargs: Additional parameters
         """
+        logger.info(f"Initializing OLAM adapter with domain={domain_file}, problem={problem_file}")
+        logger.debug(f"Configuration: max_iterations={max_iterations}, eval_frequency={eval_frequency}, "
+                     f"bypass_java={bypass_java}, use_system_java={use_system_java}")
+
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
@@ -71,24 +75,29 @@ class OLAMAdapter(BaseActionModelLearner):
         # Initialize PDDLHandler for proper action grounding
         # OLAM requires injective bindings (no repeated objects in action parameters)
         if pddl_handler is None:
+            logger.debug("Creating new PDDLHandler with injective bindings requirement")
             from src.core.pddl_handler import PDDLHandler
             self.pddl_handler = PDDLHandler(require_injective_bindings=True)
             self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
         else:
+            logger.debug("Using provided PDDLHandler instance")
             self.pddl_handler = pddl_handler
 
         # Initialize OLAM components
+        logger.debug("Initializing OLAM components")
         self._initialize_olam()
 
         # State tracking
         self.current_state = None
         self.last_action_idx = None
         self.last_action_str = None
+        logger.debug("State tracking initialized")
 
         # Mappings
         self.action_idx_to_str = {}
         self.action_str_to_idx = {}
         self._build_action_mappings()
+        logger.info(f"OLAM adapter initialization complete with {len(self.action_idx_to_str)} actions mapped")
 
     def _initialize_olam(self):
         """Initialize OLAM learner and related components."""
@@ -143,24 +152,32 @@ class OLAMAdapter(BaseActionModelLearner):
         Setup PDDL directory structure expected by OLAM.
         OLAM expects files in a 'PDDL/' directory relative to working directory.
         """
+        logger.debug("Setting up OLAM PDDL directory structure")
+
         # Create PDDL directory if it doesn't exist
         pddl_dir = Path("PDDL")
         pddl_dir.mkdir(exist_ok=True)
+        logger.debug(f"Created/verified PDDL directory: {pddl_dir.absolute()}")
 
         # Create Info directory for OLAM
         info_dir = Path("Info")
         info_dir.mkdir(exist_ok=True)
+        logger.debug(f"Created/verified Info directory: {info_dir.absolute()}")
 
         # Copy domain and problem files
         import shutil
         shutil.copy(self.domain_file, pddl_dir / "domain.pddl")
+        logger.debug(f"Copied domain file: {self.domain_file} -> {pddl_dir / 'domain.pddl'}")
+
         shutil.copy(self.problem_file, pddl_dir / "facts.pddl")
+        logger.debug(f"Copied problem file: {self.problem_file} -> {pddl_dir / 'facts.pddl'}")
 
         # OLAM also expects a domain_learned.pddl file (starts empty)
         # Copy domain as initial learned domain
         shutil.copy(self.domain_file, pddl_dir / "domain_learned.pddl")
+        logger.debug(f"Created initial learned domain: {pddl_dir / 'domain_learned.pddl'}")
 
-        logger.debug(f"Setup OLAM PDDL directory with domain and problem files")
+        logger.info(f"OLAM PDDL directory setup complete")
 
     def _extract_action_list(self) -> List[str]:
         """
@@ -169,13 +186,18 @@ class OLAMAdapter(BaseActionModelLearner):
         Returns:
             List of grounded action strings in OLAM format
         """
+        logger.debug("Extracting grounded action list from PDDLHandler")
         grounded_actions = []
 
         # Use PDDLHandler's proper grounding mechanism
+        num_grounded = len(self.pddl_handler._grounded_actions)
+        logger.debug(f"Processing {num_grounded} grounded actions from domain")
+
         for action, binding in self.pddl_handler._grounded_actions:
             if not binding:
                 # Parameterless action
                 action_str = f"{action.name}()"
+                logger.debug(f"Added parameterless action: {action_str}")
             else:
                 # Extract parameter values in order
                 # We need to maintain the parameter order from the action definition
@@ -190,15 +212,21 @@ class OLAMAdapter(BaseActionModelLearner):
                 else:
                     action_str = f"{action.name}()"
 
+                logger.debug(f"Added grounded action: {action_str} (params: {param_values})")
+
             grounded_actions.append(action_str)
 
-        return sorted(grounded_actions)
+        sorted_actions = sorted(grounded_actions)
+        logger.info(f"Extracted {len(sorted_actions)} grounded actions")
+        return sorted_actions
 
     def _build_action_mappings(self):
         """Build mappings between action indices and string representations."""
+        logger.debug("Building action index ↔ string mappings")
         for idx, action_str in enumerate(self.learner.action_labels):
             self.action_idx_to_str[idx] = action_str
             self.action_str_to_idx[action_str] = idx
+        logger.info(f"Built bidirectional mappings for {len(self.action_idx_to_str)} actions")
 
     def _configure_java_settings(self):
         """Configure Java settings for OLAM."""
@@ -340,23 +368,28 @@ class OLAMAdapter(BaseActionModelLearner):
             Tuple of (action_name, objects)
         """
         self.iteration_count += 1
+        logger.info(f"=== Iteration {self.iteration_count}: Selecting action ===")
 
         # Convert state to OLAM format
+        logger.debug("Converting current state to OLAM format")
         olam_state = self._up_state_to_olam(state)
         self._update_simulator_state(olam_state)
 
         # Use OLAM's action selection
+        logger.debug("Calling OLAM learner.select_action()")
         action_idx, strategy = self.learner.select_action()
         self.last_action_idx = action_idx
+        logger.info(f"OLAM selected action index {action_idx} using strategy: {strategy}")
 
         # Convert to our format
         action_str = self.action_idx_to_str[action_idx]
+        logger.debug(f"Action index {action_idx} maps to: {action_str}")
         action_name, objects = self.parse_action_string(action_str)
 
         self.last_action_str = action_str
         self.current_state = olam_state
 
-        logger.debug(f"Selected action: {action_name}({','.join(objects)}) using strategy {strategy}")
+        logger.info(f"Selected action: {action_name}({','.join(objects)})")
 
         return action_name, objects
 
@@ -377,39 +410,56 @@ class OLAMAdapter(BaseActionModelLearner):
             next_state: State after execution (if successful)
         """
         self.observation_count += 1
+        logger.info(f"=== Observation {self.observation_count}: {action}({','.join(objects)}) -> {'SUCCESS' if success else 'FAILURE'} ===")
 
         # Convert to OLAM format
         action_str = self._up_action_to_olam(action, objects)
+        logger.debug(f"Action in OLAM format: {action_str}")
 
         if not success:
             # Learn from failed action
+            logger.info(f"Processing FAILED action: {action_str}")
             if self.last_action_idx is not None:
                 # Update simulator with current state for OLAM
+                logger.debug("Converting state for failed action learning")
                 olam_state = self._up_state_to_olam(state)
                 self._update_simulator_state(olam_state)
+
+                logger.debug("Calling OLAM learn_failed_action_precondition()")
                 self.learner.learn_failed_action_precondition(self.simulator)
-                logger.debug(f"Learned from failed action: {action_str}")
+                logger.info(f"Learned precondition constraints from failed action: {action_str}")
+            else:
+                logger.warning("No last_action_idx available for failed action learning")
         else:
             # Learn from successful action
+            logger.info(f"Processing SUCCESSFUL action: {action_str}")
             if next_state is not None:
                 # Convert states
+                logger.debug("Converting states for successful action learning")
                 olam_state = self._up_state_to_olam(state)
                 olam_next_state = self._up_state_to_olam(next_state)
 
                 # Update preconditions
+                logger.debug(f"Calling OLAM add_operator_precondition() for {action_str}")
                 changed = self.learner.add_operator_precondition(action_str)
                 if changed:
-                    logger.debug(f"Updated preconditions for {action_str}")
+                    logger.info(f"Updated preconditions for {action_str}")
+                else:
+                    logger.debug(f"No precondition changes for {action_str}")
 
                 # Update effects
+                logger.debug(f"Calling OLAM add_operator_effects() for {action_str}")
                 self.learner.add_operator_effects(action_str, olam_state, olam_next_state)
-                logger.debug(f"Updated effects for {action_str}")
+                logger.info(f"Updated effects for {action_str}")
 
                 # Update simulator state
                 self._update_simulator_state(olam_next_state)
+            else:
+                logger.warning("Successful action but no next_state provided - skipping learning")
 
         # Check convergence periodically
         if self.observation_count % self.eval_frequency == 0:
+            logger.debug(f"Checking convergence (observation {self.observation_count}, frequency {self.eval_frequency})")
             self._check_convergence()
 
     def get_learned_model(self) -> Dict[str, Any]:
@@ -419,14 +469,17 @@ class OLAMAdapter(BaseActionModelLearner):
         Returns:
             Dictionary containing the learned model
         """
+        logger.info("Extracting learned model from OLAM")
         model = {
             'actions': {},
             'predicates': set(),
             'statistics': self.get_statistics()
         }
+        logger.debug(f"Processing {len(self.action_list)} actions from OLAM learner")
 
         # Extract learned operators from OLAM
         # OLAM stores knowledge at the operator (schema) level, not grounded action level
+        operators_processed = set()
         for action_label in self.action_list:
             action_name = action_label.split("(")[0]  # Get operator name
 
@@ -442,6 +495,13 @@ class OLAMAdapter(BaseActionModelLearner):
                 pos_effects = self.learner.operator_positive_effects.get(action_name, [])
             if hasattr(self.learner, 'operator_negative_effects'):
                 neg_effects = self.learner.operator_negative_effects.get(action_name, [])
+
+            # Log details for each unique operator
+            if action_name not in operators_processed:
+                logger.debug(f"Operator '{action_name}': certain_precs={len(certain_precs)}, "
+                             f"uncertain_precs={len(uncertain_precs)}, neg_precs={len(neg_precs)}, "
+                             f"pos_effects={len(pos_effects)}, neg_effects={len(neg_effects)}")
+                operators_processed.add(action_name)
 
             model['actions'][action_label] = {
                 'name': action_name,
@@ -466,6 +526,8 @@ class OLAMAdapter(BaseActionModelLearner):
                             pred_name = pred.strip('()').split('(')[0].split()[0]
                             model['predicates'].add(pred_name)
 
+        logger.info(f"Learned model extracted: {len(model['actions'])} grounded actions, "
+                    f"{len(operators_processed)} unique operators, {len(model['predicates'])} predicates")
         return model
 
     def has_converged(self) -> bool:
@@ -477,20 +539,32 @@ class OLAMAdapter(BaseActionModelLearner):
         """
         # OLAM sets model_convergence flag
         if hasattr(self.learner, 'model_convergence'):
-            self._converged = self.learner.model_convergence
+            olam_converged = self.learner.model_convergence
+            if olam_converged != self._converged:
+                logger.info(f"OLAM convergence status changed: {self._converged} -> {olam_converged}")
+            self._converged = olam_converged
 
         # Also check iteration limit
         if self.iteration_count >= self.max_iterations:
+            if not self._converged:
+                logger.info(f"Reached max iterations ({self.max_iterations}), forcing convergence")
             self._converged = True
 
+        logger.debug(f"Convergence check: converged={self._converged}, iterations={self.iteration_count}/{self.max_iterations}")
         return self._converged
 
     def _check_convergence(self):
         """Check and update convergence status."""
+        logger.debug("Running periodic convergence check")
         # OLAM has its own convergence detection
         # We can also add custom convergence criteria here
         if hasattr(self.learner, 'model_convergence'):
+            old_status = self._converged
             self._converged = self.learner.model_convergence
+            if old_status != self._converged:
+                logger.info(f"Convergence status updated: {old_status} -> {self._converged}")
+            else:
+                logger.debug(f"Convergence status unchanged: {self._converged}")
 
     # ========== State and Action Conversion Methods ==========
 
@@ -504,23 +578,31 @@ class OLAMAdapter(BaseActionModelLearner):
         Returns:
             List of PDDL predicate strings for OLAM
         """
+        logger.debug(f"Converting UP state to OLAM format (input type: {type(state).__name__})")
         olam_state = []
 
         if isinstance(state, set):
             # Assume state is a set of fluent strings like {'clear_a', 'on_a_b'}
+            logger.debug(f"Converting {len(state)} fluents from set format")
             for fluent in sorted(state):
                 # Convert underscore format to PDDL format
                 olam_pred = self._fluent_to_pddl_string(fluent)
                 if olam_pred:
                     olam_state.append(olam_pred)
+                    logger.debug(f"  Converted: {fluent} -> {olam_pred}")
+                else:
+                    logger.warning(f"  Failed to convert fluent: {fluent}")
         elif isinstance(state, list):
             # Already in OLAM format
+            logger.debug(f"State already in OLAM list format with {len(state)} predicates")
             olam_state = state
         else:
             # Try to handle other formats
-            logger.warning(f"Unexpected state format: {type(state)}")
+            logger.warning(f"Unexpected state format: {type(state)}, attempting to handle")
 
-        return sorted(olam_state)
+        result = sorted(olam_state)
+        logger.debug(f"UP->OLAM conversion complete: {len(result)} predicates")
+        return result
 
     def _olam_state_to_up(self, olam_state: List[str]) -> Set[str]:
         """
@@ -532,6 +614,7 @@ class OLAMAdapter(BaseActionModelLearner):
         Returns:
             Set of fluent strings in UP format
         """
+        logger.debug(f"Converting OLAM state to UP format ({len(olam_state)} predicates)")
         up_state = set()
 
         for pred in olam_state:
@@ -539,7 +622,11 @@ class OLAMAdapter(BaseActionModelLearner):
             fluent = self._pddl_string_to_fluent(pred)
             if fluent:
                 up_state.add(fluent)
+                logger.debug(f"  Converted: {pred} -> {fluent}")
+            else:
+                logger.warning(f"  Failed to convert predicate: {pred}")
 
+        logger.debug(f"OLAM->UP conversion complete: {len(up_state)} fluents")
         return up_state
 
     def _fluent_to_pddl_string(self, fluent: str) -> str:
@@ -558,7 +645,10 @@ class OLAMAdapter(BaseActionModelLearner):
             PDDL string like "(clear a)" or "(on a b)" or "(at rover0 waypoint0)"
         """
         if not fluent:
+            logger.debug("Empty fluent provided to _fluent_to_pddl_string")
             return ""
+
+        logger.debug(f"Converting fluent to PDDL: {fluent}")
 
         # First try: Get predicate names from PDDLHandler
         predicate_names = self._get_predicate_names()
@@ -569,16 +659,21 @@ class OLAMAdapter(BaseActionModelLearner):
                 if fluent.startswith(pred_name + '_') or fluent == pred_name:
                     if fluent == pred_name:
                         # Parameterless predicate
-                        return f"({pred_name})"
+                        result = f"({pred_name})"
+                        logger.debug(f"  Matched parameterless predicate: {result}")
+                        return result
                     else:
                         # Extract parameters after predicate
                         params_str = fluent[len(pred_name) + 1:]
                         # Smart parameter splitting - handle objects with underscores
                         params = self._smart_split_parameters(params_str)
                         # Keep predicate name as-is (preserving underscores)
-                        return f"({pred_name} {' '.join(params)})"
+                        result = f"({pred_name} {' '.join(params)})"
+                        logger.debug(f"  Matched predicate '{pred_name}' with params {params}: {result}")
+                        return result
 
         # Fallback: Intelligent heuristic approach
+        logger.debug("  No predicate match, trying heuristic with object names")
         # Try to guess predicate boundaries using object names
         object_names = self._get_object_names()
 
@@ -591,18 +686,24 @@ class OLAMAdapter(BaseActionModelLearner):
                     # Everything before this is the predicate
                     predicate = '_'.join(parts[:i])
                     params = parts[i:]
-                    return f"({predicate} {' '.join(params)})"
+                    result = f"({predicate} {' '.join(params)})"
+                    logger.debug(f"  Heuristic match at object '{parts[i]}': {result}")
+                    return result
 
         # Final fallback: Simple split approach
+        logger.debug("  Using simple split fallback")
         parts = fluent.split('_')
 
         if len(parts) == 1:
             # Parameterless
-            return f"({parts[0]})"
+            result = f"({parts[0]})"
         else:
             # Assume first part is predicate, rest are parameters
             # This works for many classical planning domains
-            return f"({parts[0]} {' '.join(parts[1:])})"
+            result = f"({parts[0]} {' '.join(parts[1:])})"
+
+        logger.debug(f"  Fallback result: {result}")
+        return result
 
     def _pddl_string_to_fluent(self, pddl_str: str) -> str:
         """
@@ -646,6 +747,7 @@ class OLAMAdapter(BaseActionModelLearner):
             if hasattr(self.pddl_handler, 'problem') and self.pddl_handler.problem:
                 for fluent_obj in self.pddl_handler.problem.fluents:
                     predicate_names.add(fluent_obj.name)
+                logger.debug(f"Retrieved {len(predicate_names)} predicate names from PDDLHandler")
 
         # Also try to get from environment if available
         if not predicate_names and hasattr(self, 'environment'):
@@ -654,6 +756,10 @@ class OLAMAdapter(BaseActionModelLearner):
                 if hasattr(pddl_env_handler, 'problem') and pddl_env_handler.problem:
                     for fluent_obj in pddl_env_handler.problem.fluents:
                         predicate_names.add(fluent_obj.name)
+                    logger.debug(f"Retrieved {len(predicate_names)} predicate names from environment")
+
+        if not predicate_names:
+            logger.debug("No predicate names available")
 
         return predicate_names
 
@@ -671,6 +777,7 @@ class OLAMAdapter(BaseActionModelLearner):
             if hasattr(self.pddl_handler, 'problem') and self.pddl_handler.problem:
                 for obj in self.pddl_handler.problem.all_objects:
                     object_names.add(obj.name)
+                logger.debug(f"Retrieved {len(object_names)} object names from PDDLHandler")
 
         # Also try to get from environment if available
         if not object_names and hasattr(self, 'environment'):
@@ -679,6 +786,10 @@ class OLAMAdapter(BaseActionModelLearner):
                 if hasattr(pddl_env_handler, 'problem') and pddl_env_handler.problem:
                     for obj in pddl_env_handler.problem.all_objects:
                         object_names.add(obj.name)
+                    logger.debug(f"Retrieved {len(object_names)} object names from environment")
+
+        if not object_names:
+            logger.debug("No object names available")
 
         return object_names
 
@@ -737,9 +848,11 @@ class OLAMAdapter(BaseActionModelLearner):
             OLAM action string like "pick-up(a)"
         """
         if objects:
-            return f"{action}({','.join(objects)})"
+            result = f"{action}({','.join(objects)})"
         else:
-            return f"{action}()"
+            result = f"{action}()"
+        logger.debug(f"UP->OLAM action: {action}({objects}) -> {result}")
+        return result
 
     def _olam_action_to_up(self, olam_action: str) -> Tuple[str, List[str]]:
         """
@@ -751,7 +864,9 @@ class OLAMAdapter(BaseActionModelLearner):
         Returns:
             Tuple of (action_name, objects)
         """
-        return self.parse_action_string(olam_action)
+        result = self.parse_action_string(olam_action)
+        logger.debug(f"OLAM->UP action: {olam_action} -> {result}")
+        return result
 
     def _update_simulator_state(self, olam_state: List[str]):
         """
@@ -761,16 +876,21 @@ class OLAMAdapter(BaseActionModelLearner):
             olam_state: State in OLAM format
         """
         # OLAM's simulator expects state as a list of PDDL predicates
+        logger.debug(f"Updating OLAM simulator state with {len(olam_state)} predicates")
         self.simulator.state = olam_state
+        logger.debug(f"Simulator state updated successfully")
 
     def reset(self) -> None:
         """Reset the learner to initial state."""
+        logger.info("Resetting OLAM adapter to initial state")
         super().reset()
 
         # Reinitialize OLAM components
+        logger.debug("Reinitializing OLAM components")
         self._initialize_olam()
 
         # Reset state tracking
         self.current_state = None
         self.last_action_idx = None
         self.last_action_str = None
+        logger.info("OLAM adapter reset complete")
