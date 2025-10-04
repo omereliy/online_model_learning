@@ -3,7 +3,7 @@
 ## 🎯 Document Purpose
 A phase-based implementation guide for the CNF-based Information-Theoretic action model learning algorithm. Each phase includes specific tasks, model recommendations, initialization prompts, and success criteria.
 
-## 📍 Document Maintenance Rule
+## 📍 Document Maintenance Protocol
 **CRITICAL**: This document maintains ONLY current phase information. When a phase is completed:
 1. Archive completed phase details to `COMPLETED_PHASES.md` in same directory
 2. Update initialization prompt with phase completion summary
@@ -140,6 +140,7 @@ Phase 3 Goal: Implement information gain calculation and action selection
 Read:
 - @docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md (sections: Information Gain, Action Selection)
 - @docs/information_gain_algorithm/COMPLETED_PHASES.md (Phase 1-2 summaries)
+- @docs/information_gain_algorithm/IMPLEMENTATION_PLAN.md (phase 3 - completion)
 - @src/algorithms/information_gain.py (current implementation)
 - @tests/test_information_gain.py (existing tests)
 
@@ -205,10 +206,9 @@ Focus: Correct information gain calculation that drives learning efficiency.
 ## 📝 Progress Tracking Protocol
 
 After each session:
-1. Update `COMPLETED_PHASES.md` if phase complete
-2. Run `make test` to ensure no regressions
-3. Update initialization prompt for next session
-4. Document any blockers or design decisions
+1. Run `make test` to ensure no regressions
+2. execute the file maintenance protocol at the start of this file
+3. Document any blockers or design decisions
 
 ---
 
