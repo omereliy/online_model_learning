@@ -15,6 +15,7 @@ from typing import Dict, Any, Optional, Tuple, List
 
 from ..algorithms.base_learner import BaseActionModelLearner
 from ..algorithms.olam_adapter import OLAMAdapter
+from ..algorithms.information_gain import InformationGainLearner
 from ..environments.pddl_environment import PDDLEnvironment
 from ..environments.mock_environment import MockEnvironment
 from .metrics import MetricsCollector
@@ -168,8 +169,16 @@ class ExperimentRunner:
             logger.info("Initialized OLAM adapter")
 
         elif algorithm == 'information_gain':
-            # TODO: Phase 5 - Information Gain learner
-            raise NotImplementedError("Information Gain learner not yet implemented")
+            # Set max_iterations if not in algo_params
+            if 'max_iterations' not in algo_params:
+                algo_params['max_iterations'] = self.config['stopping_criteria']['max_iterations']
+
+            learner = InformationGainLearner(
+                domain_file=domain_file,
+                problem_file=problem_file,
+                **algo_params
+            )
+            logger.info("Initialized Information Gain learner")
 
         elif algorithm == 'model_learner':
             # TODO: Phase 6 - ModelLearner adapter

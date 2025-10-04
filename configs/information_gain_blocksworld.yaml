@@ -1,0 +1,35 @@
+# Information Gain Algorithm - Blocksworld Domain
+# Uses greedy selection strategy (always picks max expected gain)
+
+experiment:
+  name: "information_gain_blocksworld_greedy"
+  algorithm: "information_gain"
+  seed: 42
+  environment_type: "pddl"
+
+domain_problem:
+  domain: "benchmarks/olam-compatible/blocksworld/domain.pddl"
+  problem: "benchmarks/olam-compatible/blocksworld/p01.pddl"
+
+# Algorithm-specific parameters
+algorithm_params:
+  information_gain:
+    selection_strategy: "greedy"  # Always select action with max expected gain
+    max_iterations: 200
+
+# Metrics collection
+metrics:
+  interval: 1  # Record every action
+  window_size: 50
+
+# Stopping criteria
+stopping_criteria:
+  max_iterations: 200
+  max_runtime_seconds: 600
+  convergence_check_interval: 20
+
+# Output configuration
+output:
+  directory: "results/"
+  formats: ["csv", "json"]
+  save_learned_model: true
