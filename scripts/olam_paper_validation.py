@@ -320,8 +320,8 @@ def main():
     """Run OLAM paper validation with blocksworld domain."""
 
     # Use blocksworld - OLAM paper's primary test domain
-    domain = '/home/omer/projects/online_model_learning/domains/olam_compatible/blocksworld.pddl'
-    problem = '/home/omer/projects/online_model_learning/domains/olam_compatible/blocksworld/1_p00_blocksworld_gen.pddl'
+    domain = 'benchmarks/olam-compatible/blocksworld/domain.pddl'
+    problem = 'benchmarks/olam-compatible/blocksworld/p01.pddl'
 
     # Run validation
     validator = OLAMPaperValidator(domain, problem)

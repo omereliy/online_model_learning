@@ -3,7 +3,7 @@ Integration test for experiment runner with OLAM adapter.
 Tests Phase 3 implementation with mock environment.
 """
 
-from tests.test_helpers import mock_olam_select_action, mock_olam_planner
+from tests.utils.test_helpers import mock_olam_select_action, mock_olam_planner
 from src.algorithms.olam_adapter import OLAMAdapter
 from src.experiments.metrics import MetricsCollector
 from src.experiments.runner import ExperimentRunner

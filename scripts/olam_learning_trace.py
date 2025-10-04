@@ -24,8 +24,8 @@ def main():
     """Show OLAM learning trace matching paper description."""
 
     # Use blocksworld domain
-    domain = '/home/omer/projects/online_model_learning/domains/olam_compatible/blocksworld.pddl'
-    problem = '/home/omer/projects/online_model_learning/domains/olam_compatible/blocksworld/1_p00_blocksworld_gen.pddl'
+    domain = 'benchmarks/olam-compatible/blocksworld/domain.pddl'
+    problem = 'benchmarks/olam-compatible/blocksworld/p01.pddl'
 
     logger.info("=" * 80)
     logger.info("OLAM LEARNING TRACE - Paper Validation")

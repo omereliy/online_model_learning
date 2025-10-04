@@ -9,7 +9,7 @@ Building experiment framework to compare three online action model learning algo
 ## Quick Start
 **See [CLAUDE.md](../CLAUDE.md) for navigation and [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for project rules.**
 
-## Current Status (Updated: October 1, 2025)
+## Current Status (Updated: October 4, 2025)
 
 ### 🔧 Recent CI/CD Fixes
 - **NumPy Version**: Updated to support 2.x (was restricted to <2.0.0)
@@ -101,10 +101,7 @@ Building experiment framework to compare three online action model learning algo
 See [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for complete directory structure.
 
 ## External Dependencies
-- OLAM: `/home/omer/projects/OLAM/` ✅
-- ModelLearner: `/home/omer/projects/ModelLearner/` ⚠️ Repository unavailable
-- Fast Downward: `/home/omer/projects/fast-downward/` ✅
-- VAL: `/home/omer/projects/Val/` ✅
+See [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md#external-tool-paths) for external tool paths and availability status.
 
 ## Documentation Index
 See [CLAUDE.md](../CLAUDE.md) for complete documentation navigation.

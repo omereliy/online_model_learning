@@ -316,9 +316,7 @@ while not fully_learned:
 
 ### Required Dependencies
 
-- **PySAT**: For CNF manipulation and SAT solving
-- **Unified Planning Framework**: For PDDL parsing and planning
-- **External Algorithms**: OLAM and ModelLearner for comparison
+See [DEVELOPMENT_RULES.md](../DEVELOPMENT_RULES.md#required-dependencies) for all project dependencies including PySAT and Unified Planning Framework.
 
 ### Performance Optimizations
 

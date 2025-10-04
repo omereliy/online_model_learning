@@ -167,9 +167,9 @@ After each session:
 - **Base Interface**: `src/algorithms/base_learner.py`
 
 ### Testing Resources
-- **Test Suite**: `tests/test_information_gain.py`
-- **Test Patterns**: `docs/QUICK_REFERENCE.md#code-patterns`
-- **CNF Tests**: `tests/test_cnf_manager.py`
+- **Test Suite**: `tests/algorithms/test_information_gain.py`
+- **Test Patterns**: `docs/QUICK_REFERENCE.md  #code-patterns`
+- **CNF Tests**: `tests/core/test_cnf_manager.py`
 
 ---
 

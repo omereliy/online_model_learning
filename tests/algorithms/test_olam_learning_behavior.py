@@ -21,8 +21,8 @@ class TestOLAMLearningBehavior:
     def setup_olam(self):
         """Setup OLAM adapter with OLAM-compatible gripper domain."""
         # Use gripper domain which is known to work well with OLAM
-        domain = '/home/omer/projects/online_model_learning/domains/olam_compatible/gripper.pddl'
-        problem = '/home/omer/projects/online_model_learning/domains/olam_compatible/gripper/1_p00_gripper_gen.pddl'
+        domain = 'benchmarks/olam-compatible/gripper/domain.pddl'
+        problem = 'benchmarks/olam-compatible/gripper/p01.pddl'
 
         # Verify domain compatibility
         analyzer = DomainAnalyzer(domain, problem)

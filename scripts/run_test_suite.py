@@ -16,18 +16,18 @@ sys.path.insert(0, str(project_root))
 
 # Test suites in order of dependency
 TEST_SUITES = [
-    ("Basic Metrics - Unit Tests", "tests/test_metrics.py::TestMetricsCollector", 30),
-    ("Mock Environment - Unit Tests", "tests/test_phase3_simple.py::TestPhase3Simple", 30),
-    ("Experiment Runner - Unit Tests", "tests/test_experiment_runner.py::TestExperimentRunner", 60),
-    ("Integration Tests - OLAM Simple", "tests/test_olam_simple.py::TestOLAMSimple", 60),
-    ("Integration Tests - Full Pipeline", "tests/test_experiment_integration.py::TestExperimentIntegration", 120),
+    ("Basic Metrics - Unit Tests", "tests/experiments/test_metrics.py::TestMetricsCollector", 30),
+    ("Mock Environment - Unit Tests", "tests/integration/test_phase3_simple.py::TestPhase3Simple", 30),
+    ("Experiment Runner - Unit Tests", "tests/experiments/test_experiment_runner.py::TestExperimentRunner", 60),
+    ("Integration Tests - OLAM Simple", "tests/algorithms/test_olam_simple.py::TestOLAMSimple", 60),
+    ("Integration Tests - Full Pipeline", "tests/experiments/test_experiment_integration.py::TestExperimentIntegration", 120),
 ]
 
 # Quick test suite for rapid feedback
 QUICK_TESTS = [
-    ("Critical Metrics Test", "tests/test_metrics.py::TestMetricsCollector::test_get_snapshot", 10),
-    ("Basic Recording", "tests/test_metrics.py::TestMetricsCollector::test_record_action", 10),
-    ("Mistake Rate Calculation", "tests/test_metrics.py::TestMetricsCollector::test_compute_mistake_rate", 10),
+    ("Critical Metrics Test", "tests/experiments/test_metrics.py::TestMetricsCollector::test_get_snapshot", 10),
+    ("Basic Recording", "tests/experiments/test_metrics.py::TestMetricsCollector::test_record_action", 10),
+    ("Mistake Rate Calculation", "tests/experiments/test_metrics.py::TestMetricsCollector::test_compute_mistake_rate", 10),
 ]
 
 

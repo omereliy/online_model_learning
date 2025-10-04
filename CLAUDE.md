@@ -36,27 +36,13 @@
 | **Checking project status** | IMPLEMENTATION_TASKS | Status section |
 | **Understanding architecture** | DEVELOPMENT_RULES | Architecture section |
 
-## 📂 Key File Locations
+## 📂 Component Status & File Locations
 
-| Component | Path | Status |
-|-----------|------|--------|
-| **CNF Manager** | `src/core/cnf_manager.py` | ✅ Complete |
-| **PDDL Handler** | `src/core/pddl_handler.py` | ✅ Complete |
-| **OLAM Adapter** | `src/algorithms/olam_adapter.py` | ✅ Complete |
-| **Experiment Runner** | `src/experiments/runner.py` | ✅ Complete |
-| **Metrics Collector** | `src/experiments/metrics.py` | ✅ Complete |
-| **Info Gain Learner** | `src/algorithms/information_gain.py` | ✅ Complete (Phase 3) |
-| **ModelLearner Adapter** | `src/algorithms/optimistic_adapter.py` | ⏳ TODO (blocked - repo unavailable) |
-| **PDDL Environment** | `src/environments/pddl_environment.py` | ✅ Complete |
+**→ See [IMPLEMENTATION_TASKS.md](docs/IMPLEMENTATION_TASKS.md#completed-components) for current component status and file locations**
 
 ## 🔗 External Resources
 
-| Resource | Path |
-|----------|------|
-| **OLAM** | `/home/omer/projects/OLAM/` |
-| **ModelLearner** | `/home/omer/projects/ModelLearner/` (⚠️ Repo unavailable) |
-| **Fast Downward** | `/home/omer/projects/fast-downward/` |
-| **VAL Validator** | `/home/omer/projects/Val/` |
+**→ See [DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md#external-tool-paths) for external tool paths and availability**
 
 ## 📋 Quick Checklist
 
@@ -77,28 +63,6 @@ A git pre-commit hook runs `make test` before every commit.
 
 Implementation: `.claude/hooks/pre-commit` installed via `.claude/install.sh`
 
-## 📝 Documentation Maintenance Rules
+## 📝 Documentation Rules
 
-**Single Source of Truth**: Each fact appears in exactly ONE file
-
-### Content Ownership
-| File | Owns |
-|------|------|
-| README.md | Installation, basic usage |
-| DEVELOPMENT_RULES.md | Architecture, rules, conventions |
-| QUICK_REFERENCE.md | All commands, code snippets |
-| IMPLEMENTATION_TASKS.md | Current status, TODOs |
-
-### Rules
-- ✅ Keep each fact in ONE document only
-- ✅ Use cross-references via links
-- ✅ Update only the authoritative source
-- ❌ Don't duplicate information across files
-- ❌ Don't copy content instead of linking
-
-### Maintenance Protocol
-1. Quarterly review for duplicate content
-2. Update only authoritative location
-3. Add links instead of copying
-4. Remove duplicates when found
-5. Track changes in git history
+**→ See [DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md#markdown-documentation-rules) for documentation maintenance rules and single source of truth guidelines**

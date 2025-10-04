@@ -4,7 +4,6 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/Info" />
       <excludeFolder url="file://$MODULE_DIR$/PDDL" />
-      <excludeFolder url="file://$MODULE_DIR$/results" />
       <excludeFolder url="file://$MODULE_DIR$/scripts/.vscode" />
       <excludeFolder url="file://$MODULE_DIR$/tests/Info" />
       <excludeFolder url="file://$MODULE_DIR$/tests/PDDL" />

@@ -35,6 +35,14 @@ online_model_learning/
 │   ├── planning/            # Unified Planning Framework integration (Phase 4b - TODO)
 │   ├── environments/        # Simulators and domains
 │   └── experiments/         # Runners and metrics
+├── tests/                   # Test suite (mirrors src/ structure)
+│   ├── core/                # Core functionality tests
+│   ├── algorithms/          # Algorithm implementation tests
+│   ├── environments/        # Environment tests
+│   ├── experiments/         # Experiment framework tests
+│   ├── integration/         # Cross-module integration tests
+│   ├── utils/               # Test utilities and helpers
+│   └── resources/           # Test resources (info, pddl, results)
 ├── benchmarks/              # Domain/problem files
 ├── configs/                 # Experiment configurations
 ├── scripts/                 # Experiment, testing, and analysis scripts

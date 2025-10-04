@@ -31,11 +31,11 @@ test: test-full
 # Test specific modules
 test-metrics:
 	@echo "Testing metrics module..."
-	@python3 -m pytest tests/test_metrics.py -v
+	@python3 -m pytest tests/experiments/test_metrics.py -v
 
 test-integration:
 	@echo "Running integration tests..."
-	@python3 -m pytest tests/test_experiment_integration.py -v
+	@python3 -m pytest tests/experiments/test_experiment_integration.py -v
 
 # Run a quick experiment
 run-experiment:
@@ -153,7 +153,7 @@ ci-local:
 	@black --check src/ tests/ || echo "Format issues found"
 	@flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203 || echo "Lint issues found"
 	@echo "2. Unit tests..."
-	@pytest tests/test_cnf_manager.py tests/test_pddl_handler.py tests/test_metrics.py -v
+	@pytest tests/core/test_cnf_manager.py tests/core/test_pddl_handler.py tests/experiments/test_metrics.py -v
 	@echo "3. Integration tests..."
-	@pytest tests/test_experiment_runner.py tests/test_olam_adapter.py -v
+	@pytest tests/experiments/test_experiment_runner.py tests/algorithms/test_olam_adapter.py -v
 	@echo "CI pipeline complete!"
