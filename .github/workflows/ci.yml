@@ -99,18 +99,19 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+
       - name: Build Docker image
         run: |
-          docker-compose build test
+          docker compose build test
 
       - name: Run integration tests in Docker
         run: |
-          docker-compose run test
+          docker compose run test
 
       - name: Clean up Docker
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
 
   # Test with external dependencies
   full-tests:
