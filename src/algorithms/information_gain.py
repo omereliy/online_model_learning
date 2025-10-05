@@ -117,8 +117,7 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Get all parameter-bound literals (La) for an action.
 
-        This includes all possible lifted fluents that can be formed using
-        the action's parameters, including both positive and negative literals.
+        Delegates to PDDLHandler for PDDL parsing and manipulation.
 
         Args:
             action_name: Name of the action
@@ -126,52 +125,13 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Set of parameter-bound literal strings (e.g., 'on(?x,?y)', '¬clear(?x)')
         """
-        action = self.pddl_handler.get_lifted_action(action_name)
-        if not action:
-            logger.warning(f"Action {action_name} not found in domain")
-            return set()
-
-        La = set()
-
-        # Get parameter names - use standard naming ?x, ?y, ?z, etc.
-        num_params = len(action.parameters)
-        param_letters = 'xyzuvwpqrst'
-        param_names = [f"?{param_letters[i]}" if i < len(param_letters) else f"?p{i}"
-                       for i in range(num_params)]
-
-        # For each predicate in the domain, generate all valid lifted literals
-        for fluent in self.pddl_handler.problem.fluents:
-            pred_name = fluent.name
-            pred_arity = fluent.arity
-
-            if pred_arity == 0:
-                # Propositional fluent
-                La.add(pred_name)
-                La.add(f"¬{pred_name}")
-            else:
-                # Generate all parameter combinations of the right arity
-                # For simplicity in Phase 1, generate all combinations up to action's arity
-                import itertools
-
-                # Generate combinations with repetition allowed
-                for combo_length in range(1, min(pred_arity + 1, num_params + 1)):
-                    for combo in itertools.combinations_with_replacement(
-                            param_names[:num_params], combo_length):
-                        if len(combo) == pred_arity:
-                            # Create positive literal
-                            literal = f"{pred_name}({','.join(combo)})"
-                            La.add(literal)
-                            # Create negative literal
-                            La.add(f"¬{literal}")
-
-        return La
+        return self.pddl_handler.get_parameter_bound_literals(action_name)
 
     def bindP_inverse(self, literals: Set[str], objects: List[str]) -> Set[str]:
         """
         Ground parameter-bound literals with concrete objects.
 
-        bindP⁻¹(F, O) returns groundings of parameter-bound literals F
-        with respect to object order O.
+        Delegates to PDDLHandler's ground_literals method.
 
         Args:
             literals: Set of parameter-bound literals (e.g., {'on(?x,?y)', '¬clear(?x)'})
@@ -179,38 +139,15 @@ class InformationGainLearner(BaseActionModelLearner):
 
         Returns:
             Set of grounded literals (e.g., {'on_a_b', '¬clear_a'})
-
-        Example:
-            bindP_inverse({'on(?x,?y)'}, ['a', 'b']) → {'on_a_b'}
-            bindP_inverse({'¬on(?x,?y)'}, ['a', 'b']) → {'¬on_a_b'}
         """
-        logger.debug(f"bindP_inverse: Grounding {len(literals)} literals with objects {objects}")
-        grounded = set()
-
-        for literal in literals:
-            # Handle negative literals
-            is_negative = literal.startswith('¬')
-            if is_negative:
-                literal = literal[1:]  # Remove negation symbol
-
-            # Ground the literal
-            grounded_literal = self._ground_lifted_literal(literal, objects)
-
-            # Add back negation if needed
-            if is_negative:
-                grounded_literal = f"¬{grounded_literal}"
-
-            grounded.add(grounded_literal)
-
-        logger.debug(f"bindP_inverse: Produced {len(grounded)} grounded literals")
-        return grounded
+        logger.debug(f"bindP_inverse: Delegating to PDDLHandler with {len(literals)} literals")
+        return self.pddl_handler.ground_literals(literals, objects)
 
     def bindP(self, fluents: Set[str], objects: List[str]) -> Set[str]:
         """
         Lift grounded fluents to parameter-bound literals.
 
-        bindP(f, O) returns parameter-bound literals from grounded literals f
-        with respect to object order O.
+        Delegates to PDDLHandler's lift_fluents method.
 
         Args:
             fluents: Set of grounded fluent strings (e.g., {'on_a_b', '¬clear_a'})
@@ -218,168 +155,9 @@ class InformationGainLearner(BaseActionModelLearner):
 
         Returns:
             Set of parameter-bound literals (e.g., {'on(?x,?y)', '¬clear(?x)'})
-
-        Example:
-            bindP({'on_a_b'}, ['a', 'b']) → {'on(?x,?y)'}
-            bindP({'¬on_a_b'}, ['a', 'b']) → {'¬on(?x,?y)'}
         """
-        logger.debug(f"bindP: Lifting {len(fluents)} fluents with objects {objects}")
-        lifted = set()
-
-        for fluent in fluents:
-            # Handle negative fluents
-            is_negative = fluent.startswith('¬')
-            if is_negative:
-                fluent = fluent[1:]  # Remove negation symbol
-
-            # Lift the fluent
-            lifted_literal = self._lift_grounded_fluent(fluent, objects)
-
-            # Add back negation if needed
-            if is_negative:
-                lifted_literal = f"¬{lifted_literal}"
-
-            lifted.add(lifted_literal)
-
-        logger.debug(f"bindP: Produced {len(lifted)} lifted literals")
-        return lifted
-
-    def _ground_lifted_literal(self, literal: str, objects: List[str]) -> str:
-        """
-        Ground a single lifted literal with concrete objects.
-
-        Args:
-            literal: Lifted literal (e.g., 'on(?x,?y)' or 'clear(?x)')
-            objects: Ordered list of objects
-
-        Returns:
-            Grounded fluent string (e.g., 'on_a_b' or 'clear_a')
-        """
-        # Parse literal: predicate(param1,param2,...)
-        if '(' not in literal:
-            # Propositional literal
-            logger.debug(f"_ground_lifted_literal: '{literal}' is propositional")
-            return literal
-
-        predicate = literal[:literal.index('(')]
-        params_str = literal[literal.index('(') + 1:literal.rindex(')')]
-
-        if not params_str:
-            # No parameters
-            logger.debug(f"_ground_lifted_literal: '{literal}' has no parameters")
-            return predicate
-
-        params = [p.strip() for p in params_str.split(',')]
-
-        # Replace each parameter with corresponding object
-        grounded_params = []
-        for param in params:
-            if param.startswith('?'):
-                # Extract parameter index from name (e.g., ?x → 0, ?y → 1)
-                # This assumes parameters are in order as they appear in action definition
-                # For robust handling, we need to track parameter order
-                param_idx = self._get_parameter_index(param, objects)
-                if param_idx < len(objects):
-                    grounded_params.append(objects[param_idx])
-                else:
-                    logger.warning(
-                        f"Parameter {param} index {param_idx} out of bounds for objects {objects}")
-                    grounded_params.append(param)  # Keep original if error
-            else:
-                # Already grounded
-                grounded_params.append(param)
-
-        # Create grounded fluent string
-        result = '_'.join([predicate] + grounded_params)
-        logger.debug(f"_ground_lifted_literal: '{literal}' + {objects} → '{result}'")
-        return result
-
-    def _lift_grounded_fluent(self, fluent: str, objects: List[str]) -> str:
-        """
-        Lift a grounded fluent to parameter-bound literal.
-
-        Args:
-            fluent: Grounded fluent (e.g., 'on_a_b' or 'clear_a')
-            objects: Ordered list of objects used in grounding
-
-        Returns:
-            Lifted literal (e.g., 'on(?x,?y)' or 'clear(?x)')
-        """
-        # Parse fluent: predicate_obj1_obj2_...
-        parts = fluent.split('_')
-
-        if len(parts) == 1:
-            # Propositional fluent
-            logger.debug(f"_lift_grounded_fluent: '{fluent}' is propositional")
-            return parts[0]
-
-        # First part is predicate, rest are object names
-        predicate = parts[0]
-        obj_names = parts[1:]
-
-        # Replace each object with its parameter
-        params = []
-        for obj_name in obj_names:
-            try:
-                obj_idx = objects.index(obj_name)
-                params.append(self._get_parameter_name(obj_idx))
-            except ValueError:
-                logger.warning(f"Object {obj_name} not found in objects list {objects}")
-                params.append(obj_name)  # Keep original if not found
-
-        # Create lifted literal
-        if params:
-            result = f"{predicate}({','.join(params)})"
-        else:
-            result = predicate
-
-        logger.debug(f"_lift_grounded_fluent: '{fluent}' + {objects} → '{result}'")
-        return result
-
-    def _get_parameter_index(self, param_name: str, objects: List[str]) -> int:
-        """
-        Get index of parameter in action's parameter list.
-
-        For now, uses simple heuristic based on parameter name.
-        In full implementation, would track action parameter order.
-
-        Args:
-            param_name: Parameter name (e.g., '?x', '?y')
-            objects: Object list (used for validation)
-
-        Returns:
-            Parameter index
-        """
-        # Simple heuristic: ?x → 0, ?y → 1, ?z → 2, etc.
-        param_letters = 'xyzuvwpqrst'
-        if param_name.startswith('?') and len(param_name) == 2:
-            letter = param_name[1].lower()
-            if letter in param_letters:
-                return param_letters.index(letter)
-
-        # Fallback: try to parse number from name
-        import re
-        match = re.search(r'\d+', param_name)
-        if match:
-            return int(match.group())
-
-        return 0  # Default to first parameter
-
-    def _get_parameter_name(self, index: int) -> str:
-        """
-        Get parameter name for given index.
-
-        Args:
-            index: Parameter index
-
-        Returns:
-            Parameter name (e.g., '?x', '?y')
-        """
-        param_letters = 'xyzuvwpqrst'
-        if index < len(param_letters):
-            return f"?{param_letters[index]}"
-        else:
-            return f"?p{index}"
+        logger.debug(f"bindP: Delegating to PDDLHandler with {len(fluents)} fluents")
+        return self.pddl_handler.lift_fluents(fluents, objects)
 
     def _calculate_applicability_probability(self, action: str, objects: List[str], state: Set[str]) -> float:
         """
@@ -405,13 +183,13 @@ class InformationGainLearner(BaseActionModelLearner):
             return 1.0
 
         # Build CNF formula if needed
-        if len(self.cnf_managers[action].cnf.clauses) == 0:
+        if not self.cnf_managers[action].has_clauses():
             self._build_cnf_formula(action)
 
         cnf = self.cnf_managers[action]
 
         # If CNF is still empty after building, no real constraints
-        if len(cnf.cnf.clauses) == 0:
+        if not cnf.has_clauses():
             logger.debug(f"Action {action} has empty CNF, probability = 1.0")
             return 1.0
 
@@ -427,31 +205,26 @@ class InformationGainLearner(BaseActionModelLearner):
         state_internal = self._state_to_internal(state)
         satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
 
-        # Create a copy of CNF to add state constraints
-        cnf_with_state = CNFManager()
-        cnf_with_state.cnf.clauses = cnf.cnf.clauses.copy()
-        cnf_with_state.fluent_to_var = cnf.fluent_to_var.copy()
-        cnf_with_state.var_to_fluent = cnf.var_to_fluent.copy()
-        cnf_with_state.next_var = cnf.next_var
-
-        # Add unit clauses for unsatisfied literals
+        # Get all constraint literals
         all_constraint_literals = set()
         for constraint_set in self.pre_constraints[action]:
             all_constraint_literals.update(constraint_set)
 
         unsatisfied = all_constraint_literals - satisfied_literals
+
+        # Build state constraints dict for CNF manager
+        state_constraints = {}
         for literal in unsatisfied:
-            # Add unit clause asserting this literal is false
             if literal.startswith('¬'):
                 # Negative literal is unsatisfied, so positive must be true
                 positive = literal[1:]
-                cnf_with_state.add_clause([positive])
+                state_constraints[positive] = True
             else:
                 # Positive literal is unsatisfied, so it must be false
-                cnf_with_state.add_clause(['-' + literal])
+                state_constraints[literal] = False
 
-        # Count satisfying models with state constraints
-        state_models = cnf_with_state.count_solutions()
+        # Count models with state constraints using CNF manager method
+        state_models = cnf.count_models_with_constraints(state_constraints)
 
         probability = state_models / total_models if total_models > 0 else 0.0
         logger.debug(f"Applicability probability for {action}: {state_models}/{total_models} = {probability:.3f}")
@@ -502,7 +275,7 @@ class InformationGainLearner(BaseActionModelLearner):
         return total_entropy
 
     def _calculate_potential_gain_success(self, action: str, objects: List[str], state: Set[str]) -> float:
-        """
+        r"""
         Calculate potential information gain from successful execution.
 
         According to algorithm:
@@ -570,14 +343,14 @@ class InformationGainLearner(BaseActionModelLearner):
         satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
 
         # Build CNF formula if needed
-        if len(self.cnf_managers[action].cnf.clauses) == 0:
+        if not self.cnf_managers[action].has_clauses():
             self._build_cnf_formula(action)
 
         # Current CNF model count
         cnf = self.cnf_managers[action]
 
         # If CNF is empty, use maximum possible models
-        if len(cnf.cnf.clauses) == 0:
+        if not cnf.has_clauses():
             la_size = len(self._get_parameter_bound_literals(action))
             current_models = 2 ** la_size if la_size > 0 else 1
         else:
@@ -590,21 +363,8 @@ class InformationGainLearner(BaseActionModelLearner):
             return 0.0
 
         # Create temporary CNF with new constraint
-        temp_cnf = CNFManager()
-        temp_cnf.cnf.clauses = cnf.cnf.clauses.copy()
-        temp_cnf.fluent_to_var = cnf.fluent_to_var.copy()
-        temp_cnf.var_to_fluent = cnf.var_to_fluent.copy()
-        temp_cnf.next_var = cnf.next_var
-
-        # Add the new constraint as a clause
-        clause = []
-        for literal in unsatisfied:
-            if literal.startswith('¬'):
-                positive = literal[1:]
-                clause.append('-' + positive)
-            else:
-                clause.append(literal)
-        temp_cnf.add_clause(clause)
+        temp_cnf = cnf.copy()
+        temp_cnf.add_constraint_from_unsatisfied(unsatisfied)
 
         # Count models with new constraint
         new_models = temp_cnf.count_solutions()
@@ -1056,39 +816,10 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug(f"_build_cnf_formula: Building CNF for action '{action}'")
         cnf = self.cnf_managers[action]
 
-        # Clear existing clauses
-        clauses_before = len(cnf.cnf.clauses)
-        cnf.cnf.clauses = []
-        cnf.fluent_to_var = {}
-        cnf.var_to_fluent = {}
-        cnf.next_var = 1
-        logger.debug(f"  Cleared {clauses_before} existing clauses")
+        # Use CNF manager method to build from constraint sets
+        cnf.build_from_constraint_sets(self.pre_constraints[action])
 
-        # Build CNF from constraints
-        logger.debug(f"  Processing {len(self.pre_constraints[action])} constraint sets")
-        clauses_added = 0
-        for i, constraint_set in enumerate(self.pre_constraints[action]):
-            if not constraint_set:
-                logger.debug(f"  Constraint {i}: empty, skipping")
-                continue
-
-            # Each constraint set becomes a clause
-            clause = []
-            for literal in constraint_set:
-                if literal.startswith('¬'):
-                    # Negative literal: add as negated variable
-                    positive = literal[1:]
-                    clause.append('-' + positive)
-                else:
-                    # Positive literal
-                    clause.append(literal)
-
-            if clause:
-                cnf.add_clause(clause)
-                clauses_added += 1
-                logger.debug(f"  Constraint {i}: added clause with {len(clause)} literals")
-
-        logger.info(f"CNF formula built for '{action}': {clauses_added} clauses, "
+        logger.info(f"CNF formula built for '{action}': {len(cnf.cnf.clauses)} clauses, "
                     f"{len(cnf.fluent_to_var)} unique variables")
         return cnf
 
@@ -1144,21 +875,15 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Extract predicate name from literal.
 
+        Delegates to PDDLHandler's extract_predicate_name method.
+
         Args:
             literal: Literal string (e.g., 'on(?x,?y)' or '¬clear(?x)')
 
         Returns:
             Predicate name or None
         """
-        # Remove negation if present
-        if literal.startswith('¬'):
-            literal = literal[1:]
-
-        # Extract predicate name
-        if '(' in literal:
-            return literal[:literal.index('(')]
-        else:
-            return literal
+        return self.pddl_handler.extract_predicate_name(literal)
 
     def has_converged(self) -> bool:
         """

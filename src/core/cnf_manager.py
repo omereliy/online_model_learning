@@ -516,3 +516,134 @@ class CNFManager:
     def __repr__(self) -> str:
         """Detailed representation."""
         return f"CNFManager(vars={len(self.fluent_to_var)}, clauses={len(self.cnf.clauses)}, sat={self.is_satisfiable()})"
+
+    def create_with_state_constraints(self, state_constraints: Dict[str, bool]) -> 'CNFManager':
+        """
+        Create a new CNF manager with additional state constraints.
+
+        This method is used by information gain algorithm to add constraints
+        for unsatisfied literals in the current state.
+
+        Args:
+            state_constraints: Dict mapping fluent names to their required values
+                              e.g., {'a': True, 'b': False} means a must be true, b must be false
+
+        Returns:
+            New CNFManager with original clauses plus unit clauses for constraints
+        """
+        # Create a deep copy
+        new_cnf = self.copy()
+
+        # Add unit clauses for each state constraint
+        for fluent, must_be_true in state_constraints.items():
+            new_cnf.add_unit_constraint(fluent, must_be_true)
+
+        return new_cnf
+
+    def add_unit_constraint(self, fluent: str, must_be_true: bool):
+        """
+        Add a unit clause constraining a fluent to a specific value.
+
+        Args:
+            fluent: Fluent name to constrain
+            must_be_true: True if fluent must be true, False if it must be false
+        """
+        if must_be_true:
+            # Add unit clause [fluent] (fluent must be true)
+            self.add_clause([fluent])
+        else:
+            # Add unit clause [-fluent] (fluent must be false)
+            self.add_clause(['-' + fluent])
+
+    def add_constraint_from_unsatisfied(self, unsatisfied_literals: Set[str]):
+        """
+        Add a constraint clause from a set of unsatisfied literals.
+
+        Used by information gain algorithm when action fails to add
+        constraint that at least one unsatisfied literal must be a precondition.
+
+        Args:
+            unsatisfied_literals: Set of literals not satisfied in state
+                                 (can include negated literals like '¬clear_a')
+        """
+        if not unsatisfied_literals:
+            return
+
+        # Build clause from unsatisfied literals
+        clause = []
+        for literal in unsatisfied_literals:
+            if literal.startswith('¬'):
+                # Negative literal ¬p becomes -p in clause
+                positive = literal[1:]
+                clause.append('-' + positive)
+            else:
+                # Positive literal stays positive
+                clause.append(literal)
+
+        if clause:
+            self.add_clause(clause)
+
+    def build_from_constraint_sets(self, constraint_sets: List[Set[str]]):
+        """
+        Build CNF formula from constraint sets.
+
+        Each constraint set becomes a disjunctive clause in the CNF.
+        Used by information gain algorithm to build CNF from pre?(a).
+
+        Args:
+            constraint_sets: List of constraint sets, each is a set of literals
+        """
+        # Clear existing formula but preserve variable mappings
+        self.clear_formula()
+
+        # Add each constraint set as a clause
+        for constraint_set in constraint_sets:
+            if not constraint_set:
+                continue
+
+            clause = []
+            for literal in constraint_set:
+                if literal.startswith('¬'):
+                    # Negative literal
+                    positive = literal[1:]
+                    clause.append('-' + positive)
+                else:
+                    # Positive literal
+                    clause.append(literal)
+
+            if clause:
+                self.add_clause(clause)
+
+    def clear_formula(self):
+        """
+        Clear all clauses but preserve variable mappings.
+
+        Used when rebuilding formula from scratch.
+        """
+        self.cnf.clauses = []
+        self._invalidate_cache()
+
+    def has_clauses(self) -> bool:
+        """
+        Check if the CNF formula has any clauses.
+
+        Returns:
+            True if there are clauses, False if formula is empty
+        """
+        return len(self.cnf.clauses) > 0
+
+    def count_models_with_constraints(self, state_constraints: Dict[str, bool]) -> int:
+        """
+        Count models with additional state constraints applied.
+
+        Does not modify the original formula.
+
+        Args:
+            state_constraints: Dict mapping fluent names to required values
+
+        Returns:
+            Number of satisfying models with constraints
+        """
+        # Create temporary CNF with constraints
+        temp_cnf = self.create_with_state_constraints(state_constraints)
+        return temp_cnf.count_solutions()

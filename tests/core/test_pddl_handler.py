@@ -873,3 +873,155 @@ class TestPDDLHandlerFeatureSupport:
         # Test that objects have correct types
         for obj in handler.problem.all_objects:
             assert obj.type.name == 'block'
+
+
+class TestPDDLHandlerParameterBoundLiterals:
+    """Test new parameter-bound literal manipulation methods."""
+
+    def test_get_parameter_bound_literals(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test generation of parameter-bound literals (La)."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test for pick-up action (single parameter)
+        La = handler.get_parameter_bound_literals("pick-up")
+        assert isinstance(La, set)
+        assert len(La) > 0
+
+        # Should contain lifted literals with ?x
+        assert "clear(?x)" in La
+        assert "¬clear(?x)" in La
+        assert "ontable(?x)" in La
+        assert "¬ontable(?x)" in La
+        assert "holding(?x)" in La
+        assert "¬holding(?x)" in La
+        assert "handempty" in La
+        assert "¬handempty" in La
+
+    def test_get_parameter_bound_literals_two_params(
+            self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test parameter-bound literals for two-parameter action."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test for stack action (two parameters)
+        La = handler.get_parameter_bound_literals("stack")
+        assert isinstance(La, set)
+
+        # Should contain combinations with ?x and ?y
+        assert "on(?x,?y)" in La
+        assert "¬on(?x,?y)" in La
+        assert "clear(?x)" in La
+        assert "clear(?y)" in La
+        assert "¬clear(?x)" in La
+        assert "¬clear(?y)" in La
+        assert "holding(?x)" in La
+        assert "holding(?y)" in La
+
+    def test_ground_literals(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test grounding of parameter-bound literals."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test grounding with concrete objects
+        literals = {"on(?x,?y)", "¬clear(?x)", "handempty"}
+        objects = ["a", "b"]
+
+        grounded = handler.ground_literals(literals, objects)
+        assert isinstance(grounded, set)
+        assert "on_a_b" in grounded
+        assert "¬clear_a" in grounded
+        assert "handempty" in grounded
+
+    def test_lift_fluents(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test lifting of grounded fluents."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test lifting with objects
+        fluents = {"on_a_b", "¬clear_a", "handempty"}
+        objects = ["a", "b"]
+
+        lifted = handler.lift_fluents(fluents, objects)
+        assert isinstance(lifted, set)
+        assert "on(?x,?y)" in lifted
+        assert "¬clear(?x)" in lifted
+        assert "handempty" in lifted
+
+    def test_extract_predicate_name(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test predicate name extraction from literals."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test various literal formats
+        assert handler.extract_predicate_name("on(?x,?y)") == "on"
+        assert handler.extract_predicate_name("¬clear(?x)") == "clear"
+        assert handler.extract_predicate_name("handempty") == "handempty"
+        assert handler.extract_predicate_name("¬handempty") == "handempty"
+
+    def test_roundtrip_grounding_lifting(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test that grounding and lifting are inverse operations."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Start with lifted literals
+        original_lifted = {"on(?x,?y)", "clear(?x)", "¬holding(?y)"}
+        objects = ["a", "b"]
+
+        # Ground then lift
+        grounded = handler.ground_literals(original_lifted, objects)
+        lifted_again = handler.lift_fluents(grounded, objects)
+
+        # Should get back the same literals
+        assert lifted_again == original_lifted
+
+    def test_nonexistent_action(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test handling of nonexistent action."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Should return empty set for nonexistent action
+        La = handler.get_parameter_bound_literals("nonexistent_action")
+        assert La == set()

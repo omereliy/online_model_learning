@@ -578,6 +578,133 @@ class TestCNFManagerLiftedFluents:
         assert cnf.is_satisfiable() is False
 
 
+class TestCNFManagerConstraintOperations:
+    """Test constraint-based operations for information gain algorithm."""
+
+    def test_create_with_state_constraints(self):
+        """Test creating CNF with state constraints added."""
+        cnf = CNFManager()
+
+        # Build initial formula
+        cnf.add_clause(['a', 'b'])
+        cnf.add_clause(['-a', 'c'])
+
+        # Create copy with state constraints
+        state_constraints = {'a': False, 'b': True}  # a must be false, b must be true
+        cnf_with_state = cnf.create_with_state_constraints(state_constraints)
+
+        # Expected: Original unchanged, new has additional unit clauses
+        assert len(cnf.cnf.clauses) == 2  # Original unchanged
+        assert len(cnf_with_state.cnf.clauses) == 4  # Original 2 + 2 unit clauses
+
+        # Verify state constraints were added as unit clauses
+        # Check that the new CNF respects the constraints
+        model = cnf_with_state.get_model()
+        if model:  # If satisfiable
+            assert 'a' not in model  # a should be false
+            assert 'b' in model  # b should be true
+
+    def test_add_constraint_from_unsatisfied(self):
+        """Test adding constraint from unsatisfied literals."""
+        cnf = CNFManager()
+
+        # Initial setup
+        cnf.add_fluent('on_a_b')
+        cnf.add_fluent('clear_b')
+        cnf.add_fluent('handempty')
+
+        # Add constraint from unsatisfied literals
+        unsatisfied_literals = {'on_a_b', '¬clear_b', 'handempty'}
+        cnf.add_constraint_from_unsatisfied(unsatisfied_literals)
+
+        # Expected: One clause with the unsatisfied literals
+        assert len(cnf.cnf.clauses) == 1
+        # The clause should contain these literals (some may be negated)
+        assert len(cnf.cnf.clauses[0]) == 3
+
+    def test_build_from_constraint_sets(self):
+        """Test building CNF from constraint sets."""
+        cnf = CNFManager()
+
+        # Define constraint sets (each set is a disjunction)
+        constraint_sets = [
+            {'clear_a', '¬on_a_b'},  # At least one must be true
+            {'handempty'},  # Must be true
+            {'¬on_b_c', 'clear_c'}  # At least one must be true
+        ]
+
+        cnf.build_from_constraint_sets(constraint_sets)
+
+        # Expected: 3 clauses, one for each constraint set
+        assert len(cnf.cnf.clauses) == 3
+
+        # Verify the formula is satisfiable
+        assert cnf.is_satisfiable() is True
+
+    def test_count_models_with_constraints(self):
+        """Test counting models with and without state constraints."""
+        cnf = CNFManager()
+
+        # Build simple formula with 2 free variables
+        cnf.add_clause(['a', 'b'])  # At least one must be true
+
+        # Count original models (should be 3: {a}, {b}, {a,b})
+        original_count = cnf.count_solutions()
+        assert original_count == 3
+
+        # Count with additional constraint
+        state_constraints = {'a': True}  # a must be true
+        constrained_count = cnf.count_models_with_constraints(state_constraints)
+
+        # Expected: Only 2 models now: {a}, {a,b}
+        assert constrained_count == 2
+
+        # Original should be unchanged
+        assert cnf.count_solutions() == 3
+
+    def test_clear_and_rebuild(self):
+        """Test clearing and rebuilding CNF formula."""
+        cnf = CNFManager()
+
+        # Build initial formula
+        cnf.add_clause(['a', 'b'])
+        cnf.add_clause(['c', 'd'])
+        initial_vars = len(cnf.fluent_to_var)
+
+        # Clear formula but keep variable mappings
+        cnf.clear_formula()
+
+        # Expected: No clauses but variables preserved
+        assert len(cnf.cnf.clauses) == 0
+        assert len(cnf.fluent_to_var) == initial_vars
+
+        # Rebuild with new clauses
+        cnf.add_clause(['a', 'c'])
+        assert len(cnf.cnf.clauses) == 1
+
+    def test_add_unit_constraint(self):
+        """Test adding unit constraints for literals."""
+        cnf = CNFManager()
+
+        # Add some clauses
+        cnf.add_clause(['a', 'b'])
+
+        # Add unit constraint that 'a' must be true
+        cnf.add_unit_constraint('a', True)
+
+        # Add unit constraint that 'c' must be false
+        cnf.add_unit_constraint('c', False)
+
+        # Expected: 3 clauses total (original + 2 unit clauses)
+        assert len(cnf.cnf.clauses) == 3
+
+        # Check that unit clauses were added correctly
+        model = cnf.get_model()
+        if model:
+            assert 'a' in model  # a must be true
+            assert 'c' not in model  # c must be false
+
+
 class TestCNFManagerEdgeCases:
     """Test edge cases and error conditions."""
 

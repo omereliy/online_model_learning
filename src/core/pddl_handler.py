@@ -4,7 +4,7 @@ Handles PDDL parsing, problem representation, and model export.
 """
 
 import logging
-from typing import Set, Tuple
+from typing import Set, Tuple, List, Dict, Optional, Any
 
 from unified_planning.io import PDDLReader, PDDLWriter
 from unified_planning.shortcuts import *
@@ -872,6 +872,274 @@ class PDDLHandler:
 
         ancestors = self.get_type_ancestors(child_type)
         return parent_type in ancestors
+
+    def get_parameter_bound_literals(self, action_name: str) -> Set[str]:
+        """
+        Get all parameter-bound literals (La) for an action.
+
+        This includes all possible lifted fluents that can be formed using
+        the action's parameters, including both positive and negative literals.
+
+        Args:
+            action_name: Name of the action
+
+        Returns:
+            Set of parameter-bound literal strings (e.g., 'on(?x,?y)', '¬clear(?x)')
+        """
+        action = self.get_lifted_action(action_name)
+        if not action:
+            logger.warning(f"Action {action_name} not found in domain")
+            return set()
+
+        La = set()
+
+        # Get parameter names using standard naming convention
+        num_params = len(action.parameters)
+        param_letters = 'xyzuvwpqrst'
+        param_names = [f"?{param_letters[i]}" if i < len(param_letters) else f"?p{i}"
+                      for i in range(num_params)]
+
+        # For each predicate in domain, generate all valid lifted literals
+        import itertools
+        for fluent in self.problem.fluents:
+            pred_name = fluent.name
+            pred_arity = fluent.arity
+
+            if pred_arity == 0:
+                # Propositional fluent
+                La.add(pred_name)
+                La.add(f"¬{pred_name}")
+            else:
+                # Generate all parameter combinations of the right arity
+                for combo_length in range(1, min(pred_arity + 1, num_params + 1)):
+                    for combo in itertools.combinations_with_replacement(
+                            param_names[:num_params], combo_length):
+                        if len(combo) == pred_arity:
+                            # Create positive literal
+                            literal = f"{pred_name}({','.join(combo)})"
+                            La.add(literal)
+                            # Create negative literal
+                            La.add(f"¬{literal}")
+
+        return La
+
+    def ground_literals(self, literals: Set[str], objects: List[str]) -> Set[str]:
+        """
+        Ground parameter-bound literals with concrete objects.
+
+        Implements bindP⁻¹(F, O) - converts lifted literals to grounded form.
+
+        Args:
+            literals: Set of parameter-bound literals (e.g., {'on(?x,?y)', '¬clear(?x)'})
+            objects: Ordered list of objects (e.g., ['a', 'b'])
+
+        Returns:
+            Set of grounded literals (e.g., {'on_a_b', '¬clear_a'})
+
+        Example:
+            ground_literals({'on(?x,?y)'}, ['a', 'b']) → {'on_a_b'}
+            ground_literals({'¬on(?x,?y)'}, ['a', 'b']) → {'¬on_a_b'}
+        """
+        grounded = set()
+
+        for literal in literals:
+            # Handle negative literals
+            is_negative = literal.startswith('¬')
+            if is_negative:
+                literal = literal[1:]  # Remove negation symbol
+
+            # Ground the literal
+            grounded_literal = self._ground_lifted_literal_internal(literal, objects)
+
+            # Add back negation if needed
+            if is_negative:
+                grounded_literal = f"¬{grounded_literal}"
+
+            grounded.add(grounded_literal)
+
+        return grounded
+
+    def lift_fluents(self, fluents: Set[str], objects: List[str]) -> Set[str]:
+        """
+        Lift grounded fluents to parameter-bound literals.
+
+        Implements bindP(f, O) - converts grounded fluents to lifted form.
+
+        Args:
+            fluents: Set of grounded fluent strings (e.g., {'on_a_b', '¬clear_a'})
+            objects: Ordered list of objects (e.g., ['a', 'b'])
+
+        Returns:
+            Set of parameter-bound literals (e.g., {'on(?x,?y)', '¬clear(?x)'})
+
+        Example:
+            lift_fluents({'on_a_b'}, ['a', 'b']) → {'on(?x,?y)'}
+            lift_fluents({'¬on_a_b'}, ['a', 'b']) → {'¬on(?x,?y)'}
+        """
+        lifted = set()
+
+        for fluent in fluents:
+            # Handle negative fluents
+            is_negative = fluent.startswith('¬')
+            if is_negative:
+                fluent = fluent[1:]  # Remove negation symbol
+
+            # Lift the fluent
+            lifted_literal = self._lift_grounded_fluent_internal(fluent, objects)
+
+            # Add back negation if needed
+            if is_negative:
+                lifted_literal = f"¬{lifted_literal}"
+
+            lifted.add(lifted_literal)
+
+        return lifted
+
+    def _ground_lifted_literal_internal(self, literal: str, objects: List[str]) -> str:
+        """
+        Ground a single lifted literal with concrete objects.
+
+        Args:
+            literal: Lifted literal (e.g., 'on(?x,?y)' or 'clear(?x)')
+            objects: Ordered list of objects
+
+        Returns:
+            Grounded fluent string (e.g., 'on_a_b' or 'clear_a')
+        """
+        # Parse literal: predicate(param1,param2,...)
+        if '(' not in literal:
+            # Propositional literal
+            return literal
+
+        predicate = literal[:literal.index('(')]
+        params_str = literal[literal.index('(') + 1:literal.rindex(')')]
+
+        if not params_str:
+            # No parameters
+            return predicate
+
+        params = [p.strip() for p in params_str.split(',')]
+
+        # Replace each parameter with corresponding object
+        grounded_params = []
+        for param in params:
+            if param.startswith('?'):
+                # Extract parameter index from name
+                param_idx = self._get_parameter_index_internal(param, objects)
+                if param_idx < len(objects):
+                    grounded_params.append(objects[param_idx])
+                else:
+                    logger.warning(f"Parameter {param} index {param_idx} out of bounds for objects {objects}")
+                    grounded_params.append(param)  # Keep original if error
+            else:
+                # Already grounded
+                grounded_params.append(param)
+
+        # Create grounded fluent string
+        result = '_'.join([predicate] + grounded_params)
+        return result
+
+    def _lift_grounded_fluent_internal(self, fluent: str, objects: List[str]) -> str:
+        """
+        Lift a grounded fluent to parameter-bound literal.
+
+        Args:
+            fluent: Grounded fluent (e.g., 'on_a_b' or 'clear_a')
+            objects: Ordered list of objects used in grounding
+
+        Returns:
+            Lifted literal (e.g., 'on(?x,?y)' or 'clear(?x)')
+        """
+        # Parse fluent: predicate_obj1_obj2_...
+        parts = fluent.split('_')
+
+        if len(parts) == 1:
+            # Propositional fluent
+            return parts[0]
+
+        # First part is predicate, rest are object names
+        predicate = parts[0]
+        obj_names = parts[1:]
+
+        # Replace each object with its parameter
+        params = []
+        for obj_name in obj_names:
+            try:
+                obj_idx = objects.index(obj_name)
+                params.append(self._get_parameter_name_internal(obj_idx))
+            except ValueError:
+                logger.warning(f"Object {obj_name} not found in objects list {objects}")
+                params.append(obj_name)  # Keep original if not found
+
+        # Create lifted literal
+        if params:
+            result = f"{predicate}({','.join(params)})"
+        else:
+            result = predicate
+
+        return result
+
+    def _get_parameter_index_internal(self, param_name: str, objects: List[str]) -> int:
+        """
+        Get index of parameter in action's parameter list.
+
+        Args:
+            param_name: Parameter name (e.g., '?x', '?y')
+            objects: Object list (used for validation)
+
+        Returns:
+            Parameter index
+        """
+        # Simple heuristic: ?x → 0, ?y → 1, ?z → 2, etc.
+        param_letters = 'xyzuvwpqrst'
+        if param_name.startswith('?') and len(param_name) == 2:
+            letter = param_name[1].lower()
+            if letter in param_letters:
+                return param_letters.index(letter)
+
+        # Fallback: try to parse number from name
+        import re
+        match = re.search(r'\d+', param_name)
+        if match:
+            return int(match.group())
+
+        return 0  # Default to first parameter
+
+    def _get_parameter_name_internal(self, index: int) -> str:
+        """
+        Get parameter name for given index.
+
+        Args:
+            index: Parameter index
+
+        Returns:
+            Parameter name (e.g., '?x', '?y')
+        """
+        param_letters = 'xyzuvwpqrst'
+        if index < len(param_letters):
+            return f"?{param_letters[index]}"
+        else:
+            return f"?p{index}"
+
+    def extract_predicate_name(self, literal: str) -> Optional[str]:
+        """
+        Extract predicate name from literal.
+
+        Args:
+            literal: Literal string (e.g., 'on(?x,?y)' or '¬clear(?x)')
+
+        Returns:
+            Predicate name or None
+        """
+        # Remove negation if present
+        if literal.startswith('¬'):
+            literal = literal[1:]
+
+        # Extract predicate name
+        if '(' in literal:
+            return literal[:literal.index('(')]
+        else:
+            return literal
 
     def __str__(self) -> str:
         """String representation."""

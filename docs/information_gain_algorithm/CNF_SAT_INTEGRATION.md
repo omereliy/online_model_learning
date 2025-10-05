@@ -34,6 +34,14 @@ Complete CNF formula management with PySAT integration.
 - `minimize_qm()` - Quine-McCluskey minimization
 - `get_entropy()` - Calculate formula entropy
 - **Lifted Support**: `add_lifted_fluent()`, `instantiate_lifted_clause()`
+- **Constraint Operations (Oct 5, 2025)**:
+  - `create_with_state_constraints(state_constraints)` - Create copy with state constraints
+  - `add_constraint_from_unsatisfied(unsatisfied_literals)` - Add failure constraint
+  - `build_from_constraint_sets(constraint_sets)` - Build CNF from pre?(a)
+  - `count_models_with_constraints(state_constraints)` - Model counting with constraints
+  - `clear_formula()` - Clear clauses but preserve variables
+  - `has_clauses()` - Check if formula has clauses
+  - `add_unit_constraint(fluent, must_be_true)` - Add unit clause for fluent
 
 ### 2. PDDL Handler (`src/core/pddl_handler.py`) ✅ IMPLEMENTED
 Unified Planning integration with CNF extraction.
@@ -84,6 +92,35 @@ def calculate_entropy(cnf_formula):
     probability = num_models / total_possible
     return -probability * math.log2(probability)
 ```
+
+## Architecture and Separation of Concerns
+
+### Clean Separation (Oct 5, 2025 Refactoring)
+The implementation maintains strict separation between:
+
+1. **Algorithm Logic** (`src/algorithms/information_gain.py`)
+   - Information gain calculations
+   - Action selection strategies
+   - Model update rules
+   - Observation processing
+
+2. **CNF Management** (`src/core/cnf_manager.py`)
+   - Formula construction and manipulation
+   - SAT solving and model counting
+   - Constraint handling
+   - Variable mapping
+
+3. **PDDL Handling** (`src/core/pddl_handler.py`)
+   - Parameter-bound literal generation
+   - Fluent grounding/lifting
+   - Action schema manipulation
+   - Domain/problem parsing
+
+This separation ensures:
+- Algorithm code focuses only on learning logic
+- CNF operations are centralized and reusable
+- PDDL handling is consistent across the framework
+- Testing is modular and focused
 
 ## Algorithm Workflow
 
