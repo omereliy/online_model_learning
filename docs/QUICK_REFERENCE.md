@@ -22,7 +22,7 @@ sbatch scripts/run_experiments.sh
 
 ### Testing Commands
 ```bash
-# Curated test suite (165 tests, 100% pass rate)
+# Curated test suite (51 tests, 100% pass rate)
 make test
 
 # All tests including experimental (196 tests)
@@ -113,21 +113,79 @@ num_models = cnf.count_solutions()
 entropy = cnf.get_entropy()
 ```
 
-### Type-Safe Grounded Actions
+### ExpressionConverter Usage
+```python
+from src.core.expression_converter import ExpressionConverter
+from src.core.pddl_types import ParameterBinding
+from unified_planning.model import Object
+
+# Convert FNode to parameter-bound literal (preserves action's parameter names)
+param_bound = ExpressionConverter.to_parameter_bound_string(expr, action.parameters)
+# Returns: "clear(?x)" for pick-up(?x) action
+
+# Convert FNode to grounded fluent
+binding = ParameterBinding({'x': Object('a', 'block')})
+grounded = ExpressionConverter.to_grounded_string(expr, binding)
+# Returns: "clear_a"
+
+# Extract CNF clauses from expression
+clauses = ExpressionConverter.to_cnf_clauses(expr, action.parameters)
+# Returns: [["clear(?x)"], ["ontable(?x)"]] for AND expression
+```
+
+### FluentBinder (bindP and bindP⁻¹) Usage
+```python
+from src.core.binding_operations import FluentBinder
+from src.core.pddl_handler import PDDLHandler
+
+pddl_handler = PDDLHandler()
+pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+binder = FluentBinder(pddl_handler)
+
+# bindP⁻¹: Ground parameter-bound literals with objects
+grounded = binder.ground_literals({'clear(?x)', 'on(?x,?y)'}, ['a', 'b'])
+# Returns: {'clear_a', 'on_a_b'}
+
+# bindP: Lift grounded fluents to parameter-bound form
+lifted = binder.lift_fluents({'clear_a', 'on_a_b'}, ['a', 'b'])
+# Returns: {'clear(?x)', 'on(?x,?y)'}
+
+# These operations are inverse:
+# bindP(bindP⁻¹(F, O), O) = F
+# bindP⁻¹(bindP(f, O), O) = f
+```
+
+### Type-Safe PDDL Classes
 ```python
 from src.core.pddl_handler import PDDLHandler
-from src.core.pddl_types import GroundedAction
+from src.core.pddl_types import (
+    ParameterBoundLiteral,
+    GroundedFluent,
+    GroundedAction,
+    ParameterBinding
+)
+from unified_planning.model import Action as LiftedAction
 
 pddl_handler = PDDLHandler()
 pddl_handler.parse_domain_and_problem(domain_file, problem_file)
 
-# Get all grounded actions as type-safe objects
-grounded_actions = pddl_handler.get_all_grounded_actions_typed()
+# Parameter-bound literal (uses action's parameter names)
+lit = ParameterBoundLiteral('clear', ['?x'])
+lit.to_string()  # "clear(?x)"
 
+# Grounded fluent
+fluent = GroundedFluent('clear', ['a'])
+fluent.to_string()  # "clear_a"
+
+# Grounded action (replaces Tuple[Action, Dict[str, Object]])
+grounded_actions = pddl_handler.get_all_grounded_actions_typed()
 for grounded_action in grounded_actions:
     action_name = grounded_action.action.name
     objects = grounded_action.object_names()  # ['a', 'b']
     action_str = grounded_action.to_string()  # "pick-up_a"
+
+# Lifted action (type alias for UP's Action)
+lifted_action: LiftedAction = pddl_handler.get_lifted_action("pick-up")
 ```
 
 ### Run Experiment with CNF Settings

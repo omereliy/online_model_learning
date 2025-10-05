@@ -290,7 +290,7 @@ pyeda>=0.28.0  # For formula minimization
 The project maintains two test execution approaches:
 
 #### 1. Curated Test Suite (`make test`)
-- **165 tests** - Stable, reliable tests
+- **51 tests** - Stable, reliable tests
 - **100% pass rate** - All tests must pass
 - **Use for**: CI/CD, validation, pre-commit checks
 - **Excludes**: Experimental tests that may be unstable

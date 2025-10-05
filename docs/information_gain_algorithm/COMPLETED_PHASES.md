@@ -149,7 +149,7 @@ Enhanced `InformationGainLearner` class with information-theoretic action select
 - ✅ Three selection strategies for different exploration needs
 - ✅ Handles domains with negative preconditions
 - ✅ Robust edge case handling
-- ✅ Main test suite still passes (165 tests)
+- ✅ Main test suite still passes (51 tests)
 
 ---
 

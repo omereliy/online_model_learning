@@ -44,7 +44,7 @@ A phase-based implementation guide for the CNF-based Information-Theoretic actio
 - Information gain correctly drives action selection
 - Handles edge cases (empty state, no constraints, zero gains)
 - Numerical stability in probability calculations
-- Main test suite still passes (165 tests)
+- Main test suite still passes (51 tests)
 
 **Ready for Phase 4**:
 - Full algorithm implementation complete

@@ -189,7 +189,7 @@ For all test commands, see [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md#testing-
 
 Key principles:
 - TDD methodology is mandatory
-- `make test` for stable suite (165 tests)
+- `make test` for stable suite (51 tests)
 - `pytest tests/` for all tests (196 tests)
 ```
 

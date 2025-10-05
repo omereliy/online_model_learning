@@ -3,6 +3,41 @@
 ## Overview
 The framework provides comprehensive support for both lifted (parameterized) and grounded representations of fluents and actions, enabling efficient representation and reasoning about action models at different levels of abstraction.
 
+## Type-Safe Representations
+
+The codebase uses type-safe classes from `src/core/pddl_types.py` for all PDDL representations:
+
+```python
+from src.core.pddl_types import (
+    ParameterBoundLiteral,    # Lifted literals using action's parameter names
+    GroundedFluent,           # Fully instantiated fluents
+    GroundedAction,           # Grounded actions (replaces tuples)
+    ParameterBinding          # Type-safe parameter bindings
+)
+from unified_planning.model import Action as LiftedAction  # Type alias
+
+# Parameter-bound literal (uses action's specific parameter names)
+lit = ParameterBoundLiteral('clear', ['?x'])
+lit.to_string()  # "clear(?x)"
+
+# Grounded fluent
+fluent = GroundedFluent('clear', ['a'])
+fluent.to_string()  # "clear_a"
+
+# Grounded action (type-safe wrapper)
+action = GroundedAction(pickup_action, ParameterBinding({'x': obj_a}))
+action.to_string()  # "pick-up_a"
+action.object_names()  # ['a']
+
+# Lifted action (use UP's Action directly, LiftedAction is just type alias)
+lifted_action: LiftedAction = pickup_action
+```
+
+**Key Points**:
+- `ParameterBoundLiteral` preserves action's specific parameter names (e.g., `?x` from `pick-up(?x)`)
+- `GroundedAction` replaces `Tuple[Action, Dict[str, Object]]` for type safety
+- `LiftedAction` is a type alias for `unified_planning.model.Action` (no wrapper needed)
+
 ## Core Components
 
 ### CNF Manager (`src/core/cnf_manager.py`)
@@ -87,6 +122,26 @@ action_str = handler.create_lifted_action_string("pick-up", ["?x"])
 # Returns: "pick-up(?x)"
 ```
 
+##### Grounding and Lifting Operations
+```python
+from src.core.binding_operations import FluentBinder
+
+# Initialize binder
+binder = FluentBinder(handler)
+
+# bindP⁻¹: Ground parameter-bound literals with objects
+grounded = binder.ground_literals({'clear(?x)', 'on(?x,?y)'}, ['a', 'b'])
+# Returns: {'clear_a', 'on_a_b'}
+
+# bindP: Lift grounded fluents to parameter-bound form
+lifted = binder.lift_fluents({'clear_a', 'on_a_b'}, ['a', 'b'])
+# Returns: {'clear(?x)', 'on(?x,?y)'}
+
+# These operations are inverse:
+# bindP(bindP⁻¹(F, O), O) = F
+# bindP⁻¹(bindP(f, O), O) = f
+```
+
 ##### CNF Extraction
 ```python
 # Extract preconditions as CNF clauses
@@ -159,10 +214,18 @@ def calculate_info_gain(cnf, action_name, bindings):
     return current_entropy - expected_entropy
 ```
 
-### Example 3: Mixed Lifted/Grounded Reasoning
+### Example 3: Mixed Lifted/Grounded Reasoning with Type-Safe Classes
 ```python
+from src.core.cnf_manager import CNFManager
+from src.core.pddl_handler import PDDLHandler
+from src.core.binding_operations import FluentBinder
+from src.core.pddl_types import ParameterBoundLiteral, GroundedFluent
+
 # Start with lifted knowledge
 cnf = CNFManager()
+handler = PDDLHandler()
+binder = FluentBinder(handler)
+
 cnf.add_lifted_fluent("on", ["?x", "?y"])
 cnf.add_lifted_fluent("clear", ["?x"])
 
@@ -177,6 +240,14 @@ cnf.add_clause(["-on_b_a"])   # Block b is not on a
 if cnf.is_satisfiable():
     model = cnf.get_model()
     print(f"Consistent model: {model}")
+
+# Use type-safe classes for manipulation
+param_lit = ParameterBoundLiteral('clear', ['?x'])
+grounded_lit = GroundedFluent.from_string('clear_a')
+
+# Convert between representations
+grounded_set = binder.ground_literals({param_lit.to_string()}, ['a'])
+# Returns: {'clear_a'}
 ```
 
 ## Performance Considerations
