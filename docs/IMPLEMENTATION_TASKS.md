@@ -94,6 +94,104 @@ Building experiment framework to compare three online action model learning algo
 - `extract_predicate_name()` - Parse predicate names
 - Internal helpers for parameter indexing and naming
 
+### PDDLHandler Refactoring Phase 1 - Type-Safe Data Classes (October 5, 2025)
+**Context**: PDDLHandler used primitive types (Dict[str, Object], str) throughout, reducing type safety and code clarity.
+
+**Problem**:
+- No type safety for parameter bindings
+- String-based literals without semantic distinction
+- No compile-time verification of types
+
+**Solution**: Created type-safe data classes in `src/core/pddl_types.py`:
+- **ParameterBinding**: Type-safe wrapper for Dict[str, Object]
+  - Provides `get_object()`, `object_names()`, `to_dict()` methods
+  - Clear semantic meaning for parameter→object mappings
+- **ParameterBoundLiteral**: Literals using action's parameter names
+  - CRITICAL: Uses action's specific parameter names (e.g., clear(?x) for pick-up(?x))
+  - Supports `to_string()` and `from_string()` for conversions
+  - Handles negation (¬) and propositional literals
+- **GroundedFluent**: Fully instantiated fluents with objects
+  - Converts to/from string format (e.g., "clear_a", "on_a_b")
+  - Handles multi-parameter and propositional fluents
+
+**Benefits**:
+- Type safety with IDE support
+- Self-documenting code
+- Validation at creation time
+- Foundation for further refactoring phases
+
+**Tests**: 21 new tests in `tests/core/test_pddl_types.py`, all passing
+
+### PDDLHandler Refactoring Phase 2 - Expression Conversion Logic (October 5, 2025)
+**Context**: Expression conversion logic (FNode → string) was scattered throughout PDDLHandler, making it hard to test and reuse.
+
+**Problem**:
+- Three methods doing similar FNode→string conversions
+- Duplicate traversal logic for AND/OR/NOT expressions
+- No single source of truth for conversion rules
+
+**Solution**: Created `ExpressionConverter` class in `src/core/expression_converter.py`:
+- **`to_parameter_bound_string()`**: Converts FNode to parameter-bound literal
+  - CRITICAL: Preserves action's specific parameter names (e.g., `clear(?x)`)
+  - Fixed bug: Compare `str(arg) == param.name`, not `str(arg) == str(param)`
+- **`to_grounded_string()`**: Converts FNode to grounded fluent with binding
+  - Uses ParameterBinding for type-safe parameter→object mapping
+  - Handles negation and multi-parameter fluents
+- **`to_cnf_clauses()`**: Extracts CNF clauses from complex expressions
+  - Recursively handles AND/OR/NOT operators
+  - Returns List[List[str]] format for CNF formulas
+
+**Refactoring**:
+- PDDLHandler methods now delegate to ExpressionConverter:
+  - `_expression_to_lifted_string()` → `ExpressionConverter.to_parameter_bound_string()`
+  - `_ground_expression_to_string()` → `ExpressionConverter.to_grounded_string()`
+  - `_extract_clauses_from_expression()` → `ExpressionConverter.to_cnf_clauses()`
+- Old methods kept for backward compatibility (marked DEPRECATED)
+
+**Benefits**:
+- Centralized conversion logic - single source of truth
+- Easier to test in isolation (9 new tests)
+- Reusable across different components
+- Reduced code duplication (~60 lines removed from PDDLHandler)
+
+**Tests**: 9 new tests in `tests/core/test_expression_converter.py`, all passing
+
+### PDDLHandler Refactoring Phase 3 - Grounding/Lifting Operations (October 5, 2025)
+**Context**: Grounding (bindP⁻¹) and lifting (bindP) operations were embedded in PDDLHandler with ~150 lines of implementation code, making them hard to test and not clearly separated as algorithm-specific operations.
+
+**Problem**:
+- bindP/bindP⁻¹ operations scattered across multiple internal methods
+- No clear separation between algorithm logic and PDDL manipulation
+- Hard to test binding operations in isolation
+- Used by Information Gain algorithm but buried in PDDLHandler
+
+**Solution**: Created `FluentBinder` class in `src/core/binding_operations.py`:
+- **`ground_literal()`**: Single literal grounding (e.g., `clear(?x)` + `['a']` → `clear_a`)
+- **`lift_fluent()`**: Single fluent lifting (e.g., `clear_a` + `['a']` → `clear(?x)`)
+- **`ground_literals()`**: Batch bindP⁻¹ operation for sets of literals
+- **`lift_fluents()`**: Batch bindP operation for sets of fluents
+- Handles negation, multi-parameter literals, and propositional fluents
+- Uses PDDLHandler's static methods for parameter name generation
+
+**Refactoring**:
+- PDDLHandler now delegates to FluentBinder:
+  - Added `_get_binder()` for lazy initialization (avoids circular import)
+  - `ground_literals()` → `FluentBinder.ground_literals()`
+  - `lift_fluents()` → `FluentBinder.lift_fluents()`
+  - `_ground_lifted_literal_internal()` → marked DEPRECATED, delegates to FluentBinder
+  - `_lift_grounded_fluent_internal()` → marked DEPRECATED, delegates to FluentBinder
+- Old methods kept for backward compatibility during transition
+
+**Benefits**:
+- Clear algorithm semantics (bindP and bindP⁻¹)
+- Easier to test in isolation (16 new tests)
+- Reduced PDDLHandler complexity (~150 lines extracted)
+- Better separation of concerns (algorithm operations vs PDDL parsing)
+- Inverse operations verified: `bindP(bindP⁻¹(F, O), O) = F`
+
+**Tests**: 16 new tests in `tests/core/test_binding_operations.py`, all passing
+**Integration**: All existing tests pass, including Information Gain algorithm bindP tests
+
 ## Recent Fixes (September 28, 2025)
 
 1. **OLAM Learning Validation**

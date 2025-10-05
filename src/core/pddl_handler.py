@@ -8,6 +8,7 @@ from typing import Set, Tuple, List, Dict, Optional, Any
 
 from unified_planning.io import PDDLReader, PDDLWriter
 from unified_planning.shortcuts import *
+from src.core.expression_converter import ExpressionConverter
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,8 @@ class PDDLHandler:
         self._lifted_actions: Dict[str, Action] = {}  # action_name -> Action
         self._lifted_predicates: Dict[str, Tuple[str, List[str]]] = {}  # pred_name -> (name, param_types)
         self._type_hierarchy: Dict[str, Set[str]] = {}  # type -> subtypes
+        # Binding operations helper (lazy initialization to avoid circular import)
+        self._binder = None
 
     def parse_domain_and_problem(self, domain_file: str, problem_file: str) -> Problem:
         """
@@ -496,63 +499,22 @@ class PDDLHandler:
         return True
 
     def _expression_to_lifted_string(self, expr: Any, parameters: List) -> Optional[str]:
-        """Convert UP expression to lifted string representation."""
-        if hasattr(expr, 'fluent'):
-            fluent = expr.fluent()
-            if expr.args:
-                # Has parameters - create lifted representation
-                param_strs = []
-                for arg in expr.args:
-                    # Find parameter name
-                    for param in parameters:
-                        if str(arg) == str(param):
-                            param_strs.append(f"?{param.name}")
-                            break
-                    else:
-                        # Not a parameter, use object name
-                        param_strs.append(str(arg))
-                return f"{fluent.name}({','.join(param_strs)})"
-            else:
-                return fluent.name
-        return None
+        """Convert UP expression to parameter-bound string representation.
+
+        DEPRECATED: Use ExpressionConverter.to_parameter_bound_string() directly.
+        This method kept for backward compatibility.
+        """
+        return ExpressionConverter.to_parameter_bound_string(expr, parameters)
 
     def _ground_expression_to_string(self, expr: Any, binding: Dict[str, Object]) -> Optional[str]:
-        """Convert UP expression to grounded string with binding."""
-        # Handle AND expressions recursively
-        if hasattr(expr, 'is_and') and expr.is_and():
-            # For AND expressions, we need to traverse each operand
-            # This shouldn't happen in normal precondition extraction
-            # but we handle it for robustness
-            return None
+        """Convert UP expression to grounded string with binding.
 
-        # Handle OR expressions recursively
-        if hasattr(expr, 'is_or') and expr.is_or():
-            # For OR expressions, similar handling
-            return None
-
-        # Handle NOT expressions
-        if hasattr(expr, 'is_not') and expr.is_not():
-            inner = expr.args[0] if expr.args else expr
-            inner_str = self._ground_expression_to_string(inner, binding)
-            if inner_str:
-                return f"-{inner_str}"
-            return None
-
-        # Handle fluent expressions
-        if hasattr(expr, 'is_fluent_exp') and expr.is_fluent_exp():
-            fluent = expr.fluent()
-            if expr.args:
-                # Has parameters - ground them
-                grounded_args = []
-                for arg in expr.args:
-                    if str(arg) in binding:
-                        grounded_args.append(binding[str(arg)].name)
-                    else:
-                        grounded_args.append(str(arg).replace("'", ""))
-                return f"{fluent.name}_{'_'.join(grounded_args)}"
-            else:
-                return fluent.name
-        return None
+        DEPRECATED: Use ExpressionConverter.to_grounded_string() directly.
+        This method kept for backward compatibility.
+        """
+        from src.core.pddl_types import ParameterBinding
+        pb = ParameterBinding(binding)
+        return ExpressionConverter.to_grounded_string(expr, pb)
 
     def _ground_expression(self, expr: Any, binding: Dict[str, Object]) -> Any:
         """Ground expression with parameter binding."""
@@ -781,37 +743,12 @@ class PDDLHandler:
         return cnf_clauses
 
     def _extract_clauses_from_expression(self, expr: Any, parameters: List) -> List[List[str]]:
-        """Extract CNF clauses from a UP expression."""
-        clauses = []
+        """Extract CNF clauses from a UP expression.
 
-        # Handle different expression types
-        if hasattr(expr, 'is_and') and expr.is_and():
-            # AND: each operand becomes a separate clause
-            for arg in expr.args:
-                sub_clauses = self._extract_clauses_from_expression(arg, parameters)
-                clauses.extend(sub_clauses)
-        elif hasattr(expr, 'is_or') and expr.is_or():
-            # OR: combine operands into single clause
-            clause = []
-            for arg in expr.args:
-                sub_clauses = self._extract_clauses_from_expression(arg, parameters)
-                if sub_clauses and sub_clauses[0]:
-                    clause.extend(sub_clauses[0])
-            if clause:
-                clauses.append(clause)
-        elif hasattr(expr, 'is_not') and expr.is_not():
-            # NOT: negate the inner expression
-            inner = expr.args[0] if expr.args else expr
-            lifted_str = self._expression_to_lifted_string(inner, parameters)
-            if lifted_str:
-                clauses.append([f"-{lifted_str}"])
-        else:
-            # Base case: fluent expression
-            lifted_str = self._expression_to_lifted_string(expr, parameters)
-            if lifted_str:
-                clauses.append([lifted_str])
-
-        return clauses
+        DEPRECATED: Use ExpressionConverter.to_cnf_clauses() directly.
+        This method kept for backward compatibility.
+        """
+        return ExpressionConverter.to_cnf_clauses(expr, parameters)
 
     def supports_negative_preconditions(self) -> bool:
         """
@@ -943,6 +880,13 @@ class PDDLHandler:
 
         return La
 
+    def _get_binder(self):
+        """Get FluentBinder instance (lazy initialization to avoid circular import)."""
+        if self._binder is None:
+            from src.core.binding_operations import FluentBinder
+            self._binder = FluentBinder(self)
+        return self._binder
+
     def ground_literals(self, literals: Set[str], objects: List[str]) -> Set[str]:
         """
         Ground parameter-bound literals with concrete objects.
@@ -960,24 +904,7 @@ class PDDLHandler:
             ground_literals({'on(?x,?y)'}, ['a', 'b']) → {'on_a_b'}
             ground_literals({'¬on(?x,?y)'}, ['a', 'b']) → {'¬on_a_b'}
         """
-        grounded = set()
-
-        for literal in literals:
-            # Handle negative literals
-            is_negative = literal.startswith('¬')
-            if is_negative:
-                literal = literal[1:]  # Remove negation symbol
-
-            # Ground the literal
-            grounded_literal = self._ground_lifted_literal_internal(literal, objects)
-
-            # Add back negation if needed
-            if is_negative:
-                grounded_literal = f"¬{grounded_literal}"
-
-            grounded.add(grounded_literal)
-
-        return grounded
+        return self._get_binder().ground_literals(literals, objects)
 
     def lift_fluents(self, fluents: Set[str], objects: List[str]) -> Set[str]:
         """
@@ -996,108 +923,21 @@ class PDDLHandler:
             lift_fluents({'on_a_b'}, ['a', 'b']) → {'on(?x,?y)'}
             lift_fluents({'¬on_a_b'}, ['a', 'b']) → {'¬on(?x,?y)'}
         """
-        lifted = set()
-
-        for fluent in fluents:
-            # Handle negative fluents
-            is_negative = fluent.startswith('¬')
-            if is_negative:
-                fluent = fluent[1:]  # Remove negation symbol
-
-            # Lift the fluent
-            lifted_literal = self._lift_grounded_fluent_internal(fluent, objects)
-
-            # Add back negation if needed
-            if is_negative:
-                lifted_literal = f"¬{lifted_literal}"
-
-            lifted.add(lifted_literal)
-
-        return lifted
+        return self._get_binder().lift_fluents(fluents, objects)
 
     def _ground_lifted_literal_internal(self, literal: str, objects: List[str]) -> str:
+        """DEPRECATED: Use FluentBinder.ground_literal() instead.
+
+        Kept for backward compatibility during refactoring.
         """
-        Ground a single lifted literal with concrete objects.
-
-        Args:
-            literal: Lifted literal (e.g., 'on(?x,?y)' or 'clear(?x)')
-            objects: Ordered list of objects
-
-        Returns:
-            Grounded fluent string (e.g., 'on_a_b' or 'clear_a')
-        """
-        # Parse literal: predicate(param1,param2,...)
-        if '(' not in literal:
-            # Propositional literal
-            return literal
-
-        predicate = literal[:literal.index('(')]
-        params_str = literal[literal.index('(') + 1:literal.rindex(')')]
-
-        if not params_str:
-            # No parameters
-            return predicate
-
-        params = [p.strip() for p in params_str.split(',')]
-
-        # Replace each parameter with corresponding object
-        grounded_params = []
-        for param in params:
-            if param.startswith('?'):
-                # Extract parameter index from name
-                param_idx = self._get_parameter_index_internal(param, objects)
-                if param_idx < len(objects):
-                    grounded_params.append(objects[param_idx])
-                else:
-                    logger.warning(f"Parameter {param} index {param_idx} out of bounds for objects {objects}")
-                    grounded_params.append(param)  # Keep original if error
-            else:
-                # Already grounded
-                grounded_params.append(param)
-
-        # Create grounded fluent string
-        result = '_'.join([predicate] + grounded_params)
-        return result
+        return self._get_binder().ground_literal(literal, objects)
 
     def _lift_grounded_fluent_internal(self, fluent: str, objects: List[str]) -> str:
+        """DEPRECATED: Use FluentBinder.lift_fluent() instead.
+
+        Kept for backward compatibility during refactoring.
         """
-        Lift a grounded fluent to parameter-bound literal.
-
-        Args:
-            fluent: Grounded fluent (e.g., 'on_a_b' or 'clear_a')
-            objects: Ordered list of objects used in grounding
-
-        Returns:
-            Lifted literal (e.g., 'on(?x,?y)' or 'clear(?x)')
-        """
-        # Parse fluent: predicate_obj1_obj2_...
-        parts = fluent.split('_')
-
-        if len(parts) == 1:
-            # Propositional fluent
-            return parts[0]
-
-        # First part is predicate, rest are object names
-        predicate = parts[0]
-        obj_names = parts[1:]
-
-        # Replace each object with its parameter
-        params = []
-        for obj_name in obj_names:
-            try:
-                obj_idx = objects.index(obj_name)
-                params.append(self._get_parameter_name_internal(obj_idx))
-            except ValueError:
-                logger.warning(f"Object {obj_name} not found in objects list {objects}")
-                params.append(obj_name)  # Keep original if not found
-
-        # Create lifted literal
-        if params:
-            result = f"{predicate}({','.join(params)})"
-        else:
-            result = predicate
-
-        return result
+        return self._get_binder().lift_fluent(fluent, objects)
 
     @staticmethod
     def generate_parameter_names(count: int) -> List[str]:

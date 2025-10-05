@@ -89,6 +89,28 @@ expr.args              # Sub-expressions (for AND/OR/NOT)
 expr.fluent()          # Get the fluent (for fluent expressions)
 ```
 
+## Type-Safe Representations
+
+The codebase provides type-safe classes for PDDL representations:
+
+```python
+from src.core.pddl_types import ParameterBinding, ParameterBoundLiteral, GroundedFluent
+
+# Parameter binding
+binding = ParameterBinding({'x': Object('a', block_type)})
+binding.object_names()  # ['a']
+
+# Parameter-bound literal (uses action's parameter names)
+lit = ParameterBoundLiteral('clear', ['?x'])
+lit.to_string()  # "clear(?x)"
+
+# Grounded fluent
+fluent = GroundedFluent('clear', ['a'])
+fluent.to_string()  # "clear_a"
+```
+
+**Key point**: `ParameterBoundLiteral` preserves action's parameter names.
+
 ## Lifted vs Grounded vs Parameter-Bound
 
 ### 1. Lifted (Schema Level)
@@ -253,6 +275,61 @@ def expression_to_string(expr, parameters=None):
 
     return str(expr)  # Fallback
 ```
+
+### String Conversion with ExpressionConverter
+
+The `ExpressionConverter` class centralizes all FNode → string conversions:
+
+```python
+from src.core.expression_converter import ExpressionConverter
+from src.core.pddl_types import ParameterBinding
+
+# Convert to parameter-bound literal (uses action's parameter names)
+param_bound = ExpressionConverter.to_parameter_bound_string(
+    expr, action.parameters  # ← Action's parameters preserve names
+)
+# Returns: "clear(?x)" for pick-up(?x) action
+
+# Convert to grounded fluent
+binding = ParameterBinding({'x': Object('a', 'block')})
+grounded = ExpressionConverter.to_grounded_string(expr, binding)
+# Returns: "clear_a"
+
+# Extract CNF clauses
+clauses = ExpressionConverter.to_cnf_clauses(expr, action.parameters)
+# Returns: [["clear(?x)"], ["ontable(?x)"]] for AND expression
+```
+
+**Key point**: Always pass `action.parameters` to preserve parameter names.
+
+### Binding Operations (bindP and bindP⁻¹)
+
+The `FluentBinder` class implements grounding and lifting operations from the Information Gain algorithm:
+
+```python
+from src.core.binding_operations import FluentBinder
+from src.core.pddl_handler import PDDLHandler
+
+# Initialize binder
+binder = FluentBinder(pddl_handler)
+
+# bindP⁻¹: Ground parameter-bound literals with objects
+grounded = binder.ground_literals({'clear(?x)', 'on(?x,?y)'}, ['a', 'b'])
+# Returns: {'clear_a', 'on_a_b'}
+
+# bindP: Lift grounded fluents to parameter-bound form
+lifted = binder.lift_fluents({'clear_a', 'on_a_b'}, ['a', 'b'])
+# Returns: {'clear(?x)', 'on(?x,?y)'}
+
+# These operations are inverse:
+# bindP(bindP⁻¹(F, O), O) = F
+# bindP⁻¹(bindP(f, O), O) = f
+```
+
+**Key points**:
+- Object order matters: `['a', 'b']` maps `?x→a`, `?y→b`
+- Handles negation: `¬clear(?x)` → `¬clear_a`
+- Propositional fluents unchanged: `handempty` → `handempty`
 
 ### Simplification Process
 
