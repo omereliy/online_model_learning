@@ -95,6 +95,7 @@ The codebase provides type-safe classes for PDDL representations:
 
 ```python
 from src.core.pddl_types import ParameterBinding, ParameterBoundLiteral, GroundedFluent, GroundedAction
+from unified_planning.model import Action as LiftedAction
 
 # Parameter binding
 binding = ParameterBinding({'x': Object('a', block_type)})
@@ -112,11 +113,15 @@ fluent.to_string()  # "clear_a"
 action = GroundedAction(pickup_action, binding)
 action.to_string()  # "pick-up_a"
 action.object_names()  # ['a']
+
+# Lifted action (type alias - use UP's Action directly)
+lifted_action: LiftedAction = pickup_action
 ```
 
 **Key points**:
 - `ParameterBoundLiteral` preserves action's parameter names
-- `GroundedAction` provides type-safe representation of grounded actions
+- `GroundedAction` provides type-safe wrapper for `Tuple[Action, Dict[str, Object]]`
+- `LiftedAction` is a type alias for `unified_planning.model.Action` (no wrapper needed)
 
 ## Lifted vs Grounded vs Parameter-Bound
 
