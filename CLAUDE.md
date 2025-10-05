@@ -14,7 +14,7 @@
 |-------|-------|----------|
 | **Project Status** | [IMPLEMENTATION_TASKS.md](docs/IMPLEMENTATION_TASKS.md) | Current progress, todos |
 | **Commands & Patterns** | [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) | All commands, code snippets |
-| **Test Analysis** | [TEST_IMPLEMENTATION_REVIEW.md](docs/TEST_IMPLEMENTATION_REVIEW.md) | Test quality assessment |
+| **Experiment Planning** | [experiment_readiness_assessment.md](docs/validation/experiment_readiness_assessment.md) | Paper-ready experiment gaps |
 | **UP Expression Trees** | [UNIFIED_PLANNING_GUIDE.md](docs/UNIFIED_PLANNING_GUIDE.md) | FNode traversal patterns |
 | **Lifted Support** | [LIFTED_SUPPORT.md](docs/LIFTED_SUPPORT.md) | Parameterized actions/fluents |
 | **CNF/SAT** | [CNF_SAT_INTEGRATION.md](docs/information_gain_algorithm/CNF_SAT_INTEGRATION.md) | PySAT integration |
@@ -31,7 +31,7 @@
 | **Implementing CNF formulas** | CNF_SAT_INTEGRATION | `src/core/cnf_manager.py` |
 | **Adding algorithm adapters** | integration_guide | `src/algorithms/` |
 | **Running experiments** | IMPLEMENTATION_TASKS | `configs/` |
-| **Debugging tests** | TEST_IMPLEMENTATION_REVIEW | `tests/` |
+| **Planning experiments** | experiment_readiness_assessment | `docs/validation/` |
 | **Looking for commands** | QUICK_REFERENCE | Commands section |
 | **Checking project status** | IMPLEMENTATION_TASKS | Status section |
 | **Understanding architecture** | DEVELOPMENT_RULES | Architecture section |

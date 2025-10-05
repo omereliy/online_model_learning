@@ -64,7 +64,7 @@ For current implementation status and roadmap, see [IMPLEMENTATION_TASKS.md](doc
 ## Testing
 
 ```bash
-# Run curated test suite (165 tests, 100% pass rate)
+# Run curated test suite (51 tests, 100% pass rate)
 make test
 
 # Run with Docker for consistent environment
