@@ -584,6 +584,25 @@ class PDDLHandler:
         """
         return self._lifted_actions.get(action_name)
 
+    def get_all_lifted_actions(self) -> Dict[str, Action]:
+        """
+        Get all lifted action schemas.
+
+        Returns:
+            Dictionary mapping action names to Action objects
+        """
+        return self._lifted_actions.copy()
+
+    def get_all_grounded_actions(self) -> List[Tuple[Action, Dict[str, Object]]]:
+        """
+        Get all grounded actions with their parameter bindings.
+
+        Returns:
+            List of (Action, binding_dict) tuples where binding_dict maps
+            parameter names to Object instances
+        """
+        return self._grounded_actions.copy()
+
     def get_lifted_predicate_structure(self, predicate_name: str) -> Optional[Tuple[str, List[str]]]:
         """
         Get structure of a lifted predicate.

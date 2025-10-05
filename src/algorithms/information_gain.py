@@ -8,13 +8,12 @@ using expected information gain for action selection.
 import logging
 import math
 import random
-from typing import Tuple, List, Dict, Optional, Any, Set
 from collections import defaultdict
-from pathlib import Path
+from typing import Tuple, List, Dict, Optional, Any, Set
 
-from .base_learner import BaseActionModelLearner
-from src.core.pddl_handler import PDDLHandler
 from src.core.cnf_manager import CNFManager
+from src.core.pddl_handler import PDDLHandler
+from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ class InformationGainLearner(BaseActionModelLearner):
         self.pddl_handler = PDDLHandler()
         self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
         logger.debug(
-            f"PDDL parsing complete: {len(self.pddl_handler._lifted_actions)} lifted actions, "
+            f"PDDL parsing complete: {len(self.pddl_handler.get_all_lifted_actions())} lifted actions, "
             f"{len(self.pddl_handler.problem.fluents)} fluents")
 
         # Action model state variables (per action schema)
@@ -110,10 +109,10 @@ class InformationGainLearner(BaseActionModelLearner):
 
     def _initialize_action_models(self):
         """Initialize action model state variables for all actions."""
-        logger.debug(f"Initializing models for {len(self.pddl_handler._lifted_actions)} actions")
+        logger.debug(f"Initializing models for {len(self.pddl_handler.get_all_lifted_actions())} actions")
 
         # Get all lifted actions from domain
-        for action_name, action in self.pddl_handler._lifted_actions.items():
+        for action_name, action in self.pddl_handler.get_all_lifted_actions().items():
             logger.debug(
                 f"Processing action: {action_name}, parameters: {[p.name for p in action.parameters]}")
 
@@ -484,7 +483,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        grounded_actions = self.pddl_handler._grounded_actions
+        grounded_actions = self.pddl_handler.get_all_grounded_actions()
         if not grounded_actions:
             return []
 
