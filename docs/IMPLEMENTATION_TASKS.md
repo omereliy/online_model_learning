@@ -3,13 +3,13 @@
 ## Project Overview
 Building experiment framework to compare three online action model learning algorithms:
 1. **OLAM** - Baseline (Python implementation) ✅
-2. **ModelLearner** - Optimistic Exploration (TODO)
-3. **Information-Theoretic** - Novel CNF-based approach (TODO)
+2. **Information Gain** - CNF/SAT-based information-theoretic approach ✅
+3. **ModelLearner** - Optimistic Exploration (BLOCKED - repo unavailable)
 
 ## Quick Start
 **See [CLAUDE.md](../CLAUDE.md) for navigation and [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for project rules.**
 
-## Current Status (Updated: October 5, 2025 - 11:20 AM)
+## Current Status (Updated: October 5, 2025 - 10:30 PM)
 
 ### 🔧 Recent CI/CD Fixes
 - **NumPy Version**: Updated to support 2.x (was restricted to <2.0.0)
@@ -354,6 +354,77 @@ Building experiment framework to compare three online action model learning algo
 - Documentation internally consistent
 - Refactoring plan execution tracking complete
 
+### Experiment Readiness Assessment (October 5, 2025)
+**Context**: Before conducting paper-ready experiments comparing OLAM and Information Gain, need to validate implementation readiness against research goals.
+
+**Research Goals**:
+1. Run comprehensive experiments with automated metrics collection
+2. Gather informable statistics for academic paper
+3. Ensure correct algorithm logic for honest results
+
+**Assessment Process**:
+- Analyzed current implementation against all three goals
+- Identified components that are complete and production-ready
+- Identified critical gaps preventing paper-ready experiments
+- Documented implementation requirements for each gap
+- Created 3-phase implementation plan
+
+**Document Created**: `docs/validation/experiment_readiness_assessment.md`
+
+**Key Findings**:
+
+**✅ Complete Components**:
+- ExperimentRunner fully automated (YAML config, stopping criteria, export)
+- MetricsCollector comprehensive (action tracking, windowed mistake rates, per-action stats)
+- OLAM validated against paper (see OLAM_VALIDATION_REPORT.md)
+- Information Gain fully implemented (~60 tests passing)
+- Real PDDL execution environment
+- Configuration system for multiple domains
+
+**❌ Critical Gaps Identified (5 gaps)**:
+
+1. **No Statistical Significance Testing**
+   - Problem: Cannot determine if algorithm differences are statistically significant
+   - Missing: t-tests, effect sizes (Cohen's d), confidence intervals, p-values
+   - Required: `src/experiments/statistical_analysis.py` with `StatisticalAnalyzer` class
+   - Impact: Cannot make scientifically valid claims in paper
+
+2. **No Automated Algorithm Comparison Pipeline**
+   - Problem: Must manually run experiments and compare results
+   - Missing: Batch runner for multiple trials, result aggregation, comparison reports
+   - Required: `scripts/compare_algorithms.py` with `AlgorithmComparisonRunner`
+   - Impact: Time-consuming manual process, prone to errors
+
+3. **No Convergence Detection Validation**
+   - Problem: `has_converged()` methods may be unreliable or unimplemented
+   - Missing: Validated convergence criteria for both algorithms
+   - Required: Implement and test convergence detection for OLAM and Information Gain
+   - Impact: Experiments may run longer than necessary or stop prematurely
+
+4. **No Ground Truth Model Comparison**
+   - Problem: Cannot verify learned models match PDDL specifications
+   - Missing: Precision/recall calculation, effect accuracy, model comparison metrics
+   - Required: `src/core/model_validator.py` with `ModelValidator` class
+   - Impact: Cannot validate algorithm correctness
+
+5. **No Information Gain Validation Report**
+   - Problem: Unlike OLAM (which has validation report), Information Gain lacks systematic validation
+   - Missing: Evidence of hypothesis space reduction, information gain-based selection, model learning
+   - Required: `scripts/validate_information_gain.py` and validation report document
+   - Impact: Algorithm correctness unverified against theoretical description
+
+**Overall Assessment**: ⚠️ **MOSTLY READY** with critical gaps
+
+**Implementation Estimate**: 6-9 days (3 phases)
+- Phase 1: Statistical foundation (2-3 days)
+- Phase 2: Algorithm validation (2-3 days)
+- Phase 3: Comparison pipeline (2-3 days)
+
+**Current Readiness**: 30% (3/10 paper-ready criteria met)
+**After Gap Implementation**: 100% (10/10 criteria met)
+
+**Status**: Assessment complete, ready for implementation planning
+
 ## Recent Fixes (September 28, 2025)
 
 1. **OLAM Learning Validation**
@@ -368,31 +439,164 @@ Building experiment framework to compare three online action model learning algo
 
 ## Next Implementation Tasks
 
-### Phase 4: Information Gain Integration & Testing
-1. Integrate `InformationGainLearner` with experiment runner
-2. Add configuration for selection strategies (greedy/epsilon-greedy/Boltzmann)
-3. Test on multiple domains (blocksworld, gripper, rover, depots)
-4. Profile performance and optimize if needed
+### Priority: Paper-Ready Experiment Infrastructure
 
-### Phase 5: Comparative Experiments
-1. Create experiment configs for Information Gain vs OLAM
-2. Run on multiple domains (blocksworld, gripper, rover, depots)
-3. Analyze sample complexity and convergence
-4. Generate comparison reports
+Based on the Experiment Readiness Assessment, the following gaps must be addressed before conducting publishable comparative experiments.
 
-### Phase 6: ModelLearner Adapter (BLOCKED - Low Priority)
+### Phase 1: Statistical Foundation (2-3 days) - HIGH PRIORITY
+
+**Goal**: Enable statistically valid algorithm comparisons
+
+#### Gap #2: Statistical Significance Testing
+**Component**: `src/experiments/statistical_analysis.py`
+
+**Tasks**:
+1. Implement `StatisticalAnalyzer` class
+   - Paired t-test (scipy.stats.ttest_rel)
+   - Cohen's d effect size calculation
+   - Confidence interval computation (95% CI)
+   - Multiple comparison correction (Bonferroni)
+2. Create `StatisticalResult` dataclass
+   - Store means, stds, CIs for both algorithms
+   - Store test statistic, p-value, effect size
+   - Include interpretation string
+3. Unit tests with known data
+4. Integration tests with sample experiment results
+
+**Deliverable**: Can compute statistical significance for algorithm comparisons
+
+#### Gap #5: Ground Truth Model Comparison
+**Component**: `src/core/model_validator.py`
+
+**Tasks**:
+1. Implement `ModelValidator` class
+   - Parse ground truth from PDDL domain files
+   - Extract action preconditions and effects
+   - Store in comparable format
+2. Implement `compare_preconditions()` method
+   - Calculate precision: TP / (TP + FP)
+   - Calculate recall: TP / (TP + FN)
+   - Calculate F1-score
+   - Identify false positives and false negatives
+3. Implement `compare_effects()` method
+   - Add effect accuracy
+   - Delete effect accuracy
+4. Unit tests with hand-crafted domains
+5. Integration tests with blocksworld
+
+**Deliverable**: Can verify learned models against ground truth
+
+### Phase 2: Algorithm Validation (2-3 days) - HIGH PRIORITY
+
+**Goal**: Verify algorithm correctness before comparison
+
+#### Gap #3: Convergence Detection Validation
+**Components**:
+- `src/algorithms/olam_adapter.py` (update `has_converged()`)
+- `src/algorithms/information_gain.py` (update `has_converged()`)
+
+**Tasks**:
+1. **OLAM Convergence**:
+   - Implement hypothesis space stability check (no changes for N iterations)
+   - Implement high success rate check (>95% in last M actions)
+   - Unit tests for each criterion
+2. **Information Gain Convergence**:
+   - Implement model stability check (no pre(a) changes)
+   - Implement low information gain check (max gain < ε)
+   - Implement high success rate check
+   - Unit tests for each criterion
+3. Integration tests showing early stopping
+4. Validation: Does algorithm converge before max_iterations?
+
+**Deliverable**: Reliable convergence detection for both algorithms
+
+#### Gap #4: Information Gain Validation Report
+**Components**:
+- `scripts/validate_information_gain.py` (new)
+- `docs/validation/INFORMATION_GAIN_VALIDATION_REPORT.md` (new)
+
+**Tasks**:
+1. Create validation script with verbose logging
+   - Log initial hypothesis space size
+   - Log action selections with information gain values
+   - Log model updates after observations
+   - Log hypothesis space reduction over time
+   - Log model entropy decrease
+2. Run validation experiment on blocksworld
+3. Generate validation report documenting:
+   - Hypothesis space reduction (evidence)
+   - Information gain-based selection (evidence)
+   - Model entropy decrease (evidence)
+   - Ground truth comparison (using ModelValidator from Phase 1)
+4. Verify algorithm behaves as theoretically expected
+
+**Deliverable**: Validation report confirming Information Gain correctness
+
+### Phase 3: Comparison Pipeline (2-3 days) - MEDIUM PRIORITY
+
+**Goal**: Automate algorithm comparison experiments
+
+#### Gap #1: Algorithm Comparison Pipeline
+**Component**: `scripts/compare_algorithms.py`
+
+**Tasks**:
+1. Implement `AlgorithmComparisonRunner` class
+   - Run multiple trials (≥5) for each algorithm
+   - Control RNG seeds for fair comparison
+   - Aggregate results across trials
+2. Implement `_run_single_trial()` method
+   - Wrapper around ExperimentRunner
+   - Consistent configuration across trials
+3. Implement `_generate_comparison_report()` method
+   - Call StatisticalAnalyzer (from Phase 1)
+   - Generate human-readable report
+   - Export to CSV and JSON
+4. Create visualization tools
+   - Box plots for sample complexity comparison
+   - Learning curves with error bars (95% CI)
+   - Convergence time comparison
+   - Model accuracy comparison
+5. Optional: LaTeX table generation for papers
+
+**Deliverable**: One-command algorithm comparison pipeline
+
+**Usage**:
+```bash
+python scripts/compare_algorithms.py \
+  --domain blocksworld \
+  --problem p01 \
+  --algorithms olam information_gain \
+  --trials 5 \
+  --max-iterations 200
+```
+
+### Phase 4: ModelLearner Integration (BLOCKED - Low Priority)
+
 ⚠️ **Blocked**: Repository https://github.com/kcleung/ModelLearner.git not accessible
+
+**Future tasks** (when unblocked):
 1. Find correct repository URL or alternative implementation
 2. Create `OptimisticAdapter` class
 3. Handle lifted_dict YAML requirements
 4. Implement optimistic exploration strategy
 5. Validate against ModelLearner paper
+6. Three-way comparison (OLAM vs Information Gain vs ModelLearner)
 
-### Phase 7: Three-Way Comparison
-1. Create experiment configs for all algorithms
-2. Run on multiple domains (blocksworld, gripper, rover)
-3. Analyze sample complexity and convergence
-4. Generate comparison reports
+### Implementation Priority Order
+
+**Week 1**: Phase 1 (Statistical foundation)
+- Day 1-2: StatisticalAnalyzer implementation + tests
+- Day 2-3: ModelValidator implementation + tests
+
+**Week 2**: Phase 2 (Algorithm validation)
+- Day 1: Convergence detection implementation + tests
+- Day 2-3: Information Gain validation script + report
+
+**Week 3**: Phase 3 (Comparison pipeline)
+- Day 1-2: AlgorithmComparisonRunner implementation
+- Day 3: Visualization tools + final testing
+
+**Total estimated time**: 6-9 days for paper-ready infrastructure
 
 ## Testing Status
 
