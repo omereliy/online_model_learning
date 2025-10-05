@@ -240,52 +240,77 @@ class PDDLHandler:
         """
         Convert UP state to set of true fluent strings.
 
+        Dispatcher method that routes to appropriate handler based on state type.
+
         Args:
             state: UP state object or initial values dict
 
         Returns:
             Set of true fluent strings
         """
+        if isinstance(state, dict):
+            return self._fluents_from_dict(state)
+        else:
+            return self._fluents_from_state_object(state)
+
+    def _fluents_from_dict(self, initial_values: Dict) -> Set[str]:
+        """Extract fluents from initial values dict.
+
+        Args:
+            initial_values: Dict mapping fluent expressions to values
+
+        Returns:
+            Set of true fluent strings
+        """
         true_fluents = set()
 
-        # Handle both state objects and initial_values dict
-        if isinstance(state, dict):
-            # Initial values are a dict mapping fluent expressions to values
-            for fluent_expr, value in state.items():
-                if value.bool_constant_value():
-                    # Extract fluent name and parameters from expression
-                    if hasattr(fluent_expr, 'fluent'):
-                        # It's a fluent application
-                        fluent_name = fluent_expr.fluent().name
-                        if fluent_expr.args:
-                            # Has parameters
-                            param_names = [str(arg).replace("'", "") for arg in fluent_expr.args]
-                            grounded_name = '_'.join([fluent_name] + param_names)
-                            true_fluents.add(grounded_name)
-                        else:
-                            # No parameters
-                            true_fluents.add(fluent_name)
+        for fluent_expr, value in initial_values.items():
+            if value.bool_constant_value():
+                # Extract fluent name and parameters from expression
+                if hasattr(fluent_expr, 'fluent'):
+                    # It's a fluent application
+                    fluent_name = fluent_expr.fluent().name
+                    if fluent_expr.args:
+                        # Has parameters
+                        param_names = [str(arg).replace("'", "") for arg in fluent_expr.args]
+                        grounded_name = '_'.join([fluent_name] + param_names)
+                        true_fluents.add(grounded_name)
                     else:
-                        # Direct fluent
-                        true_fluents.add(str(fluent_expr))
-        else:
-            # State object with get_value method
-            for fluent in self.problem.fluents:
-                if fluent.arity == 0:
-                    # Propositional fluent
-                    if state.get_value(fluent()).bool_constant_value():
-                        true_fluents.add(fluent.name)
+                        # No parameters
+                        true_fluents.add(fluent_name)
                 else:
-                    # Check all groundings
-                    param_types = [param.type for param in fluent.signature]
-                    object_combos = self._get_object_combinations(param_types)
+                    # Direct fluent
+                    true_fluents.add(str(fluent_expr))
 
-                    for combo in object_combos:
-                        fluent_expr = fluent(*combo)
-                        if state.get_value(fluent_expr).bool_constant_value():
-                            parts = [fluent.name] + [obj.name for obj in combo]
-                            grounded_name = '_'.join(parts)
-                            true_fluents.add(grounded_name)
+        return true_fluents
+
+    def _fluents_from_state_object(self, state) -> Set[str]:
+        """Extract fluents from UP state object.
+
+        Args:
+            state: UP state object with get_value method
+
+        Returns:
+            Set of true fluent strings
+        """
+        true_fluents = set()
+
+        for fluent in self.problem.fluents:
+            if fluent.arity == 0:
+                # Propositional fluent
+                if state.get_value(fluent()).bool_constant_value():
+                    true_fluents.add(fluent.name)
+            else:
+                # Check all groundings
+                param_types = [param.type for param in fluent.signature]
+                object_combos = self._get_object_combinations(param_types)
+
+                for combo in object_combos:
+                    fluent_expr = fluent(*combo)
+                    if state.get_value(fluent_expr).bool_constant_value():
+                        parts = [fluent.name] + [obj.name for obj in combo]
+                        grounded_name = '_'.join(parts)
+                        true_fluents.add(grounded_name)
 
         return true_fluents
 
@@ -607,6 +632,8 @@ class PDDLHandler:
         """
         Get preconditions of action as a fluent set.
 
+        Dispatcher method that routes to lifted or grounded handler.
+
         Args:
             action_str: Action string (grounded or lifted)
             lifted: If True, return lifted representation
@@ -614,40 +641,74 @@ class PDDLHandler:
         Returns:
             Set of fluent strings (grounded or lifted)
         """
-        if lifted and action_str in self._lifted_actions:
-            # Return lifted preconditions
-            action = self._lifted_actions[action_str]
-            preconditions = set()
-            for precond in action.preconditions:
-                # Convert to lift fluent string representation
+        if lifted:
+            return self._get_lifted_preconditions(action_str)
+        else:
+            return self._get_grounded_preconditions(action_str)
+
+    def _get_lifted_preconditions(self, action_name: str) -> Set[str]:
+        """Extract lifted preconditions for an action.
+
+        Args:
+            action_name: Name of the lifted action
+
+        Returns:
+            Set of lifted precondition strings
+        """
+        if action_name not in self._lifted_actions:
+            return set()
+
+        action = self._lifted_actions[action_name]
+        preconditions = set()
+
+        for precond in action.preconditions:
+            # Check if it's an AND expression and extract individual fluents
+            if hasattr(precond, 'is_and') and precond.is_and():
+                for arg in precond.args:
+                    lifted_str = self._expression_to_lifted_string(arg, action.parameters)
+                    if lifted_str:
+                        preconditions.add(lifted_str)
+            else:
                 lifted_str = self._expression_to_lifted_string(precond, action.parameters)
                 if lifted_str:
                     preconditions.add(lifted_str)
-            return preconditions
-        else:
-            # Grounded version
-            action, binding = self.parse_grounded_action(action_str)
-            if not action:
-                return set()
 
-            preconditions = set()
-            for precond in action.preconditions:
-                # Check if it's an AND expression and extract individual fluents
-                if hasattr(precond, 'is_and') and precond.is_and():
-                    for arg in precond.args:
-                        grounded_str = self._ground_expression_to_string(arg, binding)
-                        if grounded_str:
-                            preconditions.add(grounded_str)
-                else:
-                    grounded_str = self._ground_expression_to_string(precond, binding)
+        return preconditions
+
+    def _get_grounded_preconditions(self, action_str: str) -> Set[str]:
+        """Extract grounded preconditions for an action.
+
+        Args:
+            action_str: Grounded action string (e.g., "pick-up_a")
+
+        Returns:
+            Set of grounded precondition strings
+        """
+        action, binding = self.parse_grounded_action(action_str)
+        if not action:
+            return set()
+
+        preconditions = set()
+
+        for precond in action.preconditions:
+            # Check if it's an AND expression and extract individual fluents
+            if hasattr(precond, 'is_and') and precond.is_and():
+                for arg in precond.args:
+                    grounded_str = self._ground_expression_to_string(arg, binding)
                     if grounded_str:
                         preconditions.add(grounded_str)
+            else:
+                grounded_str = self._ground_expression_to_string(precond, binding)
+                if grounded_str:
+                    preconditions.add(grounded_str)
 
-            return preconditions
+        return preconditions
 
     def get_action_effects(self, action_str: str, lifted: bool = False) -> Tuple[Set[str], Set[str]]:
         """
         Get effects of action.
+
+        Dispatcher method that routes to lifted or grounded handler.
 
         Args:
             action_str: Action string (grounded or lifted)
@@ -656,39 +717,62 @@ class PDDLHandler:
         Returns:
             Tuple of (add_effects, delete_effects) as fluent sets
         """
-        if lifted and action_str in self._lifted_actions:
-            # Return lifted effects
-            action = self._lifted_actions[action_str]
-            add_effects = set()
-            delete_effects = set()
-
-            for effect in action.effects:
-                lifted_str = self._expression_to_lifted_string(effect.fluent, action.parameters)
-                if lifted_str:
-                    if effect.value.bool_constant_value():
-                        add_effects.add(lifted_str)
-                    else:
-                        delete_effects.add(lifted_str)
-
-            return add_effects, delete_effects
+        if lifted:
+            return self._get_lifted_effects(action_str)
         else:
-            # Grounded version
-            action, binding = self.parse_grounded_action(action_str)
-            if not action:
-                return set(), set()
+            return self._get_grounded_effects(action_str)
 
-            add_effects = set()
-            delete_effects = set()
+    def _get_lifted_effects(self, action_name: str) -> Tuple[Set[str], Set[str]]:
+        """Extract lifted effects for an action.
 
-            for effect in action.effects:
-                grounded_str = self._ground_expression_to_string(effect.fluent, binding)
-                if grounded_str:
-                    if effect.value.bool_constant_value():
-                        add_effects.add(grounded_str)
-                    else:
-                        delete_effects.add(grounded_str)
+        Args:
+            action_name: Name of the lifted action
 
-            return add_effects, delete_effects
+        Returns:
+            Tuple of (add_effects, delete_effects) as sets of lifted strings
+        """
+        if action_name not in self._lifted_actions:
+            return set(), set()
+
+        action = self._lifted_actions[action_name]
+        add_effects = set()
+        delete_effects = set()
+
+        for effect in action.effects:
+            lifted_str = self._expression_to_lifted_string(effect.fluent, action.parameters)
+            if lifted_str:
+                if effect.value.bool_constant_value():
+                    add_effects.add(lifted_str)
+                else:
+                    delete_effects.add(lifted_str)
+
+        return add_effects, delete_effects
+
+    def _get_grounded_effects(self, action_str: str) -> Tuple[Set[str], Set[str]]:
+        """Extract grounded effects for an action.
+
+        Args:
+            action_str: Grounded action string (e.g., "pick-up_a")
+
+        Returns:
+            Tuple of (add_effects, delete_effects) as sets of grounded strings
+        """
+        action, binding = self.parse_grounded_action(action_str)
+        if not action:
+            return set(), set()
+
+        add_effects = set()
+        delete_effects = set()
+
+        for effect in action.effects:
+            grounded_str = self._ground_expression_to_string(effect.fluent, binding)
+            if grounded_str:
+                if effect.value.bool_constant_value():
+                    add_effects.add(grounded_str)
+                else:
+                    delete_effects.add(grounded_str)
+
+        return add_effects, delete_effects
 
     def get_initial_state(self) -> Set[str]:
         """

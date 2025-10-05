@@ -344,6 +344,71 @@ class TestPDDLHandlerStateConversion:
         # Expected: Roundtrip preserves the original set
         assert reconstructed_set == original_set
 
+    def test_fluents_from_dict(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test _fluents_from_dict() extracts fluents from initial values dict."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Get initial values dict from problem
+        initial_values = handler.problem.initial_values
+
+        # Test private method
+        fluents = handler._fluents_from_dict(initial_values)
+
+        # Expected: Exact set of true fluents from initial values
+        assert isinstance(fluents, set)
+        assert 'clear_a' in fluents
+        assert 'on_a_b' in fluents
+        assert 'on_b_c' in fluents
+        assert 'ontable_c' in fluents
+        assert 'handempty' in fluents
+
+        # Expected: Should not contain false fluents
+        assert 'clear_b' not in fluents
+        assert 'ontable_a' not in fluents
+
+    def test_fluents_from_state_object(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test _fluents_from_state_object() extracts fluents from UP state object."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Create a mock state object for testing
+        class MockState:
+            def __init__(self, problem):
+                self.problem = problem
+
+            def get_value(self, fluent_expr):
+                # Return value from initial values
+                return self.problem.initial_values.get(
+                    fluent_expr,
+                    self.problem.environment.expression_manager.FALSE()
+                )
+
+        mock_state = MockState(handler.problem)
+
+        # Test private method
+        fluents = handler._fluents_from_state_object(mock_state)
+
+        # Expected: Exact set of true fluents from state
+        assert isinstance(fluents, set)
+        assert 'clear_a' in fluents
+        assert 'on_a_b' in fluents
+        assert 'on_b_c' in fluents
+        assert 'ontable_c' in fluents
+        assert 'handempty' in fluents
+
 
 class TestPDDLHandlerActionProperties:
     """Test action property extraction methods."""
@@ -745,6 +810,50 @@ class TestPDDLHandlerLiftedSupport:
             # If not fully implemented, should at least not crash
             pass
 
+    def test_get_lifted_preconditions(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test _get_lifted_preconditions() extracts lifted preconditions."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test private method for lifted preconditions
+        lifted_preconds = handler._get_lifted_preconditions("pick-up")
+
+        # Expected: Set of lifted precondition strings
+        assert isinstance(lifted_preconds, set)
+        assert len(lifted_preconds) > 0
+        # pick-up has 3 preconditions: clear(?x), ontable(?x), handempty
+        assert any('clear' in p for p in lifted_preconds)
+        assert any('ontable' in p for p in lifted_preconds)
+        assert any('handempty' in p for p in lifted_preconds)
+
+    def test_get_grounded_preconditions(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test _get_grounded_preconditions() extracts grounded preconditions."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test private method for grounded preconditions
+        grounded_preconds = handler._get_grounded_preconditions("pick-up_a")
+
+        # Expected: Set of grounded precondition strings
+        assert isinstance(grounded_preconds, set)
+        assert len(grounded_preconds) > 0
+        # pick-up_a has grounded preconditions with object 'a'
+        assert 'clear_a' in grounded_preconds
+        assert 'ontable_a' in grounded_preconds
+        assert 'handempty' in grounded_preconds
+
     def test_get_action_effects_lifted(self, temp_dir, blocksworld_domain, blocksworld_problem):
         """Test getting lifted action effects."""
         domain_file = temp_dir / "domain.pddl"
@@ -765,6 +874,54 @@ class TestPDDLHandlerLiftedSupport:
         except Exception:
             # If not fully implemented, should at least not crash
             pass
+
+    def test_get_lifted_effects(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test _get_lifted_effects() extracts lifted effects."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test private method for lifted effects
+        add_eff, del_eff = handler._get_lifted_effects("pick-up")
+
+        # Expected: Tuple of sets
+        assert isinstance(add_eff, set)
+        assert isinstance(del_eff, set)
+
+        # pick-up adds holding(?x) and deletes clear(?x), ontable(?x), handempty
+        assert any('holding' in e for e in add_eff)
+        assert any('clear' in e for e in del_eff)
+        assert any('ontable' in e for e in del_eff)
+        assert any('handempty' in e for e in del_eff)
+
+    def test_get_grounded_effects(self, temp_dir, blocksworld_domain, blocksworld_problem):
+        """Test _get_grounded_effects() extracts grounded effects."""
+        domain_file = temp_dir / "domain.pddl"
+        problem_file = temp_dir / "problem.pddl"
+
+        domain_file.write_text(blocksworld_domain)
+        problem_file.write_text(blocksworld_problem)
+
+        handler = PDDLHandler()
+        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+
+        # Test private method for grounded effects
+        add_eff, del_eff = handler._get_grounded_effects("pick-up_a")
+
+        # Expected: Tuple of sets
+        assert isinstance(add_eff, set)
+        assert isinstance(del_eff, set)
+
+        # pick-up_a adds holding_a and deletes clear_a, ontable_a, handempty
+        assert 'holding_a' in add_eff
+        assert 'clear_a' in del_eff
+        assert 'ontable_a' in del_eff
+        assert 'handempty' in del_eff
 
     def test_extract_lifted_preconditions_cnf(
             self, temp_dir, blocksworld_domain, blocksworld_problem):

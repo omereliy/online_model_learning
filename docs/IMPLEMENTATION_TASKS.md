@@ -218,6 +218,40 @@ Building experiment framework to compare three online action model learning algo
 
 **Tests**: 9 new tests in `tests/core/test_pddl_types.py`, all passing
 
+### PDDLHandler Refactoring Phase 4 - Complex Method Refactoring (October 5, 2025)
+**Context**: PDDLHandler contained complex methods with mixed responsibilities (~137 lines total), violating single responsibility principle and reducing testability.
+
+**Problem**:
+- `state_to_fluent_set()` handled both dict and state objects in one method (52 lines)
+- `get_action_preconditions()` mixed lifted and grounded extraction with boolean flag (41 lines)
+- `get_action_effects()` mixed lifted and grounded extraction (44 lines)
+- Hard to test individual code paths in isolation
+
+**Solution**: Applied dispatcher pattern to split complex methods:
+- **state_to_fluent_set()** → dispatcher + `_fluents_from_dict()` + `_fluents_from_state_object()`
+  - Each private method handles one state type (~18 lines each)
+  - Dispatcher routes based on `isinstance(state, dict)`
+- **get_action_preconditions()** → dispatcher + `_get_lifted_preconditions()` + `_get_grounded_preconditions()`
+  - Lifted method extracts parameter-bound preconditions (~15 lines)
+  - Grounded method extracts fully instantiated preconditions (~18 lines)
+  - Dispatcher routes based on `lifted` flag
+- **get_action_effects()** → dispatcher + `_get_lifted_effects()` + `_get_grounded_effects()`
+  - Lifted method extracts parameter-bound effects (~15 lines)
+  - Grounded method extracts fully instantiated effects (~18 lines)
+  - Returns tuple of (add_effects, delete_effects)
+
+**Benefits**:
+- Single responsibility: each method handles one specific case
+- Improved testability: can test each private method in isolation
+- Reduced complexity: methods under 20 lines each
+- Maintained backward compatibility: public API unchanged
+- Code reduction: ~137 lines → ~117 lines (net -20 lines through consolidation)
+
+**Tests**: 6 new tests in `tests/core/test_pddl_handler.py`, all passing
+- `test_fluents_from_dict` / `test_fluents_from_state_object`
+- `test_get_lifted_preconditions` / `test_get_grounded_preconditions`
+- `test_get_lifted_effects` / `test_get_grounded_effects`
+
 ## Recent Fixes (September 28, 2025)
 
 1. **OLAM Learning Validation**
