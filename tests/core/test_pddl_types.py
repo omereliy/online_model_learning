@@ -9,7 +9,8 @@ from unified_planning.model import Object
 from src.core.pddl_types import (
     ParameterBinding,
     ParameterBoundLiteral,
-    GroundedFluent
+    GroundedFluent,
+    GroundedAction
 )
 
 
@@ -164,6 +165,139 @@ class TestGroundedFluent:
 
         assert fluent.predicate == 'handempty'
         assert fluent.objects == []
+
+
+class TestGroundedAction:
+    """Test GroundedAction class."""
+
+    @pytest.fixture
+    def simple_action(self):
+        """Create simple action for testing."""
+        from unified_planning.shortcuts import UserType
+        from unified_planning.model import InstantaneousAction
+
+        block_type = UserType("block")
+        pickup = InstantaneousAction("pick-up", x=block_type)
+        return pickup
+
+    def test_initialization(self, simple_action):
+        """Test creating grounded action."""
+        from unified_planning.shortcuts import UserType
+        block_type = UserType("block")
+        obj_a = Object('a', block_type)
+        binding = ParameterBinding({'x': obj_a})
+
+        grounded = GroundedAction(simple_action, binding)
+
+        assert grounded.action == simple_action
+        assert grounded.binding == binding
+
+    def test_object_names_single_param(self, simple_action):
+        """Test getting object names from binding."""
+        from unified_planning.shortcuts import UserType
+        block_type = UserType("block")
+        obj_a = Object('a', block_type)
+        binding = ParameterBinding({'x': obj_a})
+        grounded = GroundedAction(simple_action, binding)
+
+        assert grounded.object_names() == ['a']
+
+    def test_object_names_multi_param(self):
+        """Test multi-parameter action."""
+        from unified_planning.shortcuts import UserType
+        from unified_planning.model import InstantaneousAction
+
+        block_type = UserType("block")
+        stack = InstantaneousAction("stack", x=block_type, y=block_type)
+
+        obj_a = Object('a', block_type)
+        obj_b = Object('b', block_type)
+        binding = ParameterBinding({'x': obj_a, 'y': obj_b})
+        grounded = GroundedAction(stack, binding)
+
+        assert grounded.object_names() == ['a', 'b']
+
+    def test_to_string_single_param(self, simple_action):
+        """Test converting to string representation."""
+        from unified_planning.shortcuts import UserType
+        block_type = UserType("block")
+        obj_a = Object('a', block_type)
+        binding = ParameterBinding({'x': obj_a})
+        grounded = GroundedAction(simple_action, binding)
+
+        assert grounded.to_string() == 'pick-up_a'
+
+    def test_to_string_multi_param(self):
+        """Test multi-parameter action string."""
+        from unified_planning.shortcuts import UserType
+        from unified_planning.model import InstantaneousAction
+
+        block_type = UserType("block")
+        stack = InstantaneousAction("stack", x=block_type, y=block_type)
+
+        obj_a = Object('a', block_type)
+        obj_b = Object('b', block_type)
+        binding = ParameterBinding({'x': obj_a, 'y': obj_b})
+        grounded = GroundedAction(stack, binding)
+
+        assert grounded.to_string() == 'stack_a_b'
+
+    def test_to_string_no_params(self):
+        """Test propositional action (no parameters)."""
+        from unified_planning.model import InstantaneousAction
+
+        noop = InstantaneousAction("noop")
+        binding = ParameterBinding({})
+        grounded = GroundedAction(noop, binding)
+
+        assert grounded.to_string() == 'noop'
+
+    def test_from_components(self, simple_action):
+        """Test creating from action and dict binding."""
+        from unified_planning.shortcuts import UserType
+        block_type = UserType("block")
+        obj_a = Object('a', block_type)
+        dict_binding = {'x': obj_a}
+
+        # Should accept dict and convert to ParameterBinding
+        grounded = GroundedAction.from_components(simple_action, dict_binding)
+
+        assert grounded.action == simple_action
+        assert isinstance(grounded.binding, ParameterBinding)
+        assert grounded.object_names() == ['a']
+
+    def test_to_tuple_backward_compat(self, simple_action):
+        """Test backward compatibility with tuple representation."""
+        from unified_planning.shortcuts import UserType
+        block_type = UserType("block")
+        obj_a = Object('a', block_type)
+        binding = ParameterBinding({'x': obj_a})
+        grounded = GroundedAction(simple_action, binding)
+
+        action, dict_binding = grounded.to_tuple()
+
+        assert action == simple_action
+        assert dict_binding == {'x': obj_a}
+        assert isinstance(dict_binding, dict)
+
+    def test_consistency_with_grounded_fluent_pattern(self, simple_action):
+        """Test that GroundedAction follows same pattern as GroundedFluent."""
+        from unified_planning.shortcuts import UserType
+
+        # GroundedFluent pattern
+        fluent = GroundedFluent('clear', ['a'])
+        fluent_str = fluent.to_string()  # "clear_a"
+
+        # GroundedAction should follow same pattern
+        block_type = UserType("block")
+        obj_a = Object('a', block_type)
+        binding = ParameterBinding({'x': obj_a})
+        action = GroundedAction(simple_action, binding)
+        action_str = action.to_string()  # "pick-up_a"
+
+        # Both use underscore separation
+        assert '_' in action_str
+        assert '_' in fluent_str
 
 
 class TestCriticalSemantics:

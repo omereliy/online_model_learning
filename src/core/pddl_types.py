@@ -10,8 +10,8 @@ Critical Semantic Distinction:
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
-from unified_planning.model import Object
+from typing import Dict, List, Tuple
+from unified_planning.model import Object, Action as LiftedAction
 
 
 @dataclass
@@ -168,3 +168,70 @@ class GroundedFluent:
         else:
             # Has objects
             return cls(parts[0], parts[1:])
+
+
+@dataclass
+class GroundedAction:
+    """Fully grounded action with concrete objects.
+
+    Replaces primitive Tuple[Action, Dict[str, Object]] representation
+    with type-safe, self-documenting class.
+
+    Example:
+        For action pick-up(?x) with object 'a':
+        GroundedAction(pickup_action, ParameterBinding({'x': Object('a', 'block')}))
+        → to_string() returns "pick-up_a"
+
+    Attributes:
+        action: UP Action object (lifted action schema)
+        binding: Parameter binding (params → objects mapping)
+    """
+    action: LiftedAction
+    binding: ParameterBinding
+
+    def object_names(self) -> List[str]:
+        """Get list of object names in parameter order.
+
+        Returns:
+            List of object names (e.g., ['a'] or ['a', 'b'])
+        """
+        return self.binding.object_names()
+
+    def to_string(self) -> str:
+        """Convert to string representation.
+
+        Returns:
+            String like "pick-up_a" or "stack_a_b"
+        """
+        if not self.binding.bindings:
+            # No parameters
+            return self.action.name
+
+        # Action name + objects
+        obj_names = self.object_names()
+        return f"{self.action.name}_{'_'.join(obj_names)}"
+
+    @classmethod
+    def from_components(cls, action: LiftedAction, binding: Dict[str, Object]) -> 'GroundedAction':
+        """Create GroundedAction from action and dict binding.
+
+        Convenience method for backward compatibility with existing code.
+
+        Args:
+            action: UP Action object
+            binding: Dict mapping parameter names to Objects
+
+        Returns:
+            GroundedAction instance
+        """
+        if isinstance(binding, dict):
+            binding = ParameterBinding(binding)
+        return cls(action, binding)
+
+    def to_tuple(self) -> Tuple[LiftedAction, Dict[str, Object]]:
+        """Convert to tuple representation for backward compatibility.
+
+        Returns:
+            Tuple of (Action, dict binding)
+        """
+        return self.action, self.binding.to_dict()

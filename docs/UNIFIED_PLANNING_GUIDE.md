@@ -94,7 +94,7 @@ expr.fluent()          # Get the fluent (for fluent expressions)
 The codebase provides type-safe classes for PDDL representations:
 
 ```python
-from src.core.pddl_types import ParameterBinding, ParameterBoundLiteral, GroundedFluent
+from src.core.pddl_types import ParameterBinding, ParameterBoundLiteral, GroundedFluent, GroundedAction
 
 # Parameter binding
 binding = ParameterBinding({'x': Object('a', block_type)})
@@ -107,9 +107,16 @@ lit.to_string()  # "clear(?x)"
 # Grounded fluent
 fluent = GroundedFluent('clear', ['a'])
 fluent.to_string()  # "clear_a"
+
+# Grounded action (replaces Tuple[Action, Dict[str, Object]])
+action = GroundedAction(pickup_action, binding)
+action.to_string()  # "pick-up_a"
+action.object_names()  # ['a']
 ```
 
-**Key point**: `ParameterBoundLiteral` preserves action's parameter names.
+**Key points**:
+- `ParameterBoundLiteral` preserves action's parameter names
+- `GroundedAction` provides type-safe representation of grounded actions
 
 ## Lifted vs Grounded vs Parameter-Bound
 

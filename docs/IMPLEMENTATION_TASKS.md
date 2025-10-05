@@ -192,6 +192,32 @@ Building experiment framework to compare three online action model learning algo
 **Tests**: 16 new tests in `tests/core/test_binding_operations.py`, all passing
 **Integration**: All existing tests pass, including Information Gain algorithm bindP tests
 
+### PDDLHandler Refactoring Phase 1B - GroundedAction Type-Safe Class (October 5, 2025)
+**Context**: Grounded actions were represented as `Tuple[Action, Dict[str, Object]]` throughout the codebase, lacking type safety and self-documentation.
+
+**Problem**:
+- Primitive tuple representation not self-documenting
+- Requires tuple unpacking everywhere
+- No type safety for grounded actions
+- No built-in validation or convenience methods
+
+**Solution**: Created `GroundedAction` dataclass in `src/core/pddl_types.py`:
+- **GroundedAction**: Type-safe wrapper for grounded actions
+  - Replaces `Tuple[Action, Dict[str, Object]]` representation
+  - Provides `object_names()`, `to_string()` methods
+  - Includes `from_components()` for backward compatibility
+  - Includes `to_tuple()` for gradual migration
+  - Follows same pattern as `GroundedFluent` for consistency
+
+**Benefits**:
+- Type safety with IDE support
+- Self-documenting code
+- Consistent API with GroundedFluent
+- Foundation for future migration of PDDLHandler methods
+- Easier to maintain and understand grounded action handling
+
+**Tests**: 9 new tests in `tests/core/test_pddl_types.py`, all passing
+
 ## Recent Fixes (September 28, 2025)
 
 1. **OLAM Learning Validation**
