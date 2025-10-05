@@ -30,10 +30,15 @@ class InformationGainLearner(BaseActionModelLearner):
     CNF formulas and action selection will be added in later phases.
     """
 
+    # Configuration constants
+    PARAMETER_VARIABLE_NAMES = 'xyzuvwpqrst'  # Standard parameter naming: ?x, ?y, ?z, ...
+    FLOAT_COMPARISON_EPSILON = 1e-6  # Tolerance for float comparisons
+    DEFAULT_MAX_ITERATIONS = 1000
+
     def __init__(self,
                  domain_file: str,
                  problem_file: str,
-                 max_iterations: int = 1000,
+                 max_iterations: int = DEFAULT_MAX_ITERATIONS,
                  **kwargs):
         """
         Initialize Information Gain learner.
@@ -43,7 +48,21 @@ class InformationGainLearner(BaseActionModelLearner):
             problem_file: Path to PDDL problem file
             max_iterations: Maximum learning iterations
             **kwargs: Additional parameters
+
+        Raises:
+            FileNotFoundError: If domain or problem file doesn't exist
+            ValueError: If max_iterations is not positive
         """
+        from pathlib import Path
+
+        # Validate inputs
+        if not Path(domain_file).exists():
+            raise FileNotFoundError(f"Domain file not found: {domain_file}")
+        if not Path(problem_file).exists():
+            raise FileNotFoundError(f"Problem file not found: {problem_file}")
+        if max_iterations <= 0:
+            raise ValueError(f"max_iterations must be positive, got {max_iterations}")
+
         logger.info(
             f"Initializing Information Gain learner: domain={domain_file}, problem={problem_file}")
         logger.debug(f"Configuration: max_iterations={max_iterations}, kwargs={kwargs}")
@@ -74,6 +93,9 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # CNF managers for each action (Phase 2)
         self.cnf_managers: Dict[str, CNFManager] = {}
+
+        # Performance optimization: cache for constraint literals
+        self._constraint_literals_cache: Dict[str, Set[str]] = {}
 
         # Phase 3: Action selection strategy
         self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
@@ -205,10 +227,8 @@ class InformationGainLearner(BaseActionModelLearner):
         state_internal = self._state_to_internal(state)
         satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
 
-        # Get all constraint literals
-        all_constraint_literals = set()
-        for constraint_set in self.pre_constraints[action]:
-            all_constraint_literals.update(constraint_set)
+        # Get all constraint literals (cached for performance)
+        all_constraint_literals = self._get_all_constraint_literals(action)
 
         unsatisfied = all_constraint_literals - satisfied_literals
 
@@ -423,18 +443,51 @@ class InformationGainLearner(BaseActionModelLearner):
         self.iteration_count += 1
         logger.debug(f"Selecting action for iteration {self.iteration_count}, strategy: {self.selection_strategy}")
 
-        # Convert state to set if needed
-        if not isinstance(state, set):
-            state = set(state) if state else set()
+        # Ensure state is in set format
+        state = self._ensure_state_is_set(state)
 
-        # Get all grounded actions
-        # Use the existing grounded actions from initialization
-        grounded_actions = self.pddl_handler._grounded_actions
-        if not grounded_actions:
+        # Calculate expected information gains for all actions
+        action_gains = self._calculate_all_action_gains(state)
+
+        if not action_gains:
             logger.warning(f"No grounded actions available at iteration {self.iteration_count}")
             return "no_action", []
 
-        # Calculate expected information gain for each action
+        # Select action based on strategy
+        selected_action, selected_objects = self._select_by_strategy(action_gains)
+
+        logger.info(f"Selected action: {selected_action}({','.join(selected_objects)}) "
+                   f"[iteration {self.iteration_count}, gain: {action_gains[0][2]:.3f}]")
+        return selected_action, selected_objects
+
+    def _ensure_state_is_set(self, state: Any) -> Set[str]:
+        """
+        Convert state to set format if needed.
+
+        Args:
+            state: State in any format (set, list, tuple, etc.)
+
+        Returns:
+            State as a set of strings
+        """
+        if not isinstance(state, set):
+            return set(state) if state else set()
+        return state
+
+    def _calculate_all_action_gains(self, state: Set[str]) -> List[Tuple[str, List[str], float]]:
+        """
+        Calculate expected information gain for all grounded actions.
+
+        Args:
+            state: Current state as set of fluent strings
+
+        Returns:
+            List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
+        """
+        grounded_actions = self.pddl_handler._grounded_actions
+        if not grounded_actions:
+            return []
+
         action_gains = []
         for action, binding in grounded_actions:
             objects = [obj.name for obj in binding.values()] if binding else []
@@ -450,12 +503,7 @@ class InformationGainLearner(BaseActionModelLearner):
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
 
-        # Select action based on strategy
-        selected_action, selected_objects = self._select_by_strategy(action_gains)
-
-        logger.info(f"Selected action: {selected_action}({','.join(selected_objects)}) "
-                   f"[iteration {self.iteration_count}, gain: {action_gains[0][2]:.3f}]")
-        return selected_action, selected_objects
+        return action_gains
 
     def _select_by_strategy(self, action_gains: List[Tuple[str, List[str], float]]) -> Tuple[str, List[str]]:
         """
@@ -668,29 +716,18 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Update possible effects
         # eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)
+        # Keep only literals that could be conditional add effects
+        # (i.e., fluents that remained unchanged - were true before and after)
         unchanged_fluents = state_internal.intersection(next_state_internal)
-        if unchanged_fluents:
-            lifted_unchanged = self.bindP(unchanged_fluents, objects)
-            # Possible add effects: must be in unchanged fluents
-            # But we need to intersect with lifted space, not grounded
-            # So we keep literals that COULD produce these unchanged fluents
-            possible_adds = set()
-            for lit in self.eff_maybe_add[action]:
-                # Check if this literal could produce an unchanged fluent
-                grounded = self.bindP_inverse({lit}, objects)
-                if any(g in unchanged_fluents for g in grounded):
-                    possible_adds.add(lit)
-            self.eff_maybe_add[action] = possible_adds
-        else:
-            # No unchanged fluents means nothing can be a conditional add
-            self.eff_maybe_add[action] = set()
+        lifted_unchanged = self.bindP(unchanged_fluents, objects)
+        self.eff_maybe_add[action] = self.eff_maybe_add[action].intersection(lifted_unchanged)
 
         # eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)
+        # Remove literals that were true before OR after
+        # (if a fluent was ever true, it can't be a delete effect)
         all_true_fluents = state_internal.union(next_state_internal)
-        if all_true_fluents:
-            lifted_all_true = self.bindP(all_true_fluents, objects)
-            # Remove from possible deletes anything that was true before or after
-            self.eff_maybe_del[action] = self.eff_maybe_del[action] - lifted_all_true
+        lifted_all_true = self.bindP(all_true_fluents, objects)
+        self.eff_maybe_del[action] = self.eff_maybe_del[action] - lifted_all_true
 
         # Update constraint sets
         # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
@@ -702,6 +739,8 @@ class InformationGainLearner(BaseActionModelLearner):
             if updated:  # Don't add empty constraints
                 updated_constraints.append(updated)
         self.pre_constraints[action] = updated_constraints
+        # Invalidate cache after modifying constraints
+        self._invalidate_constraint_cache(action)
         logger.debug(
             f"  Constraints updated: {constraints_before} → {len(self.pre_constraints[action])}")
 
@@ -732,6 +771,8 @@ class InformationGainLearner(BaseActionModelLearner):
         if unsatisfied:
             constraints_before = len(self.pre_constraints[action])
             self.pre_constraints[action].append(unsatisfied)
+            # Invalidate cache after modifying constraints
+            self._invalidate_constraint_cache(action)
             logger.info(
                 f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
                 f"(total constraints: {constraints_before} → {len(self.pre_constraints[action])})")
@@ -744,18 +785,18 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Convert state to internal format.
 
-        The state contains grounded fluents that are true.
-        Internal format uses the same representation (no conversion needed for positive fluents).
-        Negative literals (¬p) are NOT explicitly added for absent fluents.
+        The algorithm represents states as sets of true grounded fluents.
+        Negative literals (¬p) are handled implicitly: if p is not in the set, ¬p is true.
+        This is standard STRIPS-style representation with closed-world assumption.
 
         Args:
             state: Set of grounded fluents that are true
 
         Returns:
-            Set of fluents in internal format
+            Set of fluents in internal format (copy for safety)
         """
-        # For now, internal format is the same as input
-        # We don't add explicit negatives for absent fluents
+        # Internal format matches input format (closed-world assumption)
+        # Copy to prevent external modifications
         return state.copy()
 
     def _get_satisfied_literals(self, action: str, state: Set[str], objects: List[str]) -> Set[str]:
@@ -763,8 +804,8 @@ class InformationGainLearner(BaseActionModelLearner):
         Get all literals from pre(a) that are satisfied in the given state.
 
         A literal is satisfied if:
-        - Positive literal p: p ∈ state
-        - Negative literal ¬p: p ∉ state
+        - Positive literal p: ALL groundings of p are in state
+        - Negative literal ¬p: ALL groundings of p are NOT in state (i.e., p ∉ state)
 
         Args:
             action: Action name
@@ -785,18 +826,48 @@ class InformationGainLearner(BaseActionModelLearner):
                 positive_literal = literal[1:]
                 grounded = self.bindP_inverse({positive_literal}, objects)
 
-                # Satisfied if NONE of the grounded versions are in state
-                if not any(g in state for g in grounded):
+                # Satisfied if ALL grounded versions are NOT in state
+                # (i.e., none of them are in state)
+                if all(g not in state for g in grounded):
                     satisfied.add(literal)
             else:
                 # Positive literal: p
                 grounded = self.bindP_inverse({literal}, objects)
 
-                # Satisfied if ANY of the grounded versions are in state
-                if any(g in state for g in grounded):
+                # Satisfied if ALL grounded versions ARE in state
+                if all(g in state for g in grounded):
                     satisfied.add(literal)
 
         return satisfied
+
+    def _get_all_constraint_literals(self, action: str) -> Set[str]:
+        """
+        Get all literals from all constraint sets for an action (cached for performance).
+
+        Args:
+            action: Action name
+
+        Returns:
+            Set of all literals appearing in any constraint set
+        """
+        if action not in self._constraint_literals_cache:
+            all_literals = set()
+            for constraint_set in self.pre_constraints[action]:
+                all_literals.update(constraint_set)
+            self._constraint_literals_cache[action] = all_literals
+
+        return self._constraint_literals_cache[action]
+
+    def _invalidate_constraint_cache(self, action: str):
+        """
+        Invalidate the constraint literals cache for an action.
+
+        Should be called when pre_constraints[action] is modified.
+
+        Args:
+            action: Action name
+        """
+        self._constraint_literals_cache.pop(action, None)
 
     def _build_cnf_formula(self, action: str) -> CNFManager:
         """

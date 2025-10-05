@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 class PDDLHandler:
     """Handles PDDL operations using Unified Planning Framework."""
 
+    # Standard parameter naming convention
+    PARAMETER_VARIABLE_NAMES = 'xyzuvwpqrst'
+
     def __init__(self, require_injective_bindings: bool = False):
         """Initialize PDDL handler.
 
@@ -895,9 +898,7 @@ class PDDLHandler:
 
         # Get parameter names using standard naming convention
         num_params = len(action.parameters)
-        param_letters = 'xyzuvwpqrst'
-        param_names = [f"?{param_letters[i]}" if i < len(param_letters) else f"?p{i}"
-                      for i in range(num_params)]
+        param_names = self.generate_parameter_names(num_params)
 
         # For each predicate in domain, generate all valid lifted literals
         import itertools
@@ -1079,6 +1080,48 @@ class PDDLHandler:
 
         return result
 
+    @staticmethod
+    def generate_parameter_names(count: int) -> List[str]:
+        """
+        Generate standard parameter names for given count.
+
+        Args:
+            count: Number of parameters to generate names for
+
+        Returns:
+            List of parameter names: ['?x', '?y', '?z', ..., '?p10', '?p11', ...]
+        """
+        return [
+            f"?{PDDLHandler.PARAMETER_VARIABLE_NAMES[i]}"
+            if i < len(PDDLHandler.PARAMETER_VARIABLE_NAMES)
+            else f"?p{i}"
+            for i in range(count)
+        ]
+
+    @staticmethod
+    def parameter_index_from_name(param_name: str) -> int:
+        """
+        Get index from parameter name.
+
+        Args:
+            param_name: Parameter name (e.g., '?x', '?y', '?p10')
+
+        Returns:
+            Parameter index (e.g., ?x→0, ?y→1, ?p10→10)
+        """
+        if param_name.startswith('?') and len(param_name) == 2:
+            letter = param_name[1].lower()
+            if letter in PDDLHandler.PARAMETER_VARIABLE_NAMES:
+                return PDDLHandler.PARAMETER_VARIABLE_NAMES.index(letter)
+
+        # Fallback: try to parse number from name
+        import re
+        match = re.search(r'\d+', param_name)
+        if match:
+            return int(match.group())
+
+        return 0  # Default to first parameter
+
     def _get_parameter_index_internal(self, param_name: str, objects: List[str]) -> int:
         """
         Get index of parameter in action's parameter list.
@@ -1090,20 +1133,7 @@ class PDDLHandler:
         Returns:
             Parameter index
         """
-        # Simple heuristic: ?x → 0, ?y → 1, ?z → 2, etc.
-        param_letters = 'xyzuvwpqrst'
-        if param_name.startswith('?') and len(param_name) == 2:
-            letter = param_name[1].lower()
-            if letter in param_letters:
-                return param_letters.index(letter)
-
-        # Fallback: try to parse number from name
-        import re
-        match = re.search(r'\d+', param_name)
-        if match:
-            return int(match.group())
-
-        return 0  # Default to first parameter
+        return self.parameter_index_from_name(param_name)
 
     def _get_parameter_name_internal(self, index: int) -> str:
         """
@@ -1115,11 +1145,8 @@ class PDDLHandler:
         Returns:
             Parameter name (e.g., '?x', '?y')
         """
-        param_letters = 'xyzuvwpqrst'
-        if index < len(param_letters):
-            return f"?{param_letters[index]}"
-        else:
-            return f"?p{index}"
+        names = self.generate_parameter_names(index + 1)
+        return names[index] if index < len(names) else f"?p{index}"
 
     def extract_predicate_name(self, literal: str) -> Optional[str]:
         """
