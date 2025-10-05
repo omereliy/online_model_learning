@@ -13,6 +13,7 @@ from typing import Tuple, List, Dict, Optional, Any, Set
 
 from src.core.cnf_manager import CNFManager
 from src.core.pddl_handler import PDDLHandler
+from src.core.pddl_types import GroundedAction
 from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
@@ -483,21 +484,21 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        grounded_actions = self.pddl_handler.get_all_grounded_actions()
+        grounded_actions = self.pddl_handler.get_all_grounded_actions_typed()
         if not grounded_actions:
             return []
 
         action_gains = []
-        for action, binding in grounded_actions:
-            objects = [obj.name for obj in binding.values()] if binding else []
+        for grounded_action in grounded_actions:
+            objects = grounded_action.object_names()
 
             try:
-                expected_gain = self._calculate_expected_information_gain(action.name, objects, state)
-                action_gains.append((action.name, objects, expected_gain))
+                expected_gain = self._calculate_expected_information_gain(grounded_action.action.name, objects, state)
+                action_gains.append((grounded_action.action.name, objects, expected_gain))
             except Exception as e:
-                logger.warning(f"Error calculating gain for {action.name}: {e}")
+                logger.warning(f"Error calculating gain for {grounded_action.action.name}: {e}")
                 # Add with zero gain as fallback
-                action_gains.append((action.name, objects, 0.0))
+                action_gains.append((grounded_action.action.name, objects, 0.0))
 
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)

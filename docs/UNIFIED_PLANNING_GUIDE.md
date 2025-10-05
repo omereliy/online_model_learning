@@ -123,6 +123,17 @@ lifted_action: LiftedAction = pickup_action
 - `GroundedAction` provides type-safe wrapper for `Tuple[Action, Dict[str, Object]]`
 - `LiftedAction` is a type alias for `unified_planning.model.Action` (no wrapper needed)
 
+**Usage with PDDLHandler**:
+```python
+# Get all grounded actions as type-safe objects
+grounded_actions = pddl_handler.get_all_grounded_actions_typed()
+
+for grounded_action in grounded_actions:
+    action_name = grounded_action.action.name
+    objects = grounded_action.object_names()  # ['a', 'b']
+    action_str = grounded_action.to_string()  # "pick-up_a"
+```
+
 ## Lifted vs Grounded vs Parameter-Bound
 
 ### 1. Lifted (Schema Level)

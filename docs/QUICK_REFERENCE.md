@@ -113,6 +113,23 @@ num_models = cnf.count_solutions()
 entropy = cnf.get_entropy()
 ```
 
+### Type-Safe Grounded Actions
+```python
+from src.core.pddl_handler import PDDLHandler
+from src.core.pddl_types import GroundedAction
+
+pddl_handler = PDDLHandler()
+pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+
+# Get all grounded actions as type-safe objects
+grounded_actions = pddl_handler.get_all_grounded_actions_typed()
+
+for grounded_action in grounded_actions:
+    action_name = grounded_action.action.name
+    objects = grounded_action.object_names()  # ['a', 'b']
+    action_str = grounded_action.to_string()  # "pick-up_a"
+```
+
 ### Run Experiment with CNF Settings
 ```python
 config = {

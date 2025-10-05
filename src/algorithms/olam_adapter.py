@@ -189,36 +189,26 @@ class OLAMAdapter(BaseActionModelLearner):
             List of grounded action strings in OLAM format
         """
         logger.debug("Extracting grounded action list from PDDLHandler")
-        grounded_actions = []
+        action_strings = []
 
-        # Use PDDLHandler's proper grounding mechanism
-        num_grounded = len(self.pddl_handler._grounded_actions)
-        logger.debug(f"Processing {num_grounded} grounded actions from domain")
+        # Use PDDLHandler's type-safe grounding mechanism
+        grounded_actions = self.pddl_handler.get_all_grounded_actions_typed()
+        logger.debug(f"Processing {len(grounded_actions)} grounded actions from domain")
 
-        for action, binding in self.pddl_handler._grounded_actions:
-            if not binding:
-                # Parameterless action
-                action_str = f"{action.name}()"
-                logger.debug(f"Added parameterless action: {action_str}")
+        for grounded_action in grounded_actions:
+            # Get parameter values in order
+            param_values = grounded_action.object_names()
+
+            # Build OLAM format: action_name(param1,param2,...)
+            if param_values:
+                action_str = f"{grounded_action.action.name}({','.join(param_values)})"
             else:
-                # Extract parameter values in order
-                # We need to maintain the parameter order from the action definition
-                param_values = []
-                for param in action.parameters:
-                    if param.name in binding:
-                        param_values.append(binding[param.name].name)
+                action_str = f"{grounded_action.action.name}()"
 
-                # Build OLAM format: action_name(param1,param2,...)
-                if param_values:
-                    action_str = f"{action.name}({','.join(param_values)})"
-                else:
-                    action_str = f"{action.name}()"
+            logger.debug(f"Added grounded action: {action_str} (params: {param_values})")
+            action_strings.append(action_str)
 
-                logger.debug(f"Added grounded action: {action_str} (params: {param_values})")
-
-            grounded_actions.append(action_str)
-
-        sorted_actions = sorted(grounded_actions)
+        sorted_actions = sorted(action_strings)
         logger.info(f"Extracted {len(sorted_actions)} grounded actions")
         return sorted_actions
 

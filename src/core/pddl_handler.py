@@ -590,6 +590,19 @@ class PDDLHandler:
         """
         return self._grounded_actions.copy()
 
+    def get_all_grounded_actions_typed(self) -> List['GroundedAction']:
+        """
+        Get all grounded actions as type-safe objects.
+
+        Returns:
+            List of GroundedAction instances
+        """
+        from src.core.pddl_types import GroundedAction, ParameterBinding
+        return [
+            GroundedAction(action, ParameterBinding(binding))
+            for action, binding in self._grounded_actions
+        ]
+
     def get_lifted_predicate_structure(self, predicate_name: str) -> Optional[Tuple[str, List[str]]]:
         """
         Get structure of a lifted predicate.

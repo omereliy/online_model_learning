@@ -252,6 +252,52 @@ Building experiment framework to compare three online action model learning algo
 - `test_get_lifted_preconditions` / `test_get_grounded_preconditions`
 - `test_get_lifted_effects` / `test_get_grounded_effects`
 
+### PDDLHandler Refactoring Phase 5 - Migrate to Type-Safe Classes (October 5, 2025)
+**Context**: Dependent files still used primitive tuple representations for grounded actions, missing the benefits of type-safe GroundedAction class.
+
+**Problem**:
+- `information_gain.py` used tuple unpacking: `for action, binding in grounded_actions:`
+- `olam_adapter.py` accessed internal `_grounded_actions` list directly
+- `pddl_environment.py` works with primitive types (no changes needed)
+- Code not using available type-safe interfaces
+
+**Solution**: Migrated dependent files to use type-safe GroundedAction:
+- **PDDLHandler**: Added `get_all_grounded_actions_typed()` method
+  - Returns `List[GroundedAction]` instead of `List[Tuple[Action, Dict[str, Object]]]`
+  - Wraps internal `_grounded_actions` with type-safe classes
+  - Clean API without exposing internal representation
+- **information_gain.py**: Updated to use GroundedAction
+  - Changed from: `for action, binding in grounded_actions:`
+  - Changed to: `for grounded_action in grounded_actions:`
+  - Uses `grounded_action.action.name` for action name
+  - Uses `grounded_action.object_names()` for parameter extraction
+  - Cleaner, more readable code
+- **olam_adapter.py**: Updated to use GroundedAction
+  - Changed from: `for action, binding in self.pddl_handler._grounded_actions:`
+  - Changed to: `for grounded_action in self.pddl_handler.get_all_grounded_actions_typed():`
+  - Uses `grounded_action.object_names()` instead of manual extraction
+  - No longer accesses internal `_grounded_actions` attribute
+- **pddl_environment.py**: Assessment complete - no changes needed
+  - Works with action names and parameter lists directly
+  - No parameter binding usage
+
+**Benefits**:
+- Type safety throughout the codebase
+- Consistent API usage with GroundedAction
+- Improved code readability and maintainability
+- No direct access to internal PDDLHandler attributes
+- Foundation complete for future refactoring phases
+
+**Tests**: All 51 curated tests passing, including:
+- Information Gain algorithm tests
+- OLAM adapter integration tests
+- Full pipeline integration tests
+
+**Documentation Updates**:
+- `UNIFIED_PLANNING_GUIDE.md`: Added `get_all_grounded_actions_typed()` usage example
+- `QUICK_REFERENCE.md`: Added "Type-Safe Grounded Actions" pattern
+- `pddl_handler_refactoring_plan.md`: Updated execution tracking to Phase 5 complete
+
 ## Recent Fixes (September 28, 2025)
 
 1. **OLAM Learning Validation**

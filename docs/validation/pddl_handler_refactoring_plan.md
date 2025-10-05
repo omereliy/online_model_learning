@@ -1721,10 +1721,11 @@ Due to length constraints, the remaining phases are summarized here. Full detail
 Use this section to track progress through phases:
 
 **Phase 1**: [ ] Not started | [ ] In progress | [X] Complete
+**Phase 1B**: [ ] Not started | [ ] In progress | [X] Complete (GroundedAction + LiftedAction)
 **Phase 2**: [ ] Not started | [ ] In progress | [X] Complete
-**Phase 3**: [ ] Not started | [ ] In progress | [ ] Complete
-**Phase 4**: [ ] Not started | [ ] In progress | [ ] Complete
-**Phase 5**: [ ] Not started | [ ] In progress | [ ] Complete
+**Phase 3**: [ ] Not started | [ ] In progress | [X] Complete
+**Phase 4**: [ ] Not started | [ ] In progress | [X] Complete
+**Phase 5**: [ ] Not started | [ ] In progress | [X] Complete
 **Phase 6**: [ ] Not started | [ ] In progress | [ ] Complete
 
 ---
