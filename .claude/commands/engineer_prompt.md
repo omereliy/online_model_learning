@@ -21,101 +21,48 @@ Before proceeding, verify extended thinking is enabled.
 # Prompt Engineering Command
 
 ## Purpose
-Transform free-text user input into a well-engineered prompt optimized for clarity, specificity, and effectiveness. Accounts for target session type (new vs continued).
+Transform free-text user input into a well-engineered prompt optimized for clarity, specificity, and effectiveness. Uses project documentation (CLAUDE.md, DEVELOPMENT_RULES.md, IMPLEMENTATION_TASKS.md) as automatic context.
 
 ## Execution Steps
 
-### Step 1: Session Type Detection
-Determine target session context:
+### Step 1: Project Context Loading
+Load standard project context (always available):
 
-**Ask user:**
+- [ ] Read @CLAUDE.md for project overview and navigation
+- [ ] Read @docs/DEVELOPMENT_RULES.md for conventions and rules
+- [ ] Read @docs/IMPLEMENTATION_TASKS.md for current status
+- [ ] Note technology stack: Unified Planning, PySAT, Python, TDD methodology
+- [ ] Note key paths: `src/`, `tests/`, `docs/`, `benchmarks/`
+
+**Automatic Context Available**:
 ```
-Is this prompt for:
-1. **New session** (no prior context)
-2. **Continued session** (has existing context)
-
-Reply with: 1 or 2
+Project: Online Model Learning Framework
+Tech Stack: Python, Unified Planning, PySAT, pytest
+Methodology: Test-Driven Development (tests first)
+Key Documentation: CLAUDE.md, DEVELOPMENT_RULES.md, IMPLEMENTATION_TASKS.md
+Conventions: Type hints, docstrings, make test before commits
 ```
 
-**Decision Point**: Session type determines context gathering
+**Expected Outcome**: Full project context loaded
 
 ---
 
-### Step 2A: New Session - Context Gathering
+### Step 2: User Intent Analysis
+Gather additional context from user if needed:
 
-**If new session**, collect essential context:
+#### 2.1: Clarification Questions (if needed)
+Ask only if the raw prompt is ambiguous:
 
-#### 2A.1: Role/Persona Definition
-- [ ] Ask: "What role should Claude assume? (e.g., Python expert, architect, code reviewer)"
-- [ ] Ask: "Any specific expertise needed? (e.g., PDDL, SAT solvers, TDD)"
+- [ ] **Output format**: If unclear, ask: "What format should the output take? (code/plan/analysis/report)"
+- [ ] **Success criteria**: If unclear, ask: "How will you know the task is complete?"
+- [ ] **Scope**: If unclear, ask: "Should this be a quick fix or comprehensive solution?"
 
-#### 2A.2: Background Context
-- [ ] Ask: "What background should Claude know?"
-  - Project type/domain
-  - Technology stack
-  - Constraints or requirements
-  - Relevant files or documentation
+**Skip questions if**:
+- Raw prompt is clear and specific
+- Task type is obvious from context
+- Standard project workflow applies
 
-#### 2A.3: Output Format
-- [ ] Ask: "What format should the response take?"
-  - Code with explanations
-  - Step-by-step plan
-  - Analysis report
-  - Implementation guide
-
-#### 2A.4: Success Criteria
-- [ ] Ask: "How will you know the response is successful?"
-  - Specific deliverables
-  - Quality criteria
-  - Edge cases to handle
-
-**Collected Context Template**:
-```
-Role: [role and expertise]
-Background:
-- [context point 1]
-- [context point 2]
-Output Format: [desired format]
-Success Criteria:
-- [criterion 1]
-- [criterion 2]
-```
-
----
-
-### Step 2B: Continued Session - Context Reference
-
-**If continued session**, identify what to reference:
-
-#### 2B.1: Previous Work Reference
-- [ ] Ask: "What prior context should be referenced?"
-  - Previous tasks completed
-  - Existing codebase elements
-  - Decisions already made
-  - Patterns established
-
-#### 2B.2: Incremental Nature
-- [ ] Ask: "Is this:"
-  - Building on previous work (extend/modify)
-  - New task using same context (parallel work)
-  - Follow-up question (clarification)
-
-#### 2B.3: Continuity Assumptions
-- [ ] Ask: "What can Claude assume is already understood?"
-  - Project conventions
-  - Architecture decisions
-  - Previously discussed approaches
-
-**Collected Context Template**:
-```
-References:
-- [prior work/context 1]
-- [prior work/context 2]
-Relationship: [building on / parallel / follow-up]
-Assumed Knowledge:
-- [assumption 1]
-- [assumption 2]
-```
+**Expected Outcome**: Any ambiguities resolved
 
 ---
 
@@ -229,20 +176,22 @@ After: "Debug the CNF-based action selection in src/algorithms/information_gain.
 ```
 
 #### 4.3: Context Integration
-Weave in collected context:
+Weave in project context automatically:
 
-**For New Sessions**:
+**Standard Prompt Structure**:
 ```
-You are a [role] with expertise in [domain].
-
-Context:
-[Background points]
+Project Context:
+- Working on Online Model Learning Framework
+- Tech Stack: Python, Unified Planning, PySAT, pytest
+- Methodology: Test-Driven Development (tests written FIRST)
+- Key docs: CLAUDE.md, DEVELOPMENT_RULES.md, IMPLEMENTATION_TASKS.md
+- Conventions: Type hints, docstrings, make test before commits
 
 Task:
 [Engineered task description]
 
 Requirements:
-[Explicit requirements]
+[Explicit requirements from analysis]
 
 Constraints:
 [Explicit constraints]
@@ -252,25 +201,8 @@ Success Criteria:
 
 Output Format:
 [Desired format with example]
-```
 
-**For Continued Sessions**:
-```
-Building on [previous work/context]:
-
-[Reference to established context]
-
-Next Task:
-[Engineered task description]
-
-Continuation Details:
-[How this extends prior work]
-
-Maintain:
-[What to preserve from previous work]
-
-Success Criteria:
-[Criteria for this increment]
+See @CLAUDE.md and @docs/DEVELOPMENT_RULES.md for full project context.
 ```
 
 #### 4.4: Add Effectiveness Boosters
@@ -298,7 +230,7 @@ Check engineered prompt against criteria:
 
 #### 5.2: Completeness Check
 - [ ] All necessary context provided
-- [ ] Role/expertise specified (if new session)
+- [ ] Project documentation referenced
 - [ ] Output format defined
 - [ ] Edge cases mentioned
 
@@ -343,16 +275,15 @@ Present in copyable format:
 2. [Enhancement 2]
 3. [Enhancement 3]
 
-**Session Type**: [New/Continued]
-**Context Added**: [Summary of context]
+**Context Added**: [Summary of context from project docs]
 **Structure Used**: [Structure type]
 
 **Quality Score**: [X/10]
 
 **Usage Instructions**:
 - Copy everything between ---BEGIN PROMPT--- and ---END PROMPT---
-- Paste into [new/continued] session
-- [Any additional setup needed]
+- Paste into new session
+- Project context automatically loaded from CLAUDE.md and DEVELOPMENT_RULES.md
 
 **Expected Outcome**:
 [What user should expect from Claude's response]
@@ -443,8 +374,8 @@ Based on your input, consider:
 ---
 
 ## Validation Criteria
-- [ ] Session type identified (new vs continued)
-- [ ] Necessary context gathered
+- [ ] Project context loaded from documentation
+- [ ] Necessary clarifications gathered (if needed)
 - [ ] Ambiguities resolved
 - [ ] Prompt is specific and actionable
 - [ ] Success criteria clear
@@ -461,12 +392,13 @@ Based on your input, consider:
 - Engineering notes and improvements made
 - Quality assessment
 - Usage instructions
+- Slash command suggestions (if applicable)
 - Tips for future prompts
 
 ## Integration Points
-- **Used before starting work** in new or continued sessions
-- **Can reference** DEVELOPMENT_RULES.md for project-specific context
+- **Automatically loads** CLAUDE.md, DEVELOPMENT_RULES.md, IMPLEMENTATION_TASKS.md
 - **Can chain with** other commands: engineer prompt → use in /plan or /implement
+- **Works for any session** - all sessions use same project documentation
 
 ## Example Transformation
 
@@ -475,7 +407,7 @@ Based on your input, consider:
 "make the algorithm faster"
 ```
 
-**Engineered Output (New Session)**:
+**Engineered Output**:
 ```markdown
 ---BEGIN PROMPT---
 
@@ -538,50 +470,22 @@ This slash command will:
 **If you prefer manual prompt**: Use the ---BEGIN PROMPT--- version above.
 ```
 
-**Engineered Output (Continued Session)**:
-```markdown
----BEGIN PROMPT---
-
-Following our work on the Information Gain algorithm in `src/algorithms/information_gain.py`:
-
-We identified the O(n²) bottleneck in select_action() during action selection. Now optimize this method:
-
-Build on:
-- Existing CNFManager integration
-- 60 passing tests in test_information_gain.py
-- Project coding standards from DEVELOPMENT_RULES.md
-
-Task:
-Optimize select_action() performance from 800ms → <100ms for 50 actions while maintaining:
-- Exact same selection logic
-- All test compatibility
-- Code readability
-
-Approach:
-1. Profile current bottleneck (SAT solver calls)
-2. Implement optimization (caching/batching)
-3. Verify with benchmarks
-4. Ensure tests pass
-
-Success: ≥5x speedup, all tests pass, code approved
-
----END PROMPT---
-```
-
 ## Usage Notes
 
 **When to Use**:
-- Before starting complex work in new session
+- Before starting work in new session
 - When user has vague idea needing structure
-- To ensure new session has proper context
-- When continuing work needs clear framing
+- To transform rough ideas into actionable prompts
+- When complex tasks need structured framing
 
-**Session Type Impact**:
-- **New session**: Requires full context, role definition, background
-- **Continued session**: Can reference prior work, be more concise, assume knowledge
+**Project Context**:
+- All sessions share same project documentation
+- CLAUDE.md, DEVELOPMENT_RULES.md, IMPLEMENTATION_TASKS.md always referenced
+- No need to distinguish new vs continued sessions
+- Context automatically consistent across all sessions
 
-**The session type distinction is VALUABLE because**:
-- Prevents context loss in new sessions
-- Avoids redundancy in continued sessions
-- Ensures proper framing for each case
-- Results in more effective prompts
+**Benefits**:
+- Transforms vague requests into specific prompts
+- Ensures TDD methodology referenced
+- Suggests slash commands when applicable
+- Maintains project conventions automatically
