@@ -4,6 +4,18 @@ args:
   - name: algorithm_description
     description: Algorithm description (academic paper reference, markdown summary, or file path)
     required: true
+extended_thinking_required: true
+---
+
+⚠️ **STOP: Extended Thinking Required**
+
+Before proceeding, verify extended thinking is enabled.
+
+**If NOT enabled**: Stop and tell user:
+"This command requires extended thinking for correctness proofs, complexity analysis, and edge case discovery. Please enable it or confirm to proceed anyway (not recommended)."
+
+**If enabled or user confirms**: Continue with Step 1.
+
 ---
 
 # Algorithm Theoretical Validation Command
@@ -11,34 +23,7 @@ args:
 ## Purpose
 Validate theoretical and algorithmic correctness BEFORE implementation to identify issues, edge cases, and complexity considerations.
 
-**⚠️ IMPORTANT: This command requires Extended Thinking**
-
-This command performs deep reasoning for correctness proofs, complexity analysis, and edge case discovery. Extended thinking significantly improves result quality.
-
 ## Execution Steps
-
-### Step 0: Extended Thinking Verification
-- [ ] Check if extended thinking is enabled for this session
-- [ ] If not enabled, inform user:
-
-```
-⚠️ EXTENDED THINKING RECOMMENDED
-
-This command (validate-theory) requires deep reasoning for:
-- Theoretical correctness proofs
-- Complexity analysis
-- Edge case discovery
-- Implementation pitfall detection
-
-Please enable extended thinking for optimal results, or confirm to proceed anyway.
-
-Enable via CLI: Add extended thinking flag to your session
-Proceed without? Reply 'yes' to continue (not recommended)
-```
-
-**Expected Outcome**: Extended thinking confirmed or user override
-
----
 
 ### Step 1: Algorithm Acquisition
 Load algorithm description:

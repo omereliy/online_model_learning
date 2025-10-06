@@ -4,6 +4,18 @@ args:
   - name: user_prompt
     description: Raw prompt idea in free text
     required: true
+extended_thinking_required: true
+---
+
+⚠️ **STOP: Extended Thinking Required**
+
+Before proceeding, verify extended thinking is enabled.
+
+**If NOT enabled**: Stop and tell user:
+"This command requires extended thinking for understanding implicit intent, resolving ambiguities, and meta-analysis of prompt quality. Please enable it or confirm to proceed anyway (not recommended)."
+
+**If enabled or user confirms**: Continue with Step 1.
+
 ---
 
 # Prompt Engineering Command
@@ -11,34 +23,7 @@ args:
 ## Purpose
 Transform free-text user input into a well-engineered prompt optimized for clarity, specificity, and effectiveness. Accounts for target session type (new vs continued).
 
-**⚠️ IMPORTANT: This command requires Extended Thinking**
-
-This command performs meta-reasoning about prompts, understanding implicit intent, and resolving ambiguities. Extended thinking significantly improves result quality.
-
 ## Execution Steps
-
-### Step 0: Extended Thinking Verification
-- [ ] Check if extended thinking is enabled for this session
-- [ ] If not enabled, inform user:
-
-```
-⚠️ EXTENDED THINKING RECOMMENDED
-
-This command (engineer-prompt) requires deep reasoning for:
-- Understanding implicit user intent
-- Identifying and resolving ambiguities
-- Meta-analysis of prompt quality
-- Structuring complex requirements
-
-Please enable extended thinking for optimal results, or confirm to proceed anyway.
-
-Enable via CLI: Add extended thinking flag to your session
-Proceed without? Reply 'yes' to continue (not recommended)
-```
-
-**Expected Outcome**: Extended thinking confirmed or user override
-
----
 
 ### Step 1: Session Type Detection
 Determine target session context:
@@ -376,6 +361,40 @@ Present in copyable format:
 [Suggested refinements or follow-up prompts]
 ```
 
+#### 6.1b: Slash Command Recommendation
+Analyze the engineered prompt and suggest appropriate slash commands:
+
+**Determine if task matches existing slash commands**:
+- [ ] Check if task is **planning** → Suggest `/plan "[task]"`
+- [ ] Check if task is **implementation** → Suggest `/implement "[task]"`
+- [ ] Check if task is **algorithm validation** → Suggest `/validate-theory "[algorithm]"`
+- [ ] Check if task is **code quality analysis** → Suggest `/inspect-refactor "[files]"`
+- [ ] Check if task is **documentation sync** → Suggest `/docs-sync`
+
+**Add to output if slash command applicable**:
+```markdown
+## ⚡ Recommended Slash Command
+
+Instead of copying the prompt manually, you can use:
+
+```bash
+/[command-name] "[argument]"
+```
+
+This slash command will:
+- [Benefit 1 of using command]
+- [Benefit 2 of using command]
+- [Benefit 3 of using command]
+
+**If you prefer manual prompt**: Use the ---BEGIN PROMPT--- version above.
+```
+
+**If no slash command matches**:
+- Don't add this section
+- Proceed with standard prompt output
+
+**Expected Outcome**: User knows if a slash command can replace the manual prompt
+
 #### 6.2: Alternative Versions (Optional)
 If ambiguities remain, provide variants:
 
@@ -501,6 +520,22 @@ Output Format:
 5. Testing verification
 
 ---END PROMPT---
+
+## ⚡ Recommended Slash Command
+
+Instead of copying the prompt manually, you can use:
+
+```bash
+/plan "Optimize action selection performance in InformationGainLearner"
+```
+
+This slash command will:
+- Follow TDD methodology (write tests first)
+- Break down optimization into testable components
+- Create implementation roadmap with acceptance criteria
+- Integrate with IMPLEMENTATION_TASKS.md for tracking
+
+**If you prefer manual prompt**: Use the ---BEGIN PROMPT--- version above.
 ```
 
 **Engineered Output (Continued Session)**:
