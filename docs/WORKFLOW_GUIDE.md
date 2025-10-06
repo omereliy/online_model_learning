@@ -15,6 +15,67 @@ This guide demonstrates how to use slash commands for Test-Driven Development wo
 | `/inspect-refactor` | Analyze code quality | Regular code reviews, before refactoring |
 | `/engineer-prompt` | Engineer optimized prompt from free text | Before starting work in new/other sessions |
 
+## Command Configuration Guide
+
+### Recommended Settings Per Command
+
+| Command | Model | Mode | Extended Thinking | Notes |
+|---------|-------|------|-------------------|-------|
+| `/docs-sync` | **Sonnet 4.5** | Plan | ❌ No | Mechanical sync - fast execution preferred |
+| `/plan` | **Opus 4** | Regular | ⚠️ Complex only | Use extended thinking for large/ambiguous tasks |
+| `/implement` | **Sonnet 4.5** | Regular | ❌ No | TDD needs fast, confident execution |
+| `/validate-theory` | **Opus 4** | Regular | ✅ Yes | Deep reasoning for correctness proofs |
+| `/inspect-refactor` | **Opus 4** | Regular | ✅ Yes | Architectural insights need deep analysis |
+| `/engineer-prompt` | **Opus 4** | Regular | ✅ Yes | Meta-reasoning about prompt quality |
+
+### Model Selection Rationale
+
+**Sonnet 4.5** (Fast, structured execution):
+- `/docs-sync`: Pattern matching, link validation, consistency checks
+- `/implement`: Clear TDD workflow with defined steps
+
+**Opus 4** (Deep reasoning):
+- `/plan`: Architectural thinking, dependency analysis, test strategy
+- `/validate-theory`: Theoretical correctness, complexity analysis, edge cases
+- `/inspect-refactor`: Code smells, security issues, design patterns
+- `/engineer-prompt`: Meta-cognitive prompt analysis and optimization
+
+### Extended Thinking Guidelines
+
+**✅ Always Use Extended Thinking**:
+- `/validate-theory` - Complex correctness proofs, subtle edge cases
+- `/inspect-refactor` - Non-obvious architectural issues, security analysis
+- `/engineer-prompt` - Understanding implicit intent, resolving ambiguities
+
+**⚠️ Use Conditionally**:
+- `/plan` - Only for complex/ambiguous tasks with many dependencies
+  - Simple tasks from IMPLEMENTATION_TASKS.md: No extended thinking
+  - Novel features with unclear requirements: Yes extended thinking
+
+**❌ Never Use Extended Thinking**:
+- `/implement` - May create false uncertainty in TDD process, needs confidence
+- `/docs-sync` - Mechanical task with no ambiguity, overthinking hurts
+
+### Mode Selection
+
+**Plan Mode** (shows plan before execution):
+- `/docs-sync` - Preview documentation changes before applying
+- `/implement` - Preview implementation approach before writing code
+
+**Regular Mode** (analysis/generation only):
+- `/plan` - Creates plan output, makes no changes
+- `/validate-theory` - Analysis only, no modifications
+- `/inspect-refactor` - Identifies issues, doesn't fix them
+- `/engineer-prompt` - Generates prompt, makes no changes
+
+### Key Principle
+
+**Match reasoning depth to task complexity:**
+- Mechanical tasks → Fast execution (Sonnet, no extended thinking)
+- Structured workflows → Confident execution (Sonnet, no extended thinking)
+- Deep analysis → Maximum reasoning (Opus, extended thinking)
+- Planning → Context-dependent (Opus, extended thinking if complex)
+
 ## Core Workflows
 
 ### Workflow 1: New Feature Implementation
