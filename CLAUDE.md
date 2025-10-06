@@ -27,6 +27,7 @@
 
 | If You're... | Read This | Location |
 |--------------|-----------|----------|
+| **Starting a new task** | WORKFLOW_GUIDE | Use `/plan` then `/implement` |
 | **Working on PDDL parsing** | UNIFIED_PLANNING_GUIDE | `src/core/pddl_handler.py` |
 | **Implementing CNF formulas** | CNF_SAT_INTEGRATION | `src/core/cnf_manager.py` |
 | **Adding algorithm adapters** | integration_guide | `src/algorithms/` |
@@ -35,6 +36,25 @@
 | **Looking for commands** | QUICK_REFERENCE | Commands section |
 | **Checking project status** | IMPLEMENTATION_TASKS | Status section |
 | **Understanding architecture** | DEVELOPMENT_RULES | Architecture section |
+
+## 🚀 TDD Workflow Commands
+
+**→ See [WORKFLOW_GUIDE.md](docs/WORKFLOW_GUIDE.md) for complete workflow examples and best practices**
+
+| Command | Purpose | When to Use |
+|---------|---------|-------------|
+| `/docs-sync` | Synchronize all documentation | After major changes, before releases |
+| `/plan` | Plan task with TDD methodology | Before implementing any feature/fix |
+| `/implement` | Execute implementation with strict TDD | After planning, writes tests FIRST |
+| `/validate-theory` | Validate algorithm correctness | Before implementing complex algorithms |
+| `/inspect-refactor` | Analyze code quality and identify issues | Regular reviews, before refactoring |
+| `/engineer-prompt` | Transform free text to optimized prompt | Before starting work in new/other sessions |
+
+**Common Patterns**:
+- **Simple Task**: `/plan` → `/implement` → `/docs-sync`
+- **Algorithm**: `/validate-theory` → `/plan` → `/implement` → `/docs-sync`
+- **Refactoring**: `/inspect-refactor` → `/plan` → `/implement` → `/docs-sync`
+- **From Task List**: `/plan "Phase X"` → `/implement "Phase X"` → `/docs-sync`
 
 ## 📂 Component Status & File Locations
 
