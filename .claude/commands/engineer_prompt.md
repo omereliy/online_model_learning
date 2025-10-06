@@ -11,7 +11,34 @@ args:
 ## Purpose
 Transform free-text user input into a well-engineered prompt optimized for clarity, specificity, and effectiveness. Accounts for target session type (new vs continued).
 
+**⚠️ IMPORTANT: This command requires Extended Thinking**
+
+This command performs meta-reasoning about prompts, understanding implicit intent, and resolving ambiguities. Extended thinking significantly improves result quality.
+
 ## Execution Steps
+
+### Step 0: Extended Thinking Verification
+- [ ] Check if extended thinking is enabled for this session
+- [ ] If not enabled, inform user:
+
+```
+⚠️ EXTENDED THINKING RECOMMENDED
+
+This command (engineer-prompt) requires deep reasoning for:
+- Understanding implicit user intent
+- Identifying and resolving ambiguities
+- Meta-analysis of prompt quality
+- Structuring complex requirements
+
+Please enable extended thinking for optimal results, or confirm to proceed anyway.
+
+Enable via CLI: Add extended thinking flag to your session
+Proceed without? Reply 'yes' to continue (not recommended)
+```
+
+**Expected Outcome**: Extended thinking confirmed or user override
+
+---
 
 ### Step 1: Session Type Detection
 Determine target session context:

@@ -11,7 +11,34 @@ args:
 ## Purpose
 Systematically analyze code quality, identify anti-patterns, and generate prioritized refactoring suggestions.
 
+**⚠️ IMPORTANT: This command requires Extended Thinking**
+
+This command performs deep analysis for architectural insights, security vulnerabilities, and design pattern opportunities. Extended thinking significantly improves result quality.
+
 ## Execution Steps
+
+### Step 0: Extended Thinking Verification
+- [ ] Check if extended thinking is enabled for this session
+- [ ] If not enabled, inform user:
+
+```
+⚠️ EXTENDED THINKING RECOMMENDED
+
+This command (inspect-refactor) requires deep reasoning for:
+- Architectural insights and SOLID violations
+- Security vulnerability detection
+- Non-obvious code smells and anti-patterns
+- Design pattern opportunities
+
+Please enable extended thinking for optimal results, or confirm to proceed anyway.
+
+Enable via CLI: Add extended thinking flag to your session
+Proceed without? Reply 'yes' to continue (not recommended)
+```
+
+**Expected Outcome**: Extended thinking confirmed or user override
+
+---
 
 ### Step 1: Target Resolution
 Resolve files to inspect:
