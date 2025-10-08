@@ -37,24 +37,35 @@
 | **Checking project status** | IMPLEMENTATION_TASKS | Status section |
 | **Understanding architecture** | DEVELOPMENT_RULES | Architecture section |
 
-## 🚀 TDD Workflow Commands
+## 🚀 Streamlined Commands (85% Smaller!)
 
-**→ See [WORKFLOW_GUIDE.md](docs/WORKFLOW_GUIDE.md) for complete workflow examples and best practices**
+**→ See [WORKFLOW_GUIDE.md](docs/WORKFLOW_GUIDE.md) for complete workflow examples**
 
-| Command | Purpose | When to Use |
-|---------|---------|-------------|
-| `/docs-sync` | Synchronize all documentation | After major changes, before releases |
-| `/plan` | Plan task with TDD methodology | Before implementing any feature/fix |
-| `/implement` | Execute implementation with strict TDD | After planning, writes tests FIRST |
-| `/validate-theory` | Validate algorithm correctness | Before implementing complex algorithms |
-| `/inspect-refactor` | Analyze code quality and identify issues | Regular reviews, before refactoring |
-| `/engineer-prompt` | Transform free text to optimized prompt | Before starting work in new/other sessions |
+### Core Development
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `/tdd` | Complete TDD workflow (plan + implement) | Brief confirmation |
+| `/refactor` | Quick code quality analysis | Actionable issues only |
+| `/check` | Validate correctness | Pass/fail summary |
+| `/sync` | Synchronize documentation | Changed files list |
+
+### Research Workflow
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `/status` | Quick project status check | Current state |
+| `/continue` | Resume from previous session | Pick up where left |
+| `/experiment` | Run and analyze experiments | Results summary |
+
+### Utility
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `/engineer_prompt` | Transform text to prompt | Structured prompt |
 
 **Common Patterns**:
-- **Simple Task**: `/plan` → `/implement` → `/docs-sync`
-- **Algorithm**: `/validate-theory` → `/plan` → `/implement` → `/docs-sync`
-- **Refactoring**: `/inspect-refactor` → `/plan` → `/implement` → `/docs-sync`
-- **From Task List**: `/plan "Phase X"` → `/implement "Phase X"` → `/docs-sync`
+- **New Task**: `/status` → `/tdd "task"` → `/sync`
+- **Resume Work**: `/continue` → `/sync`
+- **Code Review**: `/refactor "files"` → `/tdd "fix issues"`
+- **Run Tests**: `/experiment "config"` → `/status`
 
 ## 📂 Component Status & File Locations
 
