@@ -65,8 +65,8 @@ class ExpressionConverter:
 
             return f"{fluent.name}({','.join(param_strs)})"
         else:
-            # Propositional fluent
-            return fluent.name
+            # Propositional fluent (no parameters)
+            return f"{fluent.name}()"
 
     @staticmethod
     def to_grounded_string(expr: FNode,

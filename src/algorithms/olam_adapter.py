@@ -78,7 +78,7 @@ class OLAMAdapter(BaseActionModelLearner):
         if pddl_handler is None:
             logger.debug("Creating new PDDLHandler with injective bindings requirement")
             from src.core.pddl_handler import PDDLHandler
-            self.pddl_handler = PDDLHandler(require_injective_bindings=True)
+            self.pddl_handler = PDDLHandler()
             self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
         else:
             logger.debug("Using provided PDDLHandler instance")

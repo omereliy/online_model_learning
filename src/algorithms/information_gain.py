@@ -35,6 +35,12 @@ class InformationGainLearner(BaseActionModelLearner):
     FLOAT_COMPARISON_EPSILON = 1e-6  # Tolerance for float comparisons
     DEFAULT_MAX_ITERATIONS = 1000
 
+    # Convergence detection parameters
+    MODEL_STABILITY_WINDOW = 10  # Number of iterations to check for model stability
+    INFO_GAIN_EPSILON = 0.01  # Threshold for low information gain
+    SUCCESS_RATE_THRESHOLD = 0.95  # 95% success rate threshold
+    SUCCESS_RATE_WINDOW = 20  # Window size for success rate calculation
+
     def __init__(self,
                  domain_file: str,
                  problem_file: str,
@@ -101,6 +107,11 @@ class InformationGainLearner(BaseActionModelLearner):
         self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
         self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
         self.temperature = kwargs.get('temperature', 1.0)  # For Boltzmann
+
+        # Convergence tracking
+        self._model_snapshot_history: List[Dict[str, Set[str]]] = []  # History of pre(a) snapshots
+        self._success_history: List[bool] = []  # History of action successes/failures
+        self._last_max_gain: float = float('inf')  # Track maximum information gain
 
         # Initialize action models
         logger.debug("Initializing action models")
@@ -453,6 +464,9 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.warning(f"No grounded actions available at iteration {self.iteration_count}")
             return "no_action", []
 
+        # Track maximum information gain for convergence detection
+        self._last_max_gain = action_gains[0][2] if action_gains else 0.0
+
         # Select action based on strategy
         selected_action, selected_objects = self._select_by_strategy(action_gains)
 
@@ -616,6 +630,9 @@ class InformationGainLearner(BaseActionModelLearner):
             'next_state': next_state
         }
         self.observation_history[action].append(observation)
+
+        # Track success/failure for convergence detection
+        self._success_history.append(success)
 
         logger.debug(f"Total observations for '{action}': {len(self.observation_history[action])}")
 
@@ -960,21 +977,142 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Check if learning has converged.
 
+        Convergence is determined by multiple criteria:
+        1. Max iterations reached (forced convergence)
+        2. Model stability: no precondition changes for MODEL_STABILITY_WINDOW iterations
+        3. Low information gain: max gain < INFO_GAIN_EPSILON
+        4. High success rate: >95% success in last SUCCESS_RATE_WINDOW actions
+
         Returns:
             True if model has converged, False otherwise
         """
-        # Check iteration limit
+        # Check iteration limit (forced convergence)
         if self.iteration_count >= self.max_iterations:
             logger.info(f"Convergence: Reached max iterations ({self.max_iterations})")
             self._converged = True
             return True
 
-        # Future: Add convergence criteria based on model uncertainty
+        # Need minimum observations before checking other criteria
+        if self.iteration_count < self.MODEL_STABILITY_WINDOW:
+            return False
 
-        if self._converged:
-            logger.info("Convergence: Model has converged")
+        # Criterion 1: Model stability check
+        # Check if preconditions (pre(a)) haven't changed for N iterations
+        model_stable = self._check_model_stability()
 
-        return self._converged
+        # Criterion 2: Low information gain check
+        # Check if maximum expected gain is below epsilon threshold
+        low_info_gain = self._check_low_information_gain()
+
+        # Criterion 3: High success rate check
+        # Check if success rate is above threshold in recent window
+        high_success_rate = self._check_high_success_rate()
+
+        # Converge if ANY two criteria are met (not all three required)
+        # This balances between premature convergence and unnecessary iterations
+        criteria_met = sum([model_stable, low_info_gain, high_success_rate])
+
+        if criteria_met >= 2:
+            if not self._converged:
+                logger.info(
+                    f"Convergence: Multiple criteria met "
+                    f"(stable={model_stable}, low_gain={low_info_gain}, high_success={high_success_rate})"
+                )
+            self._converged = True
+            return True
+
+        return False
+
+    def _check_model_stability(self) -> bool:
+        """
+        Check if model has been stable (no precondition changes) for N iterations.
+
+        Returns:
+            True if model is stable, False otherwise
+        """
+        # Take snapshot of current preconditions
+        current_snapshot = {action: pre_set.copy() for action, pre_set in self.pre.items()}
+
+        # Add to history
+        self._model_snapshot_history.append(current_snapshot)
+
+        # Keep only last MODEL_STABILITY_WINDOW snapshots
+        if len(self._model_snapshot_history) > self.MODEL_STABILITY_WINDOW:
+            self._model_snapshot_history.pop(0)
+
+        # Need full window to check stability
+        if len(self._model_snapshot_history) < self.MODEL_STABILITY_WINDOW:
+            return False
+
+        # Check if all snapshots in window are identical
+        first_snapshot = self._model_snapshot_history[0]
+        stable = all(
+            snapshot == first_snapshot
+            for snapshot in self._model_snapshot_history[1:]
+        )
+
+        if stable:
+            logger.debug(
+                f"Model stability: STABLE (no changes for {self.MODEL_STABILITY_WINDOW} iterations)"
+            )
+        else:
+            logger.debug("Model stability: UNSTABLE (recent changes detected)")
+
+        return stable
+
+    def _check_low_information_gain(self) -> bool:
+        """
+        Check if maximum expected information gain is below epsilon threshold.
+
+        Returns:
+            True if information gain is low, False otherwise
+        """
+        # If no observations yet, gain is high
+        if self.observation_count == 0:
+            return False
+
+        # Maximum gain is tracked during action selection
+        # Check if it's below threshold
+        low_gain = self._last_max_gain < self.INFO_GAIN_EPSILON
+
+        if low_gain:
+            logger.debug(
+                f"Information gain: LOW (max_gain={self._last_max_gain:.4f} < ε={self.INFO_GAIN_EPSILON})"
+            )
+        else:
+            logger.debug(
+                f"Information gain: HIGH (max_gain={self._last_max_gain:.4f} >= ε={self.INFO_GAIN_EPSILON})"
+            )
+
+        return low_gain
+
+    def _check_high_success_rate(self) -> bool:
+        """
+        Check if success rate in recent window is above threshold.
+
+        Returns:
+            True if success rate is high, False otherwise
+        """
+        # Need minimum history
+        if len(self._success_history) < self.SUCCESS_RATE_WINDOW:
+            return False
+
+        # Calculate success rate over recent window
+        recent_successes = self._success_history[-self.SUCCESS_RATE_WINDOW:]
+        success_rate = sum(recent_successes) / len(recent_successes)
+
+        high_rate = success_rate >= self.SUCCESS_RATE_THRESHOLD
+
+        if high_rate:
+            logger.debug(
+                f"Success rate: HIGH ({success_rate:.2%} >= {self.SUCCESS_RATE_THRESHOLD:.0%})"
+            )
+        else:
+            logger.debug(
+                f"Success rate: LOW ({success_rate:.2%} < {self.SUCCESS_RATE_THRESHOLD:.0%})"
+            )
+
+        return high_rate
 
     def reset(self) -> None:
         """Reset the learner to initial state."""
@@ -994,6 +1132,11 @@ class InformationGainLearner(BaseActionModelLearner):
         self.eff_maybe_del.clear()
         self.observation_history.clear()
         self.cnf_managers.clear()
+
+        # Clear convergence tracking
+        self._model_snapshot_history.clear()
+        self._success_history.clear()
+        self._last_max_gain = float('inf')
 
         logger.debug(f"Cleared {num_actions} action models and {num_observations} observations")
 
