@@ -1,8 +1,8 @@
 # Experiment configuration for Gripper domain
 experiment:
   name: "gripper_learning"
-  domain: "benchmarks/gripper/domain.pddl"
-  problem: "benchmarks/gripper/p01.pddl"
+  domain: "benchmarks/olam-compatible/gripper/domain.pddl"
+  problem: "benchmarks/olam-compatible/gripper/p01.pddl"
   algorithms:
     - olam
   metrics:

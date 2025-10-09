@@ -15,8 +15,7 @@
 | **Project Status** | [IMPLEMENTATION_TASKS.md](docs/IMPLEMENTATION_TASKS.md) | Current progress, todos |
 | **Commands & Patterns** | [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md) | All commands, code snippets |
 | **Experiment Planning** | [experiment_readiness_assessment.md](docs/validation/experiment_readiness_assessment.md) | Paper-ready experiment gaps |
-| **UP Expression Trees** | [UNIFIED_PLANNING_GUIDE.md](docs/UNIFIED_PLANNING_GUIDE.md) | FNode traversal patterns |
-| **Lifted Support** | [LIFTED_SUPPORT.md](docs/LIFTED_SUPPORT.md) | Parameterized actions/fluents |
+| **Lifted Support** | [LIFTED_SUPPORT.md](docs/LIFTED_SUPPORT.md) | Parameterized actions/fluents, grounding |
 | **CNF/SAT** | [CNF_SAT_INTEGRATION.md](docs/information_gain_algorithm/CNF_SAT_INTEGRATION.md) | PySAT integration |
 | **Info Gain Algorithm** | [INFORMATION_GAIN_ALGORITHM.md](docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md) | CNF-based learning |
 | **OLAM Interface** | [OLAM_interface.md](docs/external_repos/OLAM_interface.md) | OLAM adapter guide |
@@ -28,7 +27,7 @@
 | If You're... | Read This | Location |
 |--------------|-----------|----------|
 | **Starting a new task** | WORKFLOW_GUIDE | Use `/plan` then `/implement` |
-| **Working on PDDL parsing** | UNIFIED_PLANNING_GUIDE | `src/core/pddl_handler.py` |
+| **Working on PDDL/domain representation** | LIFTED_SUPPORT | `src/core/lifted_domain.py`, `src/core/grounding.py` |
 | **Implementing CNF formulas** | CNF_SAT_INTEGRATION | `src/core/cnf_manager.py` |
 | **Adding algorithm adapters** | integration_guide | `src/algorithms/` |
 | **Running experiments** | IMPLEMENTATION_TASKS | `configs/` |

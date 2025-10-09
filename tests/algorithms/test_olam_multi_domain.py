@@ -1,7 +1,6 @@
 """
 Test OLAM adapter with multiple domains to ensure it's not hardcoded for blocksworld.
 """
-from src.core.pddl_handler import PDDLHandler
 from src.algorithms.olam_adapter import OLAMAdapter
 import pytest
 from pathlib import Path
@@ -49,18 +48,10 @@ class TestOLAMMultiDomain:
         """Test that OLAM correctly grounds blocksworld actions."""
         domain_info = domain_paths['blocksworld']
 
-        # Initialize PDDLHandler
-        pddl_handler = PDDLHandler()
-        pddl_handler.parse_domain_and_problem(
-            str(domain_info['domain']),
-            str(domain_info['problem'])
-        )
-
-        # Initialize OLAM with PDDLHandler
+        # Initialize OLAM
         adapter = OLAMAdapter(
             str(domain_info['domain']),
-            str(domain_info['problem']),
-            pddl_handler=pddl_handler
+            str(domain_info['problem'])
         )
 
         # Get grounded actions
@@ -88,18 +79,10 @@ class TestOLAMMultiDomain:
         """Test that OLAM correctly grounds gripper domain actions."""
         domain_info = domain_paths['gripper']
 
-        # Initialize PDDLHandler
-        pddl_handler = PDDLHandler()
-        pddl_handler.parse_domain_and_problem(
-            str(domain_info['domain']),
-            str(domain_info['problem'])
-        )
-
-        # Initialize OLAM with PDDLHandler
+        # Initialize OLAM
         adapter = OLAMAdapter(
             str(domain_info['domain']),
-            str(domain_info['problem']),
-            pddl_handler=pddl_handler
+            str(domain_info['problem'])
         )
 
         # Get grounded actions
@@ -126,18 +109,10 @@ class TestOLAMMultiDomain:
         if not domain_info['domain'].exists():
             pytest.skip("Rover domain not found")
 
-        # Initialize PDDLHandler
-        pddl_handler = PDDLHandler()
-        pddl_handler.parse_domain_and_problem(
-            str(domain_info['domain']),
-            str(domain_info['problem'])
-        )
-
-        # Initialize OLAM with PDDLHandler
+        # Initialize OLAM
         adapter = OLAMAdapter(
             str(domain_info['domain']),
-            str(domain_info['problem']),
-            pddl_handler=pddl_handler
+            str(domain_info['problem'])
         )
 
         # Get grounded actions
@@ -162,18 +137,10 @@ class TestOLAMMultiDomain:
         if not domain_info['domain'].exists():
             pytest.skip("Logistics domain not found")
 
-        # Initialize PDDLHandler
-        pddl_handler = PDDLHandler()
-        pddl_handler.parse_domain_and_problem(
-            str(domain_info['domain']),
-            str(domain_info['problem'])
-        )
-
-        # Initialize OLAM with PDDLHandler
+        # Initialize OLAM
         adapter = OLAMAdapter(
             str(domain_info['domain']),
-            str(domain_info['problem']),
-            pddl_handler=pddl_handler
+            str(domain_info['problem'])
         )
 
         # Get grounded actions
@@ -196,18 +163,10 @@ class TestOLAMMultiDomain:
             if not domain_info['domain'].exists():
                 continue
 
-            # Initialize PDDLHandler
-            pddl_handler = PDDLHandler()
-            pddl_handler.parse_domain_and_problem(
-                str(domain_info['domain']),
-                str(domain_info['problem'])
-            )
-
-            # Initialize OLAM with PDDLHandler
+            # Initialize OLAM
             adapter = OLAMAdapter(
                 str(domain_info['domain']),
-                str(domain_info['problem']),
-                pddl_handler=pddl_handler
+                str(domain_info['problem'])
             )
 
             # Get grounded actions

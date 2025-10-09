@@ -9,7 +9,7 @@ Building experiment framework to compare three online action model learning algo
 ## Quick Start
 **See [CLAUDE.md](../CLAUDE.md) for navigation and [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for project rules.**
 
-## Current Status (Updated: October 8, 2025)
+## Current Status (Updated: October 9, 2025)
 
 ### 🎯 Major Refactoring Complete - Clean Layered Architecture ✅
 **Date**: October 8, 2025
@@ -124,9 +124,38 @@ Building experiment framework to compare three online action model learning algo
 - `src/algorithms/optimistic_adapter.py` - Adapter implementation
 - See [ModelLearner_interface.md](external_repos/ModelLearner_interface.md)
 
-## Recent Updates (October 8, 2025)
+## Recent Updates (October 9, 2025)
 
-### Architecture Refactoring - Layered Architecture
+### Documentation Update - New Architecture (October 9, 2025)
+**Context**: Updated all documentation to reflect the new layered architecture after major refactoring.
+
+**Changes**:
+1. **Archived**: `UNIFIED_PLANNING_GUIDE.md` → `archive/UNIFIED_PLANNING_GUIDE_OLD_ARCHITECTURE.md`
+   - Extensive PDDLHandler references (deleted class)
+   - FluentBinder references (deleted module)
+   - Retained as historical reference
+
+2. **Rewritten**: `LIFTED_SUPPORT.md` (433 lines)
+   - Now focuses on new architecture: `LiftedDomainKnowledge`, `grounding.py`, `UPAdapter`
+   - Removed all PDDLHandler/FluentBinder references
+   - Added complete examples for new API
+   - Migration guide from old to new architecture
+
+3. **Updated**: `integration_guide.md`
+   - Updated OLAM adapter example to use new architecture
+   - Updated all challenge/solution examples
+   - Marked ModelLearner as conceptual (repository unavailable)
+
+4. **Updated**: `CLAUDE.md`
+   - Removed UNIFIED_PLANNING_GUIDE reference
+   - Updated navigation to point to LIFTED_SUPPORT for PDDL/domain work
+
+**Benefits**:
+- All documentation now accurate for new architecture
+- Clear migration paths from old code
+- No confusing references to deleted components
+
+### Architecture Refactoring - Layered Architecture (October 8, 2025)
 **Objective**: Replace monolithic PDDLHandler/PDDLEnvironment with clean, focused components.
 
 **Problem**:

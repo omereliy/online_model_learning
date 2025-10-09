@@ -3,7 +3,8 @@ Test suite for multi-domain support in the online model learning framework.
 Tests various PDDL domains to ensure the framework works beyond blocksworld.
 """
 from src.experiments.metrics import MetricsCollector
-from src.core.pddl_handler import PDDLHandler
+from src.core.pddl_io import parse_pddl
+from src.core import grounding
 import pytest
 from pathlib import Path
 import sys
@@ -69,12 +70,10 @@ class TestMultiDomainSupport:
         assert problem_file.exists(), f"Problem file missing: {problem_file}"
 
         # Parse the domain
-        handler = PDDLHandler()
-        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+        domain, initial_state = parse_pddl(str(domain_file), str(problem_file))
 
         # Check actions can be parsed
-        lifted_actions = handler.problem.actions if handler.problem else []
-        action_names = [a.name for a in lifted_actions]
+        action_names = list(domain.actions.keys())
         for action in expected_actions:
             assert action in action_names, f"Missing action {action} in {domain_name}"
 
@@ -88,19 +87,17 @@ class TestMultiDomainSupport:
         domain_file = benchmarks_path / compatibility / domain_name / "domain.pddl"
         problem_file = benchmarks_path / compatibility / domain_name / "p01.pddl"
 
-        handler = PDDLHandler()
-        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+        domain, initial_state = parse_pddl(str(domain_file), str(problem_file))
 
         # Get grounded actions
-        grounded_actions = handler.get_grounded_actions()
+        grounded_actions = grounding.ground_all_actions(domain, require_injective=False)
         assert len(grounded_actions) > 0, f"No grounded actions for {domain_name}"
 
         # Get initial state
-        initial_state = handler.get_initial_state()
         assert len(initial_state) > 0, f"Empty initial state for {domain_name}"
 
         # Get goal
-        goal = handler.get_goal()
+        goal = domain.goal
         assert goal is not None, f"No goal for {domain_name}"
 
     @pytest.mark.parametrize("domain_name,min_actions", [
@@ -112,13 +109,19 @@ class TestMultiDomainSupport:
     ])
     def test_domain_complexity(self, benchmarks_path, domain_name, min_actions):
         """Test that domains have reasonable complexity."""
-        domain_file = benchmarks_path / domain_name / "domain.pddl"
-        problem_file = benchmarks_path / domain_name / "p01.pddl"
+        # This test needs to check for domain files in either location
+        # Try olam-compatible first, then olam-incompatible
+        for compat in ["olam-compatible", "olam-incompatible"]:
+            domain_file = benchmarks_path / compat / domain_name / "domain.pddl"
+            problem_file = benchmarks_path / compat / domain_name / "p01.pddl"
+            if domain_file.exists():
+                break
+        else:
+            pytest.skip(f"Domain {domain_name} not found")
 
-        handler = PDDLHandler()
-        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+        domain, _ = parse_pddl(str(domain_file), str(problem_file))
 
-        grounded_actions = handler.get_grounded_actions()
+        grounded_actions = grounding.ground_all_actions(domain, require_injective=False)
         assert len(grounded_actions) >= min_actions, \
             f"{domain_name} has only {len(grounded_actions)} actions, expected at least {min_actions}"
 
@@ -189,57 +192,52 @@ class TestDomainSpecificFeatures:
 
     def test_gripper_two_grippers(self):
         """Test that gripper domain correctly handles two grippers."""
-        handler = PDDLHandler()
-        domain_file = Path(__file__).parent.parent / "benchmarks/gripper/domain.pddl"
-        problem_file = Path(__file__).parent.parent / "benchmarks/gripper/p01.pddl"
+        # Try olam-compatible location
+        domain_file = Path(__file__).parent.parent / "benchmarks/olam-compatible/gripper/domain.pddl"
+        problem_file = Path(__file__).parent.parent / "benchmarks/olam-compatible/gripper/p01.pddl"
 
-        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+        domain, _ = parse_pddl(str(domain_file), str(problem_file))
 
         # Check that gripper type is defined
-        if handler.problem:
-            gripper_objects = [o.name for o in handler.problem.objects
-                               if str(o.type).lower() == 'gripper']
-            assert len(gripper_objects) == 2, "Should have exactly 2 grippers"
-            assert 'left' in gripper_objects
-            assert 'right' in gripper_objects
+        gripper_objects = [name for name, obj_type in domain.objects.items()
+                           if obj_type.lower() == 'gripper']
+        assert len(gripper_objects) == 2, "Should have exactly 2 grippers"
+        assert 'left' in gripper_objects
+        assert 'right' in gripper_objects
 
     def test_logistics_vehicles(self):
         """Test that logistics domain has both trucks and airplanes."""
-        handler = PDDLHandler()
-        domain_file = Path(__file__).parent.parent / "benchmarks/logistics/domain.pddl"
-        problem_file = Path(__file__).parent.parent / "benchmarks/logistics/p01.pddl"
+        domain_file = Path(__file__).parent.parent / "benchmarks/olam-compatible/logistics/domain.pddl"
+        problem_file = Path(__file__).parent.parent / "benchmarks/olam-compatible/logistics/p01.pddl"
 
-        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+        domain, _ = parse_pddl(str(domain_file), str(problem_file))
 
         # Check vehicle types in problem
-        if handler.problem:
-            trucks = [o.name for o in handler.problem.objects
-                      if str(o.type).lower() == 'truck']
-            airplanes = [o.name for o in handler.problem.objects
-                         if str(o.type).lower() == 'airplane']
+        trucks = [name for name, obj_type in domain.objects.items()
+                  if obj_type.lower() == 'truck']
+        airplanes = [name for name, obj_type in domain.objects.items()
+                     if obj_type.lower() == 'airplane']
 
-            assert len(trucks) > 0, "Should have at least one truck"
-            assert len(airplanes) > 0, "Should have at least one airplane"
+        assert len(trucks) > 0, "Should have at least one truck"
+        assert len(airplanes) > 0, "Should have at least one airplane"
 
     def test_rover_specialized_equipment(self):
         """Test that rover domain has specialized equipment predicates."""
-        handler = PDDLHandler()
-        domain_file = Path(__file__).parent.parent / "benchmarks/rover/domain.pddl"
-        problem_file = Path(__file__).parent.parent / "benchmarks/rover/p01.pddl"
+        domain_file = Path(__file__).parent.parent / "benchmarks/olam-incompatible/rover/domain.pddl"
+        problem_file = Path(__file__).parent.parent / "benchmarks/olam-incompatible/rover/p01.pddl"
 
-        handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+        domain, _ = parse_pddl(str(domain_file), str(problem_file))
 
         # Check for equipment fluents in domain
-        if handler.problem and handler.problem.fluents:
-            fluent_names = [f.name for f in handler.problem.fluents]
+        fluent_names = list(domain.predicates.keys())
 
-            # Check for equipment predicates
-            equipment_preds = ["equipped_for_soil_analysis",
-                               "equipped_for_rock_analysis",
-                               "equipped_for_imaging"]
+        # Check for equipment predicates
+        equipment_preds = ["equipped_for_soil_analysis",
+                           "equipped_for_rock_analysis",
+                           "equipped_for_imaging"]
 
-            for equip in equipment_preds:
-                assert equip in fluent_names, f"Missing equipment predicate: {equip}"
+        for equip in equipment_preds:
+            assert equip in fluent_names, f"Missing equipment predicate: {equip}"
 
 
 if __name__ == "__main__":

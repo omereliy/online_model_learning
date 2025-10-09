@@ -96,4 +96,6 @@ Output: Profiling results, optimization approach, implementation
 Alternative: /tdd "optimize Information Gain action selection performance"
 ```
 
-Keep transformations practical and concise.
+important!:
+- Keep transformations practical and concise.
+- do not execute the instruction in the output prompt without the user approval.

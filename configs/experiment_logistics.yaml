@@ -1,8 +1,8 @@
 # Experiment configuration for Logistics domain
 experiment:
   name: "logistics_learning"
-  domain: "benchmarks/logistics/domain.pddl"
-  problem: "benchmarks/logistics/p01.pddl"
+  domain: "benchmarks/olam-compatible/logistics/domain.pddl"
+  problem: "benchmarks/olam-compatible/logistics/p01.pddl"
   algorithms:
     - olam
   metrics:

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Set
 
 from src.algorithms.olam_adapter import OLAMAdapter
-from src.environments.pddl_environment import PDDLEnvironment
+from src.environments.active_environment import ActiveEnvironment
 from src.core.domain_analyzer import DomainAnalyzer
 
 
@@ -37,7 +37,7 @@ class TestOLAMLearningBehavior:
         )
 
         # Create environment separately for testing
-        env = PDDLEnvironment(domain, problem)
+        env = ActiveEnvironment(domain, problem)
 
         return olam, env
 

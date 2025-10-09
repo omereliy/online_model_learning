@@ -1,297 +1,432 @@
 # Lifted Fluent and Action Support
 
 ## Overview
-The framework provides comprehensive support for both lifted (parameterized) and grounded representations of fluents and actions, enabling efficient representation and reasoning about action models at different levels of abstraction.
 
-## Type-Safe Representations
+The framework provides comprehensive support for both lifted (parameterized) and grounded representations of fluents and actions using a clean layered architecture.
 
-The codebase uses type-safe classes from `src/core/pddl_types.py` for all PDDL representations:
-
-```python
-from src.core.pddl_types import (
-    ParameterBoundLiteral,    # Lifted literals using action's parameter names
-    GroundedFluent,           # Fully instantiated fluents
-    GroundedAction,           # Grounded actions (replaces tuples)
-    ParameterBinding          # Type-safe parameter bindings
-)
-from unified_planning.model import Action as LiftedAction  # Type alias
-
-# Parameter-bound literal (uses action's specific parameter names)
-lit = ParameterBoundLiteral('clear', ['?x'])
-lit.to_string()  # "clear(?x)"
-
-# Grounded fluent
-fluent = GroundedFluent('clear', ['a'])
-fluent.to_string()  # "clear_a"
-
-# Grounded action (type-safe wrapper)
-action = GroundedAction(pickup_action, ParameterBinding({'x': obj_a}))
-action.to_string()  # "pick-up_a"
-action.object_names()  # ['a']
-
-# Lifted action (use UP's Action directly, LiftedAction is just type alias)
-lifted_action: LiftedAction = pickup_action
-```
-
-**Key Points**:
-- `ParameterBoundLiteral` preserves action's specific parameter names (e.g., `?x` from `pick-up(?x)`)
-- `GroundedAction` replaces `Tuple[Action, Dict[str, Object]]` for type safety
-- `LiftedAction` is a type alias for `unified_planning.model.Action` (no wrapper needed)
+**Architecture layers**:
+1. **UP Layer**: Unified Planning types (FNode, Action, Problem)
+2. **Domain Layer**: `LiftedDomainKnowledge` (central representation)
+3. **Grounding Layer**: Functional operations in `grounding.py`
+4. **Environment Layer**: `ActiveEnvironment` (execution only)
 
 ## Core Components
 
-### CNF Manager (`src/core/cnf_manager.py`)
-Enhanced to handle lifted fluents with variables and their grounded instances.
+### 1. LiftedDomainKnowledge (`src/core/lifted_domain.py`)
+
+Central domain representation supporting both complete and partial knowledge.
+
+#### Data Structures
+
+```python
+from src.core.lifted_domain import (
+    LiftedDomainKnowledge,  # Main domain representation
+    LiftedAction,           # Action schema with parameters
+    PredicateSignature,     # Predicate structure
+    Parameter,              # Parameter with type
+    ObjectInfo,             # Object with type
+    TypeInfo                # Type with hierarchy
+)
+
+# Create or load domain
+domain = LiftedDomainKnowledge('blocksworld')
+
+# Query actions
+action = domain.get_action('stack')  # LiftedAction
+print(action.name)          # 'stack'
+print(action.parameters)    # [Parameter('?x', 'block'), Parameter('?y', 'block')]
+print(action.preconditions) # {'holding(?x)', 'clear(?y)'}
+print(action.add_effects)   # {'on(?x,?y)', ...}
+```
 
 #### Key Features
-- **Lifted Fluent Registration**: Track predicates with parameter types
-- **Variable Mapping**: Bidirectional mapping between lifted and grounded forms
-- **Clause Instantiation**: Ground lifted clauses with object bindings
-- **Unified CNF Representation**: Mix lifted and grounded clauses in same formula
 
-#### API Reference
-
-##### Adding Lifted Fluents
+**Type-Safe Representations**:
 ```python
-# Register a lifted predicate
-cnf.add_lifted_fluent("on", ["?x", "?y"])  # Returns variable ID
+# Parameter-bound literals (uses action's parameter names)
+action = domain.get_action('stack')
+preconds = action.preconditions  # Set[str]
+# → {'holding(?x)', 'clear(?y)'}
 
-# Alternative: Direct string format
-cnf.add_fluent("on(?x,?y)", is_lifted=True)
+# Partial knowledge support for learning
+action.uncertain_preconditions = {'holding(?x)', 'clear(?y)'}  # Not yet certain
+action.maybe_add_effects = {'on(?x,?y)'}  # Might be an effect
 ```
 
-##### Grounding Lifted Fluents
+**Type Hierarchy Operations**:
 ```python
-# Create grounded instance
-cnf.ground_lifted_fluent("on", ["a", "b"])  # Creates "on_a_b"
+# Check subtype relationships
+domain.is_subtype('block', 'object')  # True
 
-# Get all groundings of a predicate
-groundings = cnf.get_lifted_groundings("on")
-# Returns: {'on_a_b', 'on_b_c', ...}
+# Get type ancestors
+ancestors = domain.get_type_ancestors('block')  # ['object']
+
+# Get objects of type (including subtypes)
+blocks = domain.get_objects_of_type('block', include_subtypes=True)
 ```
 
-##### Working with Lifted Clauses
+**Parameter-Bound Literals (La)**:
 ```python
-# Add lifted clause
-lifted_clause = ["on(?x,?y)", "-clear(?y)"]
-cnf.add_clause(lifted_clause, lifted=True)
+# Get all possible parameter-bound literals for an action
+La = domain.get_parameter_bound_literals('stack')
+# → {'on(?x,?y)', '¬on(?x,?y)', 'clear(?x)', '¬clear(?x)',
+#    'holding(?x)', '¬holding(?x)', ...}
 
-# Instantiate with bindings
-bindings = {"?x": "block1", "?y": "block2"}
-grounded = cnf.instantiate_lifted_clause(lifted_clause, bindings)
-# Result: ['on_block1_block2', '-clear_block2']
+# Used by Information Gain algorithm for hypothesis space
 ```
 
-### PDDL Handler (`src/core/pddl_handler.py`)
-Extended to work with lifted actions and predicates from PDDL domains.
+### 2. Grounding Utilities (`src/core/grounding.py`)
 
-#### Key Features
-- **Lifted Action Storage**: Maintain action schemas with parameters
-- **Predicate Structure Tracking**: Store predicate signatures
-- **Flexible Precondition/Effect Access**: Return lifted or grounded forms
-- **CNF Extraction**: Convert action preconditions to CNF clauses
+Functional operations for converting between lifted and grounded representations.
 
-#### API Reference
+#### Grounding Actions
 
-##### Accessing Lifted Actions
 ```python
-# Get lifted action
-action = handler.get_lifted_action("pick-up")
+from src.core.grounding import (
+    ground_action,           # Single action grounding
+    ground_all_actions,      # Batch grounding
+    GroundedAction          # Result type
+)
 
-# Get action preconditions (lifted form)
-preconds = handler.get_action_preconditions("pick-up", lifted=True)
-# Returns: {'clear(?x)', 'ontable(?x)', 'handempty'}
+# Ground single action
+lifted = domain.get_action('stack')
+grounded = ground_action(lifted, ['a', 'b'])
 
-# Get action effects (lifted form)
-add_eff, del_eff = handler.get_action_effects("pick-up", lifted=True)
-# add_eff: {'holding(?x)'}
-# del_eff: {'clear(?x)', 'ontable(?x)', 'handempty'}
+print(grounded.action_name)            # 'stack'
+print(grounded.objects)                # ['a', 'b']
+print(grounded.to_string())            # 'stack_a_b'
+print(grounded.grounded_preconditions) # {'holding_a', 'clear_b'}
+print(grounded.grounded_add_effects)   # {'on_a_b', ...}
+
+# Ground all actions in domain
+all_grounded = ground_all_actions(domain, require_injective=True)
+# require_injective=True: skip stack(a,a) - same object twice
+# → [GroundedAction('pick-up', ['a']), GroundedAction('stack', ['a','b']), ...]
 ```
 
-##### Working with Predicates
+#### Grounding/Lifting Literals (bindP and bindP⁻¹)
+
 ```python
-# Get predicate structure
-structure = handler.get_lifted_predicate_structure("on")
-# Returns: ("on", ["?x", "?y"])
+from src.core.grounding import (
+    ground_parameter_bound_literal,  # bindP⁻¹: lifted → grounded
+    lift_grounded_fluent,           # bindP: grounded → lifted
+    ground_literal_set,             # Batch bindP⁻¹
+    lift_fluent_set                 # Batch bindP
+)
 
-# Create lifted representations
-fluent_str = handler.create_lifted_fluent_string("on", ["?x", "?y"])
-# Returns: "on(?x,?y)"
+# bindP⁻¹: Ground parameter-bound literals
+grounded = ground_parameter_bound_literal('on(?x,?y)', ['a', 'b'])
+# → 'on_a_b'
 
-action_str = handler.create_lifted_action_string("pick-up", ["?x"])
-# Returns: "pick-up(?x)"
+grounded_neg = ground_parameter_bound_literal('¬clear(?x)', ['a'])
+# → '¬clear_a'
+
+grounded_prop = ground_parameter_bound_literal('handempty', [])
+# → 'handempty' (no change for propositional)
+
+# bindP: Lift grounded fluents
+lifted = lift_grounded_fluent('on_a_b', ['a', 'b'], domain)
+# → 'on(?x,?y)'
+
+# Batch operations
+literals = {'on(?x,?y)', '¬clear(?x)', 'handempty'}
+grounded_set = ground_literal_set(literals, ['a', 'b'])
+# → {'on_a_b', '¬clear_a', 'handempty'}
+
+fluents = {'on_a_b', '¬clear_a', 'handempty'}
+lifted_set = lift_fluent_set(fluents, ['a', 'b'], domain)
+# → {'on(?x,?y)', '¬clear(?x)', 'handempty'}
+
+# Inverse property: bindP(bindP⁻¹(F, O), O) = F
+assert lift_fluent_set(ground_literal_set(literals, ['a', 'b']), ['a', 'b'], domain) == literals
 ```
 
-##### Grounding and Lifting Operations
+#### Parsing Grounded Actions
+
 ```python
-from src.core.binding_operations import FluentBinder
+from src.core.grounding import parse_grounded_action_string
 
-# Initialize binder
-binder = FluentBinder(handler)
+# Parse from string
+grounded = parse_grounded_action_string('stack_a_b', domain)
+# → GroundedAction(action_name='stack', objects=['a', 'b'], ...)
 
-# bindP⁻¹: Ground parameter-bound literals with objects
-grounded = binder.ground_literals({'clear(?x)', 'on(?x,?y)'}, ['a', 'b'])
-# Returns: {'clear_a', 'on_a_b'}
-
-# bindP: Lift grounded fluents to parameter-bound form
-lifted = binder.lift_fluents({'clear_a', 'on_a_b'}, ['a', 'b'])
-# Returns: {'clear(?x)', 'on(?x,?y)'}
-
-# These operations are inverse:
-# bindP(bindP⁻¹(F, O), O) = F
-# bindP⁻¹(bindP(f, O), O) = f
+# Validation
+from src.core.grounding import validate_grounded_action
+is_valid = validate_grounded_action(grounded, domain)  # True
 ```
 
-##### CNF Extraction
+### 3. UPAdapter (`src/core/up_adapter.py`)
+
+Stateless bidirectional converter between UP types and project types.
+
 ```python
-# Extract preconditions as CNF clauses
-cnf_clauses = handler.extract_lifted_preconditions_cnf("pick-up")
-# Returns: [['clear(?x)'], ['ontable(?x)'], ['handempty']]
+from src.core.up_adapter import UPAdapter
+from src.core.pddl_io import PDDLReader
+
+# Parse PDDL
+problem = PDDLReader.parse_domain_and_problem(domain_file, problem_file)
+
+# Convert UP state to fluent set
+fluents = UPAdapter.up_state_to_fluent_set(problem.initial_values, problem)
+# → {'clear_a', 'on_b_c', 'handempty'}
+
+# Convert fluent set to UP state
+state_dict = UPAdapter.fluent_set_to_up_state(fluents, problem)
+
+# Get all grounded fluents
+all_fluents = UPAdapter.get_all_grounded_fluents(problem)
+# → ['clear_a', 'clear_b', 'on_a_b', 'on_b_a', ...]
+
+# Get initial state directly
+initial = UPAdapter.get_initial_state_as_fluent_set(problem)
+```
+
+### 4. PDDL I/O (`src/core/pddl_io.py`)
+
+Read and write PDDL using UP + domain knowledge.
+
+```python
+from src.core.pddl_io import PDDLReader, parse_pddl
+from src.core.lifted_domain import LiftedDomainKnowledge
+from src.core.up_adapter import UPAdapter
+
+# Convenience function
+up_problem, initial_state = parse_pddl(domain_file, problem_file)
+# → (UP Problem, Set[str] of initial fluents)
+
+# Manual construction
+reader = PDDLReader()
+up_problem = reader.parse_domain_and_problem(domain_file, problem_file)
+
+# Convert to domain knowledge
+domain = LiftedDomainKnowledge.from_up_problem(up_problem, UPAdapter)
+
+# Now use domain for learning/grounding
+action = domain.get_action('stack')
+grounded_actions = ground_all_actions(domain)
 ```
 
 ## Integration Examples
 
-### Example 1: Learning Lifted Action Models
+### Example 1: Complete Learning Pipeline
+
 ```python
-from src.core.cnf_manager import CNFManager
-from src.core.pddl_handler import PDDLHandler
+from src.core.pddl_io import parse_pddl
+from src.core.lifted_domain import LiftedDomainKnowledge
+from src.core.up_adapter import UPAdapter
+from src.core.grounding import ground_all_actions, ground_action
+from src.environments.active_environment import ActiveEnvironment
 
-# Initialize components
-cnf = CNFManager()
-handler = PDDLHandler()
-handler.parse_domain_and_problem(domain_file, problem_file)
+# 1. Load domain
+up_problem, initial_state = parse_pddl(domain_file, problem_file)
+domain = LiftedDomainKnowledge.from_up_problem(up_problem, UPAdapter)
 
-# Track uncertainty for lifted action
-action_name = "stack"
-action = handler.get_lifted_action(action_name)
+# 2. Create environment
+env = ActiveEnvironment.from_pddl(domain_file, problem_file)
 
-# Create CNF for precondition uncertainty
-for pred_name in ["clear", "holding"]:
-    structure = handler.get_lifted_predicate_structure(pred_name)
-    if structure:
-        cnf.add_lifted_fluent(pred_name, structure[1])
+# 3. Initialize learner with partial knowledge
+learned_domain = LiftedDomainKnowledge(domain.name)
+for action_name, action in domain.lifted_actions.items():
+    # Start with optimistic initialization (all preconditions possible)
+    learned_action = LiftedAction(
+        name=action.name,
+        parameters=action.parameters,
+        preconditions=set(),  # Start with no known preconditions
+        uncertain_preconditions=domain.get_parameter_bound_literals(action_name),
+        add_effects=action.add_effects,
+        del_effects=action.del_effects
+    )
+    learned_domain.lifted_actions[action_name] = learned_action
 
-# Add constraints from observations
-# Success: stack(?x,?y) succeeded with x=a, y=b
-success_clause = ["holding(?x)", "clear(?y)"]
-cnf.add_clause(success_clause, lifted=True)
+# 4. Learning loop
+state = env.get_state()
+for iteration in range(max_iterations):
+    # Select action using learned model
+    action_to_test = select_action_with_info_gain(learned_domain, state)
 
-# Failure: stack(?x,?y) failed with x=c, y=d
-# At least one precondition was false
-failure_bindings = {"?x": "c", "?y": "d"}
-failure_clause = cnf.instantiate_lifted_clause(
-    ["-holding(?x)", "-clear(?y)"],
-    failure_bindings
-)
-cnf.add_clause(failure_clause)
+    # Ground action
+    lifted_action = learned_domain.get_action(action_to_test.name)
+    grounded = ground_action(lifted_action, action_to_test.objects)
+
+    # Execute
+    success, next_state = env.execute(grounded.to_string())
+
+    # Update learned model
+    if success:
+        # Refine preconditions (these were sufficient)
+        update_preconditions(learned_domain, grounded, state)
+    else:
+        # Learn from failure (at least one precondition was false)
+        learn_from_failure(learned_domain, grounded, state)
+
+    state = next_state
 ```
 
 ### Example 2: Information Gain Calculation
+
 ```python
-# Calculate information gain for testing an action
-def calculate_info_gain(cnf, action_name, bindings):
-    # Get current entropy
-    current_entropy = cnf.get_entropy()
+from src.core.lifted_domain import LiftedDomainKnowledge
+from src.core.grounding import ground_literal_set, lift_fluent_set
 
-    # Create copies for success/failure scenarios
-    success_cnf = cnf.copy()
-    failure_cnf = cnf.copy()
+def calculate_information_gain(domain: LiftedDomainKnowledge,
+                               action_name: str,
+                               objects: List[str],
+                               state: Set[str]) -> float:
+    """Calculate expected information gain from testing an action."""
 
-    # Update with potential observations
-    # ... (add appropriate clauses)
+    # Get action's parameter-bound literals (hypothesis space)
+    La = domain.get_parameter_bound_literals(action_name)
 
-    # Calculate expected entropy reduction
-    success_entropy = success_cnf.get_entropy()
-    failure_entropy = failure_cnf.get_entropy()
+    # Ground hypothesis space for this specific binding
+    grounded_La = ground_literal_set(La, objects)
 
-    # Weight by probability
-    success_prob = 0.5  # Estimated from model
-    expected_entropy = (
-        success_prob * success_entropy +
-        (1 - success_prob) * failure_entropy
-    )
+    # Calculate which fluents are true/false in current state
+    true_fluents = grounded_La & state
+    false_fluents = grounded_La - state
+
+    # Estimate probability of success based on learned model
+    action = domain.get_action(action_name)
+    grounded_preconds = ground_literal_set(action.preconditions, objects)
+
+    # Check if all known preconditions are satisfied
+    if grounded_preconds <= state:
+        p_success = 0.8  # High probability
+    else:
+        p_success = 0.2  # Low probability
+
+    # Calculate entropy reduction
+    current_entropy = len(action.uncertain_preconditions) if action.uncertain_preconditions else 0
+    expected_entropy = p_success * calculate_success_entropy(action) + \
+                      (1 - p_success) * calculate_failure_entropy(action)
 
     return current_entropy - expected_entropy
 ```
 
-### Example 3: Mixed Lifted/Grounded Reasoning with Type-Safe Classes
+### Example 3: Model Validation
+
 ```python
-from src.core.cnf_manager import CNFManager
-from src.core.pddl_handler import PDDLHandler
-from src.core.binding_operations import FluentBinder
-from src.core.pddl_types import ParameterBoundLiteral, GroundedFluent
+from src.core.model_validator import ModelValidator
+from src.core.lifted_domain import LiftedDomainKnowledge
 
-# Start with lifted knowledge
-cnf = CNFManager()
-handler = PDDLHandler()
-binder = FluentBinder(handler)
+# Load ground truth and learned model
+ground_truth_domain = LiftedDomainKnowledge.from_up_problem(up_problem, UPAdapter)
+learned_domain = load_learned_model()
 
-cnf.add_lifted_fluent("on", ["?x", "?y"])
-cnf.add_lifted_fluent("clear", ["?x"])
+# Validate learned model
+validator = ModelValidator(domain_file)
 
-# General rule: nothing can be on top of something that's clear
-cnf.add_clause(["on(?x,?y)", "-clear(?y)"], lifted=True)
+for action_name in learned_domain.lifted_actions:
+    learned_action = learned_domain.get_action(action_name)
 
-# Add specific grounded observation
-cnf.add_clause(["clear_a"])  # Block a is clear
-cnf.add_clause(["-on_b_a"])   # Block b is not on a
+    # Convert to format expected by validator
+    learned_model = {
+        action_name: {
+            'preconditions': learned_action.preconditions,
+            'add_effects': learned_action.add_effects,
+            'del_effects': learned_action.del_effects
+        }
+    }
 
-# Check consistency
-if cnf.is_satisfiable():
-    model = cnf.get_model()
-    print(f"Consistent model: {model}")
+    # Compare against ground truth
+    result = validator.compare_learned_model(learned_model)
 
-# Use type-safe classes for manipulation
-param_lit = ParameterBoundLiteral('clear', ['?x'])
-grounded_lit = GroundedFluent.from_string('clear_a')
-
-# Convert between representations
-grounded_set = binder.ground_literals({param_lit.to_string()}, ['a'])
-# Returns: {'clear_a'}
+    print(f"\n{action_name}:")
+    print(f"  Precondition F1: {result.precondition_f1:.2f}")
+    print(f"  Add Effect F1: {result.add_effect_f1:.2f}")
+    print(f"  Overall Accuracy: {result.overall_accuracy:.2f}")
 ```
 
 ## Performance Considerations
 
 ### Grounding Strategy
-- **Lazy Grounding**: Only ground predicates when needed
-- **Caching**: Store grounded instances for reuse
-- **Incremental Updates**: Update only affected groundings
-
-### CNF Formula Management
-- **Variable Reuse**: Share variables across lifted/grounded forms
-- **Formula Minimization**: Periodically minimize to reduce size
-- **Solution Caching**: Cache satisfiability results
+- **Lazy Grounding**: Only ground actions when needed for execution
+- **Caching**: Store grounded actions if used repeatedly
+- **Injective Requirement**: Use `require_injective=True` to reduce grounding count (e.g., blocksworld with 10 blocks: ~900 vs ~1000 actions)
 
 ### Best Practices
-1. **Use Lifted Representation When Possible**: More compact and general
-2. **Ground Only for Specific Tests**: Reduce formula size
-3. **Batch Variable Creation**: Add all fluents before clauses
-4. **Monitor Formula Growth**: Use `len(cnf.cnf.clauses)` to track size
+1. **Use LiftedDomainKnowledge as Central Store**: Single source of truth
+2. **Ground Only for Execution**: Keep reasoning at lifted level when possible
+3. **Batch Operations**: Use `ground_all_actions()` instead of individual calls
+4. **Type Hierarchy**: Leverage `get_objects_of_type(include_subtypes=True)` for flexibility
 
 ## Debugging Tips
 
-### Inspecting Lifted Structures
+### Inspecting Domain Structure
+
 ```python
-# View all lifted fluents
-for pred, params in cnf.lifted_fluents.items():
-    print(f"{pred}({','.join(params)})")
+# Summary statistics
+stats = domain.summary()
+print(stats)
+# → {'types': 1, 'objects': 3, 'predicates': 4, 'actions': 4, ...}
 
-# Check groundings
-for lifted, grounded in cnf.lifted_to_grounded.items():
-    print(f"{lifted} -> {grounded}")
+# List all actions
+for name, action in domain.lifted_actions.items():
+    print(f"{action}")  # pick-up(?x), stack(?x, ?y), ...
 
-# View CNF in readable form
-print(cnf.to_string())
+# Check action details
+action = domain.get_action('stack')
+print(f"Parameters: {[str(p) for p in action.parameters]}")
+print(f"Preconditions: {action.preconditions}")
+print(f"Add Effects: {action.add_effects}")
+print(f"Has partial knowledge: {action.has_partial_knowledge()}")
 ```
 
-### Common Issues and Solutions
-1. **Variable Not Found**: Ensure fluent is added before use
-2. **Grounding Mismatch**: Check parameter order and object names
-3. **Unsatisfiable Formula**: Use incremental solving to find conflicts
-4. **Performance Degradation**: Monitor clause count and minimize regularly
+### Common Issues
 
-## Future Enhancements
-- **Type Hierarchy Support**: Handle subtype relationships
-- **Quantified Formulas**: Support for universal/existential quantifiers
-- **Incremental SAT Solving**: Reuse solver state across updates
-- **Parallel Grounding**: Multi-threaded grounding for large domains
+**Issue**: Parameter index mismatch in grounding
+```python
+# Wrong: Objects don't match parameter count
+ground_action(action_with_2_params, ['a'])  # ValueError
+
+# Correct: Match parameter count
+ground_action(action_with_2_params, ['a', 'b'])
+```
+
+**Issue**: Negation not preserved
+```python
+# Ensure negation is handled
+literal = '¬clear(?x)'
+grounded = ground_parameter_bound_literal(literal, ['a'])
+assert grounded == '¬clear_a'  # Not 'clear_a'
+```
+
+**Issue**: Type compatibility
+```python
+# Check if object type matches parameter type
+obj = domain.get_object('a')
+param_type = action.parameters[0].type
+is_compatible = domain.is_subtype(obj.type, param_type)
+```
+
+## Migration from Old Architecture
+
+**Old code** (using PDDLHandler):
+```python
+# DEPRECATED - old architecture
+handler = PDDLHandler()
+handler.parse_domain_and_problem(domain_file, problem_file)
+lifted = handler.get_lifted_action('stack')
+grounded = handler.get_all_grounded_actions_typed()
+```
+
+**New code** (layered architecture):
+```python
+# NEW - clean architecture
+from src.core.pddl_io import parse_pddl
+from src.core.lifted_domain import LiftedDomainKnowledge
+from src.core.up_adapter import UPAdapter
+from src.core.grounding import ground_all_actions
+
+up_problem, initial_state = parse_pddl(domain_file, problem_file)
+domain = LiftedDomainKnowledge.from_up_problem(up_problem, UPAdapter)
+lifted = domain.get_action('stack')
+grounded = ground_all_actions(domain)
+```
+
+## See Also
+
+- **UPAdapter**: `src/core/up_adapter.py` - UP ↔ Project conversions
+- **LiftedDomainKnowledge**: `src/core/lifted_domain.py` - Domain representation
+- **Grounding**: `src/core/grounding.py` - Functional grounding operations
+- **PDDL I/O**: `src/core/pddl_io.py` - Read/write PDDL
+- **ActiveEnvironment**: `src/environments/active_environment.py` - Execution interface
