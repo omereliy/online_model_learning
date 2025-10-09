@@ -46,7 +46,10 @@ online_model_learning/
 ├── benchmarks/              # Domain/problem files
 ├── configs/                 # Experiment configurations
 ├── scripts/                 # Experiment, testing, and analysis scripts
-├── results/                 # Experiment outputs
+├── results/                 # Experiment outputs (organized)
+│   ├── tests/              # Test result files (auto-cleaned)
+│   ├── experiments/        # Real experiment results
+│   └── detailed/           # Detailed experiment runs with logs
 └── docs/                    # Documentation
     ├── external_repos/      # Interface documentation for OLAM/ModelLearner
     ├── information_gain_algorithm/ # Information-theoretic algorithm docs
@@ -119,6 +122,19 @@ cnf_settings:
   minimize_formulas: true
   max_clauses: 1000
 ```
+
+### 8. Results Organization
+**Rule**: Experiment results are automatically organized by type.
+- **Test results** (`results/tests/`): Automatically routed when experiment name contains "test"
+  - Old test files auto-cleaned before new runs
+  - Not tracked in git (files ignored, structure tracked)
+- **Experiment results** (`results/experiments/`): Real experiment output files
+  - Flat files: `{experiment_name}_{timestamp}_metrics.{csv,json}`
+  - Summary files and learned models
+- **Detailed runs** (`results/detailed/`): Full experiment directories with logs
+  - Created by `scripts/run_experiments.py`
+  - Format: `{name}_detailed_{timestamp}/`
+  - Contains: logs, config snapshots, complete results
 
 ## Context Optimization Rules
 
