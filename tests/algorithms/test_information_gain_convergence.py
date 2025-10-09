@@ -51,10 +51,13 @@ class TestModelStabilityConvergence:
         ig_learner._last_max_gain = ig_learner.INFO_GAIN_EPSILON / 2
         ig_learner.observation_count = 1  # Needed for low_info_gain check
 
+        # Add high success rate (third criterion) - ALL 3 required now
+        ig_learner._success_history = [True] * ig_learner.SUCCESS_RATE_WINDOW
+
         # Set enough iterations
         ig_learner.iteration_count = ig_learner.MODEL_STABILITY_WINDOW + 1
 
-        # With 2 criteria met (stable model + low gain), should converge
+        # With all 3 criteria met (stable model + low gain + high success), should converge
         assert ig_learner.has_converged() is True
 
     def test_model_changes_prevent_convergence(self, ig_learner):
@@ -80,16 +83,17 @@ class TestInformationGainThresholdConvergence:
 
     def test_low_information_gain_triggers_convergence(self, ig_learner):
         """Test that low expected information gain (< ε) triggers convergence."""
-        # Simulate low information gain + model stability
+        # Simulate low information gain + model stability + high success rate
         snapshot = {action: pre_set.copy() for action, pre_set in ig_learner.pre.items()}
         for _ in range(ig_learner.MODEL_STABILITY_WINDOW):
             ig_learner._model_snapshot_history.append(snapshot)
 
         ig_learner._last_max_gain = ig_learner.INFO_GAIN_EPSILON / 2
         ig_learner.observation_count = 1
+        ig_learner._success_history = [True] * ig_learner.SUCCESS_RATE_WINDOW
         ig_learner.iteration_count = ig_learner.MODEL_STABILITY_WINDOW + 1
 
-        # With 2 criteria met, should converge
+        # With all 3 criteria met, should converge
         assert ig_learner.has_converged() is True
 
     def test_high_information_gain_prevents_convergence(self, ig_learner):
@@ -112,16 +116,18 @@ class TestSuccessRateConvergence:
 
     def test_high_success_rate_contributes_to_convergence(self, ig_learner):
         """Test that >95% success rate contributes to convergence."""
-        # Simulate high success rate + model stability
+        # Simulate high success rate + model stability + low gain
         snapshot = {action: pre_set.copy() for action, pre_set in ig_learner.pre.items()}
         for _ in range(ig_learner.MODEL_STABILITY_WINDOW):
             ig_learner._model_snapshot_history.append(snapshot)
 
         # Fill success history with >95% successes
         ig_learner._success_history = [True] * ig_learner.SUCCESS_RATE_WINDOW
+        ig_learner._last_max_gain = ig_learner.INFO_GAIN_EPSILON / 2
+        ig_learner.observation_count = 1
         ig_learner.iteration_count = ig_learner.MODEL_STABILITY_WINDOW + 1
 
-        # With 2 criteria met, should converge
+        # With all 3 criteria met, should converge
         assert ig_learner.has_converged() is True
 
     def test_low_success_rate_prevents_convergence(self, ig_learner):
@@ -149,12 +155,13 @@ class TestMaxIterationsConvergence:
         # Should not converge if criteria not met (no snapshots, no successes)
         assert ig_learner.has_converged() is False
 
-        # Should converge if 2 criteria met
+        # Should converge if ALL 3 criteria met
         snapshot = {action: pre_set.copy() for action, pre_set in ig_learner.pre.items()}
         for _ in range(ig_learner.MODEL_STABILITY_WINDOW):
             ig_learner._model_snapshot_history.append(snapshot)
         ig_learner._last_max_gain = ig_learner.INFO_GAIN_EPSILON / 2
         ig_learner.observation_count = 1
+        ig_learner._success_history = [True] * ig_learner.SUCCESS_RATE_WINDOW
 
         assert ig_learner.has_converged() is True
 
@@ -291,3 +298,184 @@ class TestConvergenceWithObservations:
         # This is tested through the has_converged() method
 
         assert isinstance(initial_converged, bool)
+
+
+class TestConfigurableConvergenceParameters:
+    """Test configurable convergence parameters."""
+
+    def test_default_parameters_are_conservative(self, test_domain_file, test_problem_file):
+        """Test that default convergence parameters are conservative."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000
+        )
+
+        # Check conservative defaults
+        assert learner.MODEL_STABILITY_WINDOW == 50
+        assert learner.INFO_GAIN_EPSILON == 0.001
+        assert learner.SUCCESS_RATE_THRESHOLD == 0.98
+        assert learner.SUCCESS_RATE_WINDOW == 50
+
+    def test_custom_model_stability_window(self, test_domain_file, test_problem_file):
+        """Test custom model stability window parameter."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            model_stability_window=10
+        )
+
+        assert learner.MODEL_STABILITY_WINDOW == 10
+
+    def test_custom_info_gain_epsilon(self, test_domain_file, test_problem_file):
+        """Test custom information gain epsilon parameter."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            info_gain_epsilon=0.01
+        )
+
+        assert learner.INFO_GAIN_EPSILON == 0.01
+
+    def test_custom_success_rate_threshold(self, test_domain_file, test_problem_file):
+        """Test custom success rate threshold parameter."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            success_rate_threshold=0.95
+        )
+
+        assert learner.SUCCESS_RATE_THRESHOLD == 0.95
+
+    def test_custom_success_rate_window(self, test_domain_file, test_problem_file):
+        """Test custom success rate window parameter."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            success_rate_window=20
+        )
+
+        assert learner.SUCCESS_RATE_WINDOW == 20
+
+    def test_all_custom_parameters(self, test_domain_file, test_problem_file):
+        """Test all convergence parameters can be set together."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            model_stability_window=25,
+            info_gain_epsilon=0.005,
+            success_rate_threshold=0.97,
+            success_rate_window=30
+        )
+
+        assert learner.MODEL_STABILITY_WINDOW == 25
+        assert learner.INFO_GAIN_EPSILON == 0.005
+        assert learner.SUCCESS_RATE_THRESHOLD == 0.97
+        assert learner.SUCCESS_RATE_WINDOW == 30
+
+    def test_aggressive_parameters_converge_faster(self, test_domain_file, test_problem_file):
+        """Test that aggressive parameters allow faster convergence."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            model_stability_window=10,
+            info_gain_epsilon=0.01,
+            success_rate_threshold=0.95,
+            success_rate_window=20
+        )
+
+        # Simulate all 3 criteria met with aggressive parameters
+        snapshot = {action: pre_set.copy() for action, pre_set in learner.pre.items()}
+        for _ in range(10):  # Smaller window
+            learner._model_snapshot_history.append(snapshot)
+
+        learner._last_max_gain = 0.005  # Below aggressive epsilon
+        learner.observation_count = 1
+        learner._success_history = [True] * 20  # Smaller window, 100% success
+        learner.iteration_count = 15
+
+        # Should converge with aggressive parameters
+        assert learner.has_converged() is True
+
+    def test_conservative_parameters_prevent_premature_convergence(self, test_domain_file, test_problem_file):
+        """Test that conservative parameters prevent premature convergence."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000
+            # Using default conservative parameters
+        )
+
+        # Simulate partial convergence (would converge with aggressive settings)
+        snapshot = {action: pre_set.copy() for action, pre_set in learner.pre.items()}
+        for _ in range(10):  # Only 10 iterations stable (need 50 for conservative)
+            learner._model_snapshot_history.append(snapshot)
+
+        learner._last_max_gain = 0.005  # Below aggressive epsilon but above conservative
+        learner.observation_count = 1
+        learner._success_history = [True] * 20  # Short history with high success
+        learner.iteration_count = 15
+
+        # Should NOT converge with conservative parameters (window too small)
+        assert learner.has_converged() is False
+
+    def test_convergence_requires_all_three_criteria(self, test_domain_file, test_problem_file):
+        """Test that convergence requires ALL 3 criteria, not just 2."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            model_stability_window=10,
+            info_gain_epsilon=0.01,
+            success_rate_threshold=0.95,
+            success_rate_window=20
+        )
+
+        learner.iteration_count = 25
+
+        # Test with only 2 of 3 criteria met
+
+        # Scenario 1: Model stable + low gain, but low success rate
+        snapshot = {action: pre_set.copy() for action, pre_set in learner.pre.items()}
+        for _ in range(10):
+            learner._model_snapshot_history.append(snapshot)
+        learner._last_max_gain = 0.005
+        learner.observation_count = 1
+        learner._success_history = [False] * 20  # Low success rate
+
+        assert learner.has_converged() is False, "Should not converge with only 2 criteria"
+
+        # Scenario 2: Model stable + high success, but high info gain
+        learner._success_history = [True] * 20  # High success
+        learner._last_max_gain = 0.5  # High gain
+
+        assert learner.has_converged() is False, "Should not converge with only 2 criteria"
+
+        # Scenario 3: ALL 3 criteria met
+        learner._last_max_gain = 0.005  # Low gain
+
+        assert learner.has_converged() is True, "Should converge with all 3 criteria"
+
+    def test_none_values_use_defaults(self, test_domain_file, test_problem_file):
+        """Test that None values use default parameters."""
+        learner = InformationGainLearner(
+            domain_file=test_domain_file,
+            problem_file=test_problem_file,
+            max_iterations=1000,
+            model_stability_window=None,
+            info_gain_epsilon=None,
+            success_rate_threshold=None,
+            success_rate_window=None
+        )
+
+        # Should use conservative defaults
+        assert learner.MODEL_STABILITY_WINDOW == 50
+        assert learner.INFO_GAIN_EPSILON == 0.001
+        assert learner.SUCCESS_RATE_THRESHOLD == 0.98
+        assert learner.SUCCESS_RATE_WINDOW == 50

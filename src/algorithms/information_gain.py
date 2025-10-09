@@ -36,16 +36,20 @@ class InformationGainLearner(BaseActionModelLearner):
     FLOAT_COMPARISON_EPSILON = 1e-6  # Tolerance for float comparisons
     DEFAULT_MAX_ITERATIONS = 1000
 
-    # Convergence detection parameters
-    MODEL_STABILITY_WINDOW = 10  # Number of iterations to check for model stability
-    INFO_GAIN_EPSILON = 0.01  # Threshold for low information gain
-    SUCCESS_RATE_THRESHOLD = 0.95  # 95% success rate threshold
-    SUCCESS_RATE_WINDOW = 20  # Window size for success rate calculation
+    # Convergence detection parameters (defaults - conservative for statistical validity)
+    DEFAULT_MODEL_STABILITY_WINDOW = 50  # Number of iterations to check for model stability
+    DEFAULT_INFO_GAIN_EPSILON = 0.001  # Threshold for low information gain
+    DEFAULT_SUCCESS_RATE_THRESHOLD = 0.98  # 98% success rate threshold
+    DEFAULT_SUCCESS_RATE_WINDOW = 50  # Window size for success rate calculation
 
     def __init__(self,
                  domain_file: str,
                  problem_file: str,
                  max_iterations: int = DEFAULT_MAX_ITERATIONS,
+                 model_stability_window: Optional[int] = None,
+                 info_gain_epsilon: Optional[float] = None,
+                 success_rate_threshold: Optional[float] = None,
+                 success_rate_window: Optional[int] = None,
                  **kwargs):
         """
         Initialize Information Gain learner.
@@ -54,7 +58,11 @@ class InformationGainLearner(BaseActionModelLearner):
             domain_file: Path to PDDL domain file
             problem_file: Path to PDDL problem file
             max_iterations: Maximum learning iterations
-            **kwargs: Additional parameters
+            model_stability_window: Iterations to check for model stability (default: 50)
+            info_gain_epsilon: Threshold for low information gain (default: 0.001)
+            success_rate_threshold: Success rate threshold for convergence (default: 0.98)
+            success_rate_window: Window size for success rate calculation (default: 50)
+            **kwargs: Additional parameters (selection_strategy, epsilon, temperature)
 
         Raises:
             FileNotFoundError: If domain or problem file doesn't exist
@@ -77,6 +85,19 @@ class InformationGainLearner(BaseActionModelLearner):
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
+
+        # Set convergence parameters (use provided or defaults)
+        self.MODEL_STABILITY_WINDOW = model_stability_window if model_stability_window is not None else self.DEFAULT_MODEL_STABILITY_WINDOW
+        self.INFO_GAIN_EPSILON = info_gain_epsilon if info_gain_epsilon is not None else self.DEFAULT_INFO_GAIN_EPSILON
+        self.SUCCESS_RATE_THRESHOLD = success_rate_threshold if success_rate_threshold is not None else self.DEFAULT_SUCCESS_RATE_THRESHOLD
+        self.SUCCESS_RATE_WINDOW = success_rate_window if success_rate_window is not None else self.DEFAULT_SUCCESS_RATE_WINDOW
+
+        logger.debug(
+            f"Convergence parameters: model_stability_window={self.MODEL_STABILITY_WINDOW}, "
+            f"info_gain_epsilon={self.INFO_GAIN_EPSILON}, "
+            f"success_rate_threshold={self.SUCCESS_RATE_THRESHOLD}, "
+            f"success_rate_window={self.SUCCESS_RATE_WINDOW}"
+        )
 
         # Initialize domain knowledge using new architecture
         logger.debug("Parsing PDDL domain and problem files")
@@ -1019,14 +1040,14 @@ class InformationGainLearner(BaseActionModelLearner):
         # Check if success rate is above threshold in recent window
         high_success_rate = self._check_high_success_rate()
 
-        # Converge if ANY two criteria are met (not all three required)
-        # This balances between premature convergence and unnecessary iterations
-        criteria_met = sum([model_stable, low_info_gain, high_success_rate])
+        # Converge only if ALL three criteria are met (conservative for statistical validity)
+        # Previous aggressive logic (ANY 2 of 3) caused premature convergence
+        all_criteria_met = model_stable and low_info_gain and high_success_rate
 
-        if criteria_met >= 2:
+        if all_criteria_met:
             if not self._converged:
                 logger.info(
-                    f"Convergence: Multiple criteria met "
+                    f"Convergence: All criteria met "
                     f"(stable={model_stable}, low_gain={low_info_gain}, high_success={high_success_rate})"
                 )
             self._converged = True
