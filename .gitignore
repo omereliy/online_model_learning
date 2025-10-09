@@ -133,20 +133,25 @@ dmypy.json
 # Project specific
 PDDL/
 Info/
-results/
 *.pddl.bak
 logs/
 slurm-*.out
 
+# Results organization (keep structure, ignore contents)
+# Keep directory structure tracked, ignore result files
+results/tests/*.json
+results/tests/*.csv
+results/experiments/*.json
+results/experiments/*.csv
+results/detailed/*/
+
 # OLAM-generated directories (anywhere in project)
 **/PDDL/
 **/Info/
-**/results/
 
 # Test-specific OLAM directories
 tests/PDDL/
 tests/Info/
-tests/results/
 
 # Temporary files
 tmp/

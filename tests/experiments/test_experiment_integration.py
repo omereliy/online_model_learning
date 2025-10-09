@@ -118,12 +118,14 @@ class TestExperimentIntegration:
         results = runner.run_experiment()
 
         # Check output directory exists
-        output_dir = Path(config['output']['directory'])
-        assert output_dir.exists()
+        # Since experiment name contains 'test', files go to tests/ subdirectory
+        base_dir = Path(config['output']['directory'])
+        tests_dir = base_dir / 'tests'
+        assert tests_dir.exists()
 
-        # Check for exported files
-        csv_files = list(output_dir.glob('*.csv'))
-        json_files = list(output_dir.glob('*.json'))
+        # Check for exported files in tests/ subdirectory
+        csv_files = list(tests_dir.glob('*.csv'))
+        json_files = list(tests_dir.glob('*.json'))
 
         assert len(csv_files) >= 1
         assert len(json_files) >= 1
@@ -212,8 +214,9 @@ class TestExperimentIntegration:
         results = runner.run_experiment()
 
         # Check for learned model file
-        output_dir = Path(runner.config['output']['directory'])
-        model_file = output_dir / 'learned_model.json'
+        # Since experiment name contains 'test', files go to tests/ subdirectory
+        base_dir = Path(runner.config['output']['directory'])
+        model_file = base_dir / 'tests' / 'learned_model.json'
 
         # Note: Model file may not exist if OLAM doesn't export properly
         # This is expected in Phase 3 with mock environment

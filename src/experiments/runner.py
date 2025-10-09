@@ -451,12 +451,26 @@ class ExperimentRunner:
         Args:
             results: Experiment results dictionary
         """
-        output_dir = Path(self.config['output']['directory'])
+        # Determine if this is a test or real experiment
+        experiment_name = self.config['experiment']['name']
+        is_test = 'test' in experiment_name.lower()
+
+        # Route to appropriate subdirectory
+        base_output_dir = Path(self.config['output']['directory'])
+        if is_test:
+            output_dir = base_output_dir / 'tests'
+        else:
+            output_dir = base_output_dir / 'experiments'
+
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean up old test files if this is a test run
+        if is_test:
+            self._cleanup_old_test_results(output_dir)
 
         # Generate filename with timestamp
         timestamp = self.start_time.strftime('%Y%m%d_%H%M%S')
-        base_name = f"{self.config['experiment']['name']}_{timestamp}"
+        base_name = f"{experiment_name}_{timestamp}"
 
         # Export metrics
         for format in self.config['output']['formats']:
@@ -485,6 +499,25 @@ class ExperimentRunner:
                 logger.error(f"Failed to save learned model: {e}")
 
         logger.info(f"Exported results to {output_dir}")
+
+    def _cleanup_old_test_results(self, test_dir: Path) -> None:
+        """
+        Remove old test result files to keep the test directory clean.
+
+        Args:
+            test_dir: Path to the test results directory
+        """
+        if not test_dir.exists():
+            return
+
+        # Remove all old test result files
+        for pattern in ['test_*.csv', 'test_*.json']:
+            for old_file in test_dir.glob(pattern):
+                try:
+                    old_file.unlink()
+                    logger.debug(f"Cleaned up old test file: {old_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove old test file {old_file}: {e}")
 
     def _compile_results(self) -> Dict[str, Any]:
         """

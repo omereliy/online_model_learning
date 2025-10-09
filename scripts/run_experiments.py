@@ -32,8 +32,9 @@ def setup_logging(config: dict, experiment_name: str, timestamp: str) -> Path:
     Returns:
         Path to the experiment directory
     """
-    # Create experiment directory
-    experiment_dir = Path(config['output']['directory']) / f"{experiment_name}_{timestamp}"
+    # Create experiment directory in results/detailed/
+    base_dir = Path(config['output']['directory'])
+    experiment_dir = base_dir / 'detailed' / f"{experiment_name}_detailed_{timestamp}"
     experiment_dir.mkdir(parents=True, exist_ok=True)
 
     # Get logging config
