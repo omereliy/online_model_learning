@@ -52,7 +52,6 @@ services:
         cd /workspace &&
         pytest -v --tb=short --color=yes \
           tests/core/test_cnf_manager.py \
-          tests/core/test_pddl_handler.py \
           tests/experiments/test_metrics.py \
           tests/experiments/test_experiment_runner.py \
           -m 'not integration'

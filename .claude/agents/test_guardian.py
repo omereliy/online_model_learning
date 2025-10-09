@@ -193,8 +193,9 @@ class TestGuardianAgent:
                 affected_tests.add('test_algorithms')
 
             elif 'src/core' in str(path):
-                if 'pddl_handler' in path.stem:
-                    affected_tests.add('test_pddl_handler')
+                if 'pddl_io' in path.stem or 'lifted_domain' in path.stem or 'grounding' in path.stem or 'up_adapter' in path.stem:
+                    # New architecture components
+                    affected_tests.add('test_new_architecture')
                 elif 'cnf_manager' in path.stem:
                     affected_tests.add('test_cnf_manager')
                 elif 'domain_analyzer' in path.stem:
@@ -209,7 +210,8 @@ class TestGuardianAgent:
 
             elif 'src/environments' in str(path):
                 affected_tests.add('test_environments')
-                affected_tests.add('test_pddl_environment')
+                if 'active_environment' in path.stem:
+                    affected_tests.add('test_active_environment')
 
         # If no specific tests identified, run all
         if not affected_tests:

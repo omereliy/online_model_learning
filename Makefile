@@ -153,7 +153,7 @@ ci-local:
 	@black --check src/ tests/ || echo "Format issues found"
 	@flake8 src/ tests/ --max-line-length=100 --extend-ignore=E203 || echo "Lint issues found"
 	@echo "2. Unit tests..."
-	@pytest tests/core/test_cnf_manager.py tests/core/test_pddl_handler.py tests/experiments/test_metrics.py -v
+	@pytest tests/core/test_cnf_manager.py tests/experiments/test_metrics.py -v
 	@echo "3. Integration tests..."
 	@pytest tests/experiments/test_experiment_runner.py tests/algorithms/test_olam_adapter.py -v
 	@echo "CI pipeline complete!"

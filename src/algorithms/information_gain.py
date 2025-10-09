@@ -12,8 +12,9 @@ from collections import defaultdict
 from typing import Tuple, List, Dict, Optional, Any, Set
 
 from src.core.cnf_manager import CNFManager
-from src.core.pddl_handler import PDDLHandler
-from src.core.pddl_types import GroundedAction
+from src.core.pddl_io import PDDLReader
+from src.core.lifted_domain import LiftedDomainKnowledge
+from src.core import grounding
 from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
@@ -77,13 +78,13 @@ class InformationGainLearner(BaseActionModelLearner):
 
         self.max_iterations = max_iterations
 
-        # Initialize PDDL handler for lifted action/fluent support
+        # Initialize domain knowledge using new architecture
         logger.debug("Parsing PDDL domain and problem files")
-        self.pddl_handler = PDDLHandler()
-        self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+        reader = PDDLReader()
+        self.domain, _ = reader.parse_domain_and_problem(domain_file, problem_file)
         logger.debug(
-            f"PDDL parsing complete: {len(self.pddl_handler.get_all_lifted_actions())} lifted actions, "
-            f"{len(self.pddl_handler.problem.fluents)} fluents")
+            f"PDDL parsing complete: {len(self.domain.lifted_actions)} lifted actions, "
+            f"{len(self.domain.predicates)} predicates")
 
         # Action model state variables (per action schema)
         # Structure: Dict[action_name, data]
@@ -121,10 +122,10 @@ class InformationGainLearner(BaseActionModelLearner):
 
     def _initialize_action_models(self):
         """Initialize action model state variables for all actions."""
-        logger.debug(f"Initializing models for {len(self.pddl_handler.get_all_lifted_actions())} actions")
+        logger.debug(f"Initializing models for {len(self.domain.lifted_actions)} actions")
 
         # Get all lifted actions from domain
-        for action_name, action in self.pddl_handler.get_all_lifted_actions().items():
+        for action_name, action in self.domain.lifted_actions.items():
             logger.debug(
                 f"Processing action: {action_name}, parameters: {[p.name for p in action.parameters]}")
 
@@ -150,7 +151,7 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Get all parameter-bound literals (La) for an action.
 
-        Delegates to PDDLHandler for PDDL parsing and manipulation.
+        Uses LiftedDomainKnowledge for lifted representations.
 
         Args:
             action_name: Name of the action
@@ -158,13 +159,13 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Set of parameter-bound literal strings (e.g., 'on(?x,?y)', '¬clear(?x)')
         """
-        return self.pddl_handler.get_parameter_bound_literals(action_name)
+        return self.domain.get_parameter_bound_literals(action_name)
 
     def bindP_inverse(self, literals: Set[str], objects: List[str]) -> Set[str]:
         """
         Ground parameter-bound literals with concrete objects.
 
-        Delegates to PDDLHandler's ground_literals method.
+        Uses functional grounding utilities.
 
         Args:
             literals: Set of parameter-bound literals (e.g., {'on(?x,?y)', '¬clear(?x)'})
@@ -173,14 +174,14 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Set of grounded literals (e.g., {'on_a_b', '¬clear_a'})
         """
-        logger.debug(f"bindP_inverse: Delegating to PDDLHandler with {len(literals)} literals")
-        return self.pddl_handler.ground_literals(literals, objects)
+        logger.debug(f"bindP_inverse: Grounding {len(literals)} literals")
+        return grounding.ground_literal_set(literals, objects)
 
     def bindP(self, fluents: Set[str], objects: List[str]) -> Set[str]:
         """
         Lift grounded fluents to parameter-bound literals.
 
-        Delegates to PDDLHandler's lift_fluents method.
+        Uses functional grounding utilities.
 
         Args:
             fluents: Set of grounded fluent strings (e.g., {'on_a_b', '¬clear_a'})
@@ -189,8 +190,8 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Set of parameter-bound literals (e.g., {'on(?x,?y)', '¬clear(?x)'})
         """
-        logger.debug(f"bindP: Delegating to PDDLHandler with {len(fluents)} fluents")
-        return self.pddl_handler.lift_fluents(fluents, objects)
+        logger.debug(f"bindP: Lifting {len(fluents)} fluents")
+        return grounding.lift_fluent_set(fluents, objects, self.domain)
 
     def _calculate_applicability_probability(self, action: str, objects: List[str], state: Set[str]) -> float:
         """
@@ -498,21 +499,24 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        grounded_actions = self.pddl_handler.get_all_grounded_actions_typed()
+        # Use new grounding utilities
+        grounded_actions = grounding.ground_all_actions(self.domain, require_injective=False)
         if not grounded_actions:
             return []
 
         action_gains = []
         for grounded_action in grounded_actions:
-            objects = grounded_action.object_names()
-
             try:
-                expected_gain = self._calculate_expected_information_gain(grounded_action.action.name, objects, state)
-                action_gains.append((grounded_action.action.name, objects, expected_gain))
+                expected_gain = self._calculate_expected_information_gain(
+                    grounded_action.action_name,
+                    grounded_action.objects,
+                    state
+                )
+                action_gains.append((grounded_action.action_name, grounded_action.objects, expected_gain))
             except Exception as e:
-                logger.warning(f"Error calculating gain for {grounded_action.action.name}: {e}")
+                logger.warning(f"Error calculating gain for {grounded_action.action_name}: {e}")
                 # Add with zero gain as fallback
-                action_gains.append((grounded_action.action.name, objects, 0.0))
+                action_gains.append((grounded_action.action_name, grounded_action.objects, 0.0))
 
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
@@ -963,7 +967,7 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Extract predicate name from literal.
 
-        Delegates to PDDLHandler's extract_predicate_name method.
+        Simple parsing logic - no need for delegation.
 
         Args:
             literal: Literal string (e.g., 'on(?x,?y)' or '¬clear(?x)')
@@ -971,7 +975,14 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Predicate name or None
         """
-        return self.pddl_handler.extract_predicate_name(literal)
+        # Remove negation if present
+        if literal.startswith('¬'):
+            literal = literal[1:]
+
+        # Extract predicate name (before '(' or whole string if no parens)
+        if '(' in literal:
+            return literal[:literal.index('(')]
+        return literal
 
     def has_converged(self) -> bool:
         """

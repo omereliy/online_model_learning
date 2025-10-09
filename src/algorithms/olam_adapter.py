@@ -73,16 +73,26 @@ class OLAMAdapter(BaseActionModelLearner):
         self.bypass_java = bypass_java
         self.use_system_java = use_system_java
 
-        # Initialize PDDLHandler for proper action grounding
+        # Initialize domain knowledge for proper action grounding
         # OLAM requires injective bindings (no repeated objects in action parameters)
         if pddl_handler is None:
-            logger.debug("Creating new PDDLHandler with injective bindings requirement")
-            from src.core.pddl_handler import PDDLHandler
-            self.pddl_handler = PDDLHandler()
-            self.pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+            logger.debug("Parsing domain with new architecture (PDDLReader + LiftedDomainKnowledge)")
+            from src.core.pddl_io import PDDLReader
+            reader = PDDLReader()
+            self.domain, self.initial_state = reader.parse_domain_and_problem(domain_file, problem_file)
+            # For backward compatibility, store as attribute
+            self.pddl_handler = None
         else:
-            logger.debug("Using provided PDDLHandler instance")
+            logger.debug("Using provided PDDLHandler instance (legacy)")
             self.pddl_handler = pddl_handler
+            # Extract domain from legacy handler if available
+            if hasattr(pddl_handler, 'problem'):
+                from src.core.lifted_domain import LiftedDomainKnowledge
+                from src.core.up_adapter import UPAdapter
+                adapter = UPAdapter()
+                self.domain = LiftedDomainKnowledge.from_up_problem(pddl_handler.problem, adapter)
+            else:
+                self.domain = None
 
         # Initialize OLAM components
         logger.debug("Initializing OLAM components")
@@ -109,10 +119,8 @@ class OLAMAdapter(BaseActionModelLearner):
         # Create temporary PDDL directory for OLAM (it expects files in PDDL/)
         self._setup_olam_pddl_directory()
 
-        # Initialize PDDLHandler for predicate/object information
-        from src.core.pddl_handler import PDDLHandler
-        self.pddl_handler = PDDLHandler()
-        self.pddl_handler.parse_domain_and_problem(self.domain_file, self.problem_file)
+        # Domain knowledge already initialized in __init__
+        # No need to re-parse here
 
         # Initialize OLAM parser
         self.parser = PddlParser()
@@ -188,22 +196,25 @@ class OLAMAdapter(BaseActionModelLearner):
         Returns:
             List of grounded action strings in OLAM format
         """
-        logger.debug("Extracting grounded action list from PDDLHandler")
+        logger.debug("Extracting grounded action list using new grounding utilities")
         action_strings = []
 
-        # Use PDDLHandler's type-safe grounding mechanism
-        grounded_actions = self.pddl_handler.get_all_grounded_actions_typed()
+        # Use new grounding module
+        # Note: Use require_injective=False to match old PDDLHandler behavior
+        # (grounds all combinations, domain preconditions filter invalid ones at runtime)
+        from src.core import grounding
+        grounded_actions = grounding.ground_all_actions(self.domain, require_injective=False)
         logger.debug(f"Processing {len(grounded_actions)} grounded actions from domain")
 
         for grounded_action in grounded_actions:
-            # Get parameter values in order
-            param_values = grounded_action.object_names()
+            # Get parameter values in order (objects is already a List[str])
+            param_values = grounded_action.objects
 
             # Build OLAM format: action_name(param1,param2,...)
             if param_values:
-                action_str = f"{grounded_action.action.name}({','.join(param_values)})"
+                action_str = f"{grounded_action.action_name}({','.join(param_values)})"
             else:
-                action_str = f"{grounded_action.action.name}()"
+                action_str = f"{grounded_action.action_name}()"
 
             logger.debug(f"Added grounded action: {action_str} (params: {param_values})")
             action_strings.append(action_str)
@@ -745,15 +756,19 @@ class OLAMAdapter(BaseActionModelLearner):
         """
         predicate_names = set()
 
-        # Try to get from PDDLHandler
-        if hasattr(self, 'pddl_handler') and self.pddl_handler:
+        # Get from LiftedDomainKnowledge
+        if hasattr(self, 'domain') and self.domain:
+            for pred_name in self.domain.predicates.keys():
+                predicate_names.add(pred_name)
+            logger.debug(f"Retrieved {len(predicate_names)} predicate names from domain")
+        # Fallback: Try legacy PDDLHandler
+        elif hasattr(self, 'pddl_handler') and self.pddl_handler:
             if hasattr(self.pddl_handler, 'problem') and self.pddl_handler.problem:
                 for fluent_obj in self.pddl_handler.problem.fluents:
                     predicate_names.add(fluent_obj.name)
-                logger.debug(f"Retrieved {len(predicate_names)} predicate names from PDDLHandler")
-
+                logger.debug(f"Retrieved {len(predicate_names)} predicate names from PDDLHandler (legacy)")
         # Also try to get from environment if available
-        if not predicate_names and hasattr(self, 'environment'):
+        elif hasattr(self, 'environment'):
             if hasattr(self.environment, 'handler'):
                 pddl_env_handler = self.environment.handler
                 if hasattr(pddl_env_handler, 'problem') and pddl_env_handler.problem:
@@ -776,12 +791,17 @@ class OLAMAdapter(BaseActionModelLearner):
         """
         object_names = set()
 
-        # Try to get from PDDLHandler
-        if hasattr(self, 'pddl_handler') and self.pddl_handler:
+        # Get from LiftedDomainKnowledge
+        if hasattr(self, 'domain') and self.domain:
+            for obj_name in self.domain.objects.keys():
+                object_names.add(obj_name)
+            logger.debug(f"Retrieved {len(object_names)} object names from domain")
+        # Fallback: Try legacy PDDLHandler
+        elif hasattr(self, 'pddl_handler') and self.pddl_handler:
             if hasattr(self.pddl_handler, 'problem') and self.pddl_handler.problem:
                 for obj in self.pddl_handler.problem.all_objects:
                     object_names.add(obj.name)
-                logger.debug(f"Retrieved {len(object_names)} object names from PDDLHandler")
+                logger.debug(f"Retrieved {len(object_names)} object names from PDDLHandler (legacy)")
 
         # Also try to get from environment if available
         if not object_names and hasattr(self, 'environment'):

@@ -15,6 +15,7 @@ algorithm_params:
   olam:
     max_iterations: 300
     eval_frequency: 15
+    bypass_java: true  # No Java available - use Python fallback
 
 # Metrics collection - record EVERY action
 metrics:

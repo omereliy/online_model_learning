@@ -22,7 +22,7 @@ except ImportError:
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.core.pddl_handler import PDDLHandler
+from src.core.pddl_io import PDDLReader
 from src.experiments.metrics import MetricsCollector
 
 
@@ -58,9 +58,9 @@ class PerformanceBenchmark:
 
             times = []
             for _ in range(repetitions):
-                handler = PDDLHandler()
+                reader = PDDLReader()
                 start = time.perf_counter()
-                handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+                reader.parse_domain_and_problem(str(domain_file), str(problem_file))
                 end = time.perf_counter()
                 times.append(end - start)
 
@@ -94,13 +94,14 @@ class PerformanceBenchmark:
             if not domain_file.exists() or not problem_file.exists():
                 continue
 
-            handler = PDDLHandler()
-            handler.parse_domain_and_problem(str(domain_file), str(problem_file))
+            reader = PDDLReader()
+            domain, _ = reader.parse_domain_and_problem(str(domain_file), str(problem_file))
 
             times = []
             for _ in range(repetitions):
+                from src.core import grounding
                 start = time.perf_counter()
-                grounded_actions = handler.get_grounded_actions_list()
+                grounded_actions = grounding.ground_all_actions(domain)
                 end = time.perf_counter()
                 times.append(end - start)
 
@@ -185,9 +186,10 @@ class PerformanceBenchmark:
             # Measure initial memory
             initial_memory = process.memory_info().rss / 1024 / 1024  # MB
 
-            handler = PDDLHandler()
-            handler.parse_domain_and_problem(str(domain_file), str(problem_file))
-            grounded_actions = handler.get_grounded_actions()
+            from src.core import grounding
+            reader = PDDLReader()
+            domain, _ = reader.parse_domain_and_problem(str(domain_file), str(problem_file))
+            grounded_actions = grounding.ground_all_actions(domain)
 
             # Measure after loading
             loaded_memory = process.memory_info().rss / 1024 / 1024  # MB

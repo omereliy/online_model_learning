@@ -20,7 +20,7 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.algorithms.olam_adapter import OLAMAdapter
-from src.environments.pddl_environment import PDDLEnvironment
+from src.environments.active_environment import ActiveEnvironment
 from src.core.domain_analyzer import DomainAnalyzer
 
 # Setup logging
@@ -78,7 +78,7 @@ class OLAMPaperValidator:
         logger.info("-" * 40)
 
         olam = OLAMAdapter(self.domain_file, self.problem_file, bypass_java=True)
-        env = PDDLEnvironment(self.domain_file, self.problem_file)
+        env = ActiveEnvironment(self.domain_file, self.problem_file)
 
         total_actions = len(olam.action_list)
         logger.info(f"✓ Initialized OLAM with {total_actions} grounded actions")

@@ -13,7 +13,7 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.algorithms.olam_adapter import OLAMAdapter
-from src.environments.pddl_environment import PDDLEnvironment
+from src.environments.active_environment import ActiveEnvironment
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -33,7 +33,7 @@ def main():
 
     # Initialize
     olam = OLAMAdapter(domain, problem, bypass_java=True)
-    env = PDDLEnvironment(domain, problem)
+    env = ActiveEnvironment(domain, problem)
 
     logger.info(f"\n✓ Initialized with {len(olam.action_list)} grounded actions")
     logger.info("✓ OLAM starts optimistically (all actions assumed applicable)")

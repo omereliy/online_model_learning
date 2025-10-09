@@ -16,7 +16,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from ..algorithms.base_learner import BaseActionModelLearner
 from ..algorithms.olam_adapter import OLAMAdapter
 from ..algorithms.information_gain import InformationGainLearner
-from ..environments.pddl_environment import PDDLEnvironment
+from ..environments.active_environment import ActiveEnvironment
 from ..environments.mock_environment import MockEnvironment
 from .metrics import MetricsCollector
 
@@ -194,22 +194,22 @@ class ExperimentRunner:
         Initialize the environment based on configuration.
 
         Returns:
-            Environment instance (PDDLEnvironment or MockEnvironment)
+            Environment instance (ActiveEnvironment or MockEnvironment)
         """
         domain_file = self.config['domain_problem']['domain']
         problem_file = self.config['domain_problem']['problem']
 
-        # Check for environment type in config (default to 'pddl' for real execution)
-        env_type = self.config.get('experiment', {}).get('environment_type', 'pddl')
+        # Check for environment type in config (default to 'active' for real execution)
+        env_type = self.config.get('experiment', {}).get('environment_type', 'active')
 
         if env_type == 'mock':
             # Use mock environment for testing
             environment = MockEnvironment(domain_file, problem_file)
             logger.info(f"Initialized MockEnvironment for testing with domain: {domain_file}")
         else:
-            # Use real PDDL environment for actual experiments
-            environment = PDDLEnvironment(domain_file, problem_file)
-            logger.info(f"Initialized PDDLEnvironment with domain: {domain_file}")
+            # Use ActiveEnvironment for actual experiments
+            environment = ActiveEnvironment(domain_file, problem_file)
+            logger.info(f"Initialized ActiveEnvironment with domain: {domain_file}")
             logger.info("Using real PDDL execution")
 
         return environment

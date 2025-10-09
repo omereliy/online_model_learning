@@ -1,5 +1,55 @@
 # Quick Reference - Code Patterns & Commands
 
+## New Architecture Patterns (October 8, 2025)
+
+### Parse PDDL
+```python
+from src.core.pddl_io import parse_pddl
+
+domain, initial_state = parse_pddl('domain.pddl', 'problem.pddl')
+# domain: LiftedDomainKnowledge
+# initial_state: Set[str] of fluents
+```
+
+### Ground Actions
+```python
+from src.core import grounding
+
+# Ground all actions
+all_grounded = grounding.ground_all_actions(domain, require_injective=False)
+# → List[GroundedAction]
+
+# Ground single action
+action = domain.get_action('pick-up')
+grounded = grounding.ground_action(action, ['a'])
+# → GroundedAction with grounded preconditions/effects
+```
+
+### Lift/Ground Literals
+```python
+from src.core import grounding
+
+# Ground literals (bindP⁻¹)
+literals = {'on(?x,?y)', '¬clear(?x)'}
+grounded = grounding.ground_literal_set(literals, ['a', 'b'])
+# → {'on_a_b', '¬clear_a'}
+
+# Lift fluents (bindP)
+fluents = {'on_a_b', '¬clear_a'}
+lifted = grounding.lift_fluent_set(fluents, ['a', 'b'], domain)
+# → {'on(?x,?y)', '¬clear(?x)'}
+```
+
+### Execute Actions
+```python
+from src.environments.active_environment import ActiveEnvironment
+
+env = ActiveEnvironment('domain.pddl', 'problem.pddl')
+state = env.get_state()  # Set[str]
+success, runtime = env.execute('pick-up', ['a'])
+env.reset()
+```
+
 ## Commands
 
 ### Setup Commands

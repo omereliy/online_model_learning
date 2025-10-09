@@ -8,7 +8,7 @@ import logging
 from dataclasses import dataclass
 from typing import Set, Dict, Optional, Any, Tuple
 
-from src.core.pddl_handler import PDDLHandler
+from src.core.pddl_io import PDDLReader
 from src.core.expression_converter import ExpressionConverter
 
 logger = logging.getLogger(__name__)
@@ -67,9 +67,12 @@ class ModelValidator:
             domain_file: Path to PDDL domain file
             problem_file: Path to PDDL problem file
         """
-        # Use PDDLHandler to parse domain
-        pddl_handler = PDDLHandler()
-        problem = pddl_handler.parse_domain_and_problem(domain_file, problem_file)
+        # Parse PDDL files with new architecture
+        reader = PDDLReader()
+        domain, _ = reader.parse_domain_and_problem(domain_file, problem_file)
+
+        # Get UP problem for accessing actions (for compatibility)
+        problem = reader.get_up_problem()
 
         # Extract ground truth for each action
         for action in problem.actions:
