@@ -227,336 +227,39 @@ Building experiment framework to compare three online action model learning algo
 - InformationGainLearner updated to new architecture
 - ExperimentRunner updated to use ActiveEnvironment
 
-### PDDLHandler Refactoring Phase 1 - Type-Safe Data Classes (October 5, 2025)
-**Context**: PDDLHandler used primitive types (Dict[str, Object], str) throughout, reducing type safety and code clarity.
+### Legacy Architecture Refactoring (October 5-8, 2025) - COMPLETE ✅
 
-**Problem**:
-- No type safety for parameter bindings
-- String-based literals without semantic distinction
-- No compile-time verification of types
+**Historical Context**: This project underwent a major refactoring from PDDLHandler/PDDLEnvironment monolithic architecture to a clean layered architecture. The detailed history has been archived.
 
-**Solution**: Created type-safe data classes in `src/core/pddl_types.py`:
-- **ParameterBinding**: Type-safe wrapper for Dict[str, Object]
-  - Provides `get_object()`, `object_names()`, `to_dict()` methods
-  - Clear semantic meaning for parameter→object mappings
-- **ParameterBoundLiteral**: Literals using action's parameter names
-  - CRITICAL: Uses action's specific parameter names (e.g., clear(?x) for pick-up(?x))
-  - Supports `to_string()` and `from_string()` for conversions
-  - Handles negation (¬) and propositional literals
-- **GroundedFluent**: Fully instantiated fluents with objects
-  - Converts to/from string format (e.g., "clear_a", "on_a_b")
-  - Handles multi-parameter and propositional fluents
+**Key Accomplishments**:
+- Created type-safe data classes (ParameterBinding, ParameterBoundLiteral, GroundedFluent, GroundedAction)
+- Extracted ExpressionConverter for FNode conversions
+- Extracted FluentBinder for bindP/bindP⁻¹ operations
+- Replaced PDDLHandler (1137 lines) with focused components: UPAdapter, LiftedDomainKnowledge, PDDL I/O
+- Replaced PDDLEnvironment with ActiveEnvironment (minimal execution interface)
+- Migrated all dependent code to new architecture
+- All 51 curated tests passing throughout
 
-**Benefits**:
-- Type safety with IDE support
-- Self-documenting code
-- Validation at creation time
-- Foundation for further refactoring phases
-
-**Tests**: 21 new tests in `tests/core/test_pddl_types.py`, all passing
-
-### PDDLHandler Refactoring Phase 2 - Expression Conversion Logic (October 5, 2025)
-**Context**: Expression conversion logic (FNode → string) was scattered throughout PDDLHandler, making it hard to test and reuse.
-
-**Problem**:
-- Three methods doing similar FNode→string conversions
-- Duplicate traversal logic for AND/OR/NOT expressions
-- No single source of truth for conversion rules
-
-**Solution**: Created `ExpressionConverter` class in `src/core/expression_converter.py`:
-- **`to_parameter_bound_string()`**: Converts FNode to parameter-bound literal
-  - CRITICAL: Preserves action's specific parameter names (e.g., `clear(?x)`)
-  - Fixed bug: Compare `str(arg) == param.name`, not `str(arg) == str(param)`
-- **`to_grounded_string()`**: Converts FNode to grounded fluent with binding
-  - Uses ParameterBinding for type-safe parameter→object mapping
-  - Handles negation and multi-parameter fluents
-- **`to_cnf_clauses()`**: Extracts CNF clauses from complex expressions
-  - Recursively handles AND/OR/NOT operators
-  - Returns List[List[str]] format for CNF formulas
-
-**Refactoring**:
-- PDDLHandler methods now delegate to ExpressionConverter:
-  - `_expression_to_lifted_string()` → `ExpressionConverter.to_parameter_bound_string()`
-  - `_ground_expression_to_string()` → `ExpressionConverter.to_grounded_string()`
-  - `_extract_clauses_from_expression()` → `ExpressionConverter.to_cnf_clauses()`
-- Old methods kept for backward compatibility (marked DEPRECATED)
-
-**Benefits**:
-- Centralized conversion logic - single source of truth
-- Easier to test in isolation (9 new tests)
-- Reusable across different components
-- Reduced code duplication (~60 lines removed from PDDLHandler)
-
-**Tests**: 9 new tests in `tests/core/test_expression_converter.py`, all passing
-
-### PDDLHandler Refactoring Phase 3 - Grounding/Lifting Operations (October 5, 2025)
-**Context**: Grounding (bindP⁻¹) and lifting (bindP) operations were embedded in PDDLHandler with ~150 lines of implementation code, making them hard to test and not clearly separated as algorithm-specific operations.
-
-**Problem**:
-- bindP/bindP⁻¹ operations scattered across multiple internal methods
-- No clear separation between algorithm logic and PDDL manipulation
-- Hard to test binding operations in isolation
-- Used by Information Gain algorithm but buried in PDDLHandler
-
-**Solution**: Created `FluentBinder` class in `src/core/binding_operations.py`:
-- **`ground_literal()`**: Single literal grounding (e.g., `clear(?x)` + `['a']` → `clear_a`)
-- **`lift_fluent()`**: Single fluent lifting (e.g., `clear_a` + `['a']` → `clear(?x)`)
-- **`ground_literals()`**: Batch bindP⁻¹ operation for sets of literals
-- **`lift_fluents()`**: Batch bindP operation for sets of fluents
-- Handles negation, multi-parameter literals, and propositional fluents
-- Uses PDDLHandler's static methods for parameter name generation
-
-**Refactoring**:
-- PDDLHandler now delegates to FluentBinder:
-  - Added `_get_binder()` for lazy initialization (avoids circular import)
-  - `ground_literals()` → `FluentBinder.ground_literals()`
-  - `lift_fluents()` → `FluentBinder.lift_fluents()`
-  - `_ground_lifted_literal_internal()` → marked DEPRECATED, delegates to FluentBinder
-  - `_lift_grounded_fluent_internal()` → marked DEPRECATED, delegates to FluentBinder
-- Old methods kept for backward compatibility during transition
-
-**Benefits**:
-- Clear algorithm semantics (bindP and bindP⁻¹)
-- Easier to test in isolation (16 new tests)
-- Reduced PDDLHandler complexity (~150 lines extracted)
-- Better separation of concerns (algorithm operations vs PDDL parsing)
-- Inverse operations verified: `bindP(bindP⁻¹(F, O), O) = F`
-
-**Tests**: 16 new tests in `tests/core/test_binding_operations.py`, all passing
-**Integration**: All existing tests pass, including Information Gain algorithm bindP tests
-
-### PDDLHandler Refactoring Phase 1B - GroundedAction Type-Safe Class (October 5, 2025)
-**Context**: Grounded actions were represented as `Tuple[Action, Dict[str, Object]]` throughout the codebase, lacking type safety and self-documentation.
-
-**Problem**:
-- Primitive tuple representation not self-documenting
-- Requires tuple unpacking everywhere
-- No type safety for grounded actions
-- No built-in validation or convenience methods
-
-**Solution**: Created `GroundedAction` dataclass in `src/core/pddl_types.py`:
-- **GroundedAction**: Type-safe wrapper for grounded actions
-  - Replaces `Tuple[Action, Dict[str, Object]]` representation
-  - Provides `object_names()`, `to_string()` methods
-  - Includes `from_components()` for backward compatibility
-  - Includes `to_tuple()` for gradual migration
-  - Follows same pattern as `GroundedFluent` for consistency
-
-**Benefits**:
-- Type safety with IDE support
-- Self-documenting code
-- Consistent API with GroundedFluent
-- Foundation for future migration of PDDLHandler methods
-- Easier to maintain and understand grounded action handling
-
-**Tests**: 9 new tests in `tests/core/test_pddl_types.py`, all passing
-
-### PDDLHandler Refactoring Phase 4 - Complex Method Refactoring (October 5, 2025)
-**Context**: PDDLHandler contained complex methods with mixed responsibilities (~137 lines total), violating single responsibility principle and reducing testability.
-
-**Problem**:
-- `state_to_fluent_set()` handled both dict and state objects in one method (52 lines)
-- `get_action_preconditions()` mixed lifted and grounded extraction with boolean flag (41 lines)
-- `get_action_effects()` mixed lifted and grounded extraction (44 lines)
-- Hard to test individual code paths in isolation
-
-**Solution**: Applied dispatcher pattern to split complex methods:
-- **state_to_fluent_set()** → dispatcher + `_fluents_from_dict()` + `_fluents_from_state_object()`
-  - Each private method handles one state type (~18 lines each)
-  - Dispatcher routes based on `isinstance(state, dict)`
-- **get_action_preconditions()** → dispatcher + `_get_lifted_preconditions()` + `_get_grounded_preconditions()`
-  - Lifted method extracts parameter-bound preconditions (~15 lines)
-  - Grounded method extracts fully instantiated preconditions (~18 lines)
-  - Dispatcher routes based on `lifted` flag
-- **get_action_effects()** → dispatcher + `_get_lifted_effects()` + `_get_grounded_effects()`
-  - Lifted method extracts parameter-bound effects (~15 lines)
-  - Grounded method extracts fully instantiated effects (~18 lines)
-  - Returns tuple of (add_effects, delete_effects)
-
-**Benefits**:
-- Single responsibility: each method handles one specific case
-- Improved testability: can test each private method in isolation
-- Reduced complexity: methods under 20 lines each
-- Maintained backward compatibility: public API unchanged
-- Code reduction: ~137 lines → ~117 lines (net -20 lines through consolidation)
-
-**Tests**: 6 new tests in `tests/core/test_pddl_handler.py`, all passing
-- `test_fluents_from_dict` / `test_fluents_from_state_object`
-- `test_get_lifted_preconditions` / `test_get_grounded_preconditions`
-- `test_get_lifted_effects` / `test_get_grounded_effects`
-
-### PDDLHandler Refactoring Phase 5 - Migrate to Type-Safe Classes (October 5, 2025)
-**Context**: Dependent files still used primitive tuple representations for grounded actions, missing the benefits of type-safe GroundedAction class.
-
-**Problem**:
-- `information_gain.py` used tuple unpacking: `for action, binding in grounded_actions:`
-- `olam_adapter.py` accessed internal `_grounded_actions` list directly
-- `pddl_environment.py` works with primitive types (no changes needed)
-- Code not using available type-safe interfaces
-
-**Solution**: Migrated dependent files to use type-safe GroundedAction:
-- **PDDLHandler**: Added `get_all_grounded_actions_typed()` method
-  - Returns `List[GroundedAction]` instead of `List[Tuple[Action, Dict[str, Object]]]`
-  - Wraps internal `_grounded_actions` with type-safe classes
-  - Clean API without exposing internal representation
-- **information_gain.py**: Updated to use GroundedAction
-  - Changed from: `for action, binding in grounded_actions:`
-  - Changed to: `for grounded_action in grounded_actions:`
-  - Uses `grounded_action.action.name` for action name
-  - Uses `grounded_action.object_names()` for parameter extraction
-  - Cleaner, more readable code
-- **olam_adapter.py**: Updated to use GroundedAction
-  - Changed from: `for action, binding in self.pddl_handler._grounded_actions:`
-  - Changed to: `for grounded_action in self.pddl_handler.get_all_grounded_actions_typed():`
-  - Uses `grounded_action.object_names()` instead of manual extraction
-  - No longer accesses internal `_grounded_actions` attribute
-- **pddl_environment.py**: Assessment complete - no changes needed
-  - Works with action names and parameter lists directly
-  - No parameter binding usage
-
-**Benefits**:
-- Type safety throughout the codebase
-- Consistent API usage with GroundedAction
-- Improved code readability and maintainability
-- No direct access to internal PDDLHandler attributes
-- Foundation complete for future refactoring phases
-
-**Tests**: All 51 curated tests passing, including:
-- Information Gain algorithm tests
-- OLAM adapter integration tests
-- Full pipeline integration tests
-
-**Documentation Updates**:
-- `UNIFIED_PLANNING_GUIDE.md`: Added `get_all_grounded_actions_typed()` usage example
-- `QUICK_REFERENCE.md`: Added "Type-Safe Grounded Actions" pattern
-- `pddl_handler_refactoring_plan.md`: Updated execution tracking to Phase 5 complete
-
-### PDDLHandler Refactoring Phase 6 - Documentation Review and Updates (October 5, 2025)
-**Context**: After completing Phases 1-5 of the PDDLHandler refactoring, comprehensive documentation updates needed to ensure all documentation reflects the refactored codebase.
-
-**Problem**:
-- Documentation partially updated during earlier phases
-- Need comprehensive review to ensure consistency
-- No centralized documentation of final refactoring metrics
-- Missing references to new modules in some docs
-
-**Solution**: Comprehensive documentation review and updates across all documentation files:
-- **UNIFIED_PLANNING_GUIDE.md**: Verified complete with ExpressionConverter, FluentBinder, and GroundedAction examples
-- **LIFTED_SUPPORT.md**: Added type-safe class section at top, FluentBinder operations, updated examples
-- **QUICK_REFERENCE.md**: Added ExpressionConverter usage, FluentBinder (bindP/bindP⁻¹) usage, expanded type-safe patterns
-- **IMPLEMENTATION_TASKS.md**: Added Phase 6 completion entry (this section)
-- **pddl_handler_refactoring_plan.md**: Updated execution tracking to Phase 6 complete
-
-**Benefits**:
-- All documentation accurately reflects refactored codebase
-- No outdated references to primitive types (only historical explanations)
-- Comprehensive examples for all new modules
-- Final refactoring metrics documented for future reference
-- Documentation internally consistent
-
-**Final Refactoring Metrics**:
-- **New modules created**: 3
-  - `src/core/pddl_types.py` (type-safe classes)
-  - `src/core/expression_converter.py` (FNode conversion logic)
-  - `src/core/binding_operations.py` (bindP/bindP⁻¹ operations)
-- **New tests added**: 46 tests across 3 new test files
-  - `tests/core/test_pddl_types.py`: 21 tests
-  - `tests/core/test_expression_converter.py`: 9 tests
-  - `tests/core/test_binding_operations.py`: 16 tests
-- **Code reduction in PDDLHandler**: ~200 lines extracted to separate modules
-- **Methods refactored**: 11 methods (3 expression converters, 2 binding operations, 3 state/precondition/effects dispatchers, 1 helper method, 2 grounded action methods)
-- **Type safety improvements**: 4 primitive types replaced
-  - `Dict[str, Object]` → `ParameterBinding`
-  - Parameter-bound strings → `ParameterBoundLiteral`
-  - Grounded fluent strings → `GroundedFluent`
-  - `Tuple[Action, Dict[str, Object]]` → `GroundedAction`
-- **Files updated in dependent code**: 2
-  - `src/algorithms/information_gain.py`: Using GroundedAction
-  - `src/algorithms/olam_adapter.py`: Using GroundedAction
-
-**Tests**: All 51 curated tests passing throughout all phases
-
-**Validation**: Phase 6 Checklist ✓
-- All documentation reflects refactored codebase accurately
-- No outdated references to primitive-type APIs
-- All type-safe classes documented with examples
-- ExpressionConverter usage documented
-- FluentBinder (bindP/bindP⁻¹) usage documented
-- All code examples verified
-- All 51 curated tests passing
-- Documentation internally consistent
-- Refactoring plan execution tracking complete
+**For Detailed History**: See archived document `docs/archive/pddl_handler_refactoring_history.md` (if needed for reference)
 
 ### Experiment Readiness Assessment (October 5, 2025)
-**Context**: Before conducting paper-ready experiments comparing OLAM and Information Gain, need to validate implementation readiness against research goals.
+**Context**: Assessment conducted to identify gaps before running paper-ready experiments comparing OLAM and Information Gain.
 
-**Research Goals**:
-1. Run comprehensive experiments with automated metrics collection
-2. Gather informable statistics for academic paper
-3. Ensure correct algorithm logic for honest results
-
-**Assessment Process**:
-- Analyzed current implementation against all three goals
-- Identified components that are complete and production-ready
-- Identified critical gaps preventing paper-ready experiments
-- Documented implementation requirements for each gap
-- Created 3-phase implementation plan
-
-**Document Created**: `docs/validation/experiment_readiness_assessment.md`
-
-**Key Findings**:
-
-**✅ Complete Components**:
-- ExperimentRunner fully automated (YAML config, stopping criteria, export)
-- MetricsCollector comprehensive (action tracking, windowed mistake rates, per-action stats)
-- OLAM validated against paper (see OLAM_VALIDATION_REPORT.md)
-- Information Gain fully implemented (~60 tests passing)
+**Complete Infrastructure**:
+- ExperimentRunner (YAML config, stopping criteria, export)
+- MetricsCollector (comprehensive action tracking)
+- OLAM validated (see OLAM_VALIDATION_REPORT.md)
+- Information Gain implemented (~60 tests passing)
 - Real PDDL execution environment
-- Configuration system for multiple domains
 
-**❌ Critical Gaps Identified (5 gaps)**:
+**Critical Gaps Identified**: 5 gaps documented in `docs/validation/experiment_readiness_assessment.md`
+1. Statistical significance testing (t-tests, Cohen's d, CIs) → **RESOLVED (Phase 1, Oct 6)**
+2. Automated comparison pipeline (batch runner, aggregation)
+3. Convergence detection validation (reliable stopping criteria)
+4. Ground truth model comparison (precision/recall) → **RESOLVED (Phase 1, Oct 6)**
+5. Information Gain validation report (algorithm correctness verification)
 
-1. **No Statistical Significance Testing**
-   - Problem: Cannot determine if algorithm differences are statistically significant
-   - Missing: t-tests, effect sizes (Cohen's d), confidence intervals, p-values
-   - Required: `src/experiments/statistical_analysis.py` with `StatisticalAnalyzer` class
-   - Impact: Cannot make scientifically valid claims in paper
-
-2. **No Automated Algorithm Comparison Pipeline**
-   - Problem: Must manually run experiments and compare results
-   - Missing: Batch runner for multiple trials, result aggregation, comparison reports
-   - Required: `scripts/compare_algorithms.py` with `AlgorithmComparisonRunner`
-   - Impact: Time-consuming manual process, prone to errors
-
-3. **No Convergence Detection Validation**
-   - Problem: `has_converged()` methods may be unreliable or unimplemented
-   - Missing: Validated convergence criteria for both algorithms
-   - Required: Implement and test convergence detection for OLAM and Information Gain
-   - Impact: Experiments may run longer than necessary or stop prematurely
-
-4. **No Ground Truth Model Comparison**
-   - Problem: Cannot verify learned models match PDDL specifications
-   - Missing: Precision/recall calculation, effect accuracy, model comparison metrics
-   - Required: `src/core/model_validator.py` with `ModelValidator` class
-   - Impact: Cannot validate algorithm correctness
-
-5. **No Information Gain Validation Report**
-   - Problem: Unlike OLAM (which has validation report), Information Gain lacks systematic validation
-   - Missing: Evidence of hypothesis space reduction, information gain-based selection, model learning
-   - Required: `scripts/validate_information_gain.py` and validation report document
-   - Impact: Algorithm correctness unverified against theoretical description
-
-**Overall Assessment**: ⚠️ **MOSTLY READY** with critical gaps
-
-**Implementation Estimate**: 6-9 days (3 phases)
-- Phase 1: Statistical foundation (2-3 days)
-- Phase 2: Algorithm validation (2-3 days)
-- Phase 3: Comparison pipeline (2-3 days)
-
-**Current Readiness**: 30% (3/10 paper-ready criteria met)
-**After Gap Implementation**: 100% (10/10 criteria met)
-
-**Status**: Assessment complete, ready for implementation planning
+**Status**: 2/5 gaps resolved (Phase 1 complete), 3 gaps remaining for paper-ready experiments
 
 ### Phase 1 Implementation - Statistical Foundation (October 6, 2025)
 **Context**: Implemented critical infrastructure for statistically valid algorithm comparisons (Gaps #2 and #5 from Experiment Readiness Assessment).
@@ -613,23 +316,131 @@ Building experiment framework to compare three online action model learning algo
 - Foundation established for algorithm validation (Gap #4, Phase 2)
 - Foundation established for comparison pipeline (Gap #1, Phase 3)
 
-## Recent Fixes (September 28, 2025)
+### Experiment Configuration for Statistical Validity (October 9, 2025)
+**Context**: Analysis of current configuration settings revealed aggressive convergence parameters and insufficient timeouts that may prevent collection of statistically valid experiment data.
 
-1. **OLAM Learning Validation**
-   - Fixed Java bypass to use learned model only
-   - Added injective binding support for OLAM
-   - Validated hypothesis space reduction behavior
+**Critical Configuration Issues Identified**:
 
-2. **Domain Compatibility**
-   - Created domain analyzer for feature detection
-   - Added OLAM-compatible domains (no negative preconditions)
-   - Proper validation without success rate assumptions
+**1. Aggressive Convergence Parameters (Information Gain)**
+- **Current (hardcoded)**: `MODEL_STABILITY_WINDOW=10`, `INFO_GAIN_EPSILON=0.01`, `SUCCESS_RATE_THRESHOLD=0.95`
+- **Problem**:
+  - Model stable for just 10 iterations triggers convergence (too short)
+  - 95% success (19/20 actions) too easy to satisfy
+  - Convergence logic: ANY 2 of 3 criteria (too aggressive)
+- **Impact**: Premature convergence → insufficient data for statistical analysis
+- **Recommended**: `MODEL_STABILITY_WINDOW=50`, `INFO_GAIN_EPSILON=0.001`, `SUCCESS_RATE_THRESHOLD=0.98`
+- **Fix Required**: Make parameters configurable via YAML (currently hardcoded in `src/algorithms/information_gain.py:40-43`)
+
+**2. Short Planner Timeouts**
+- **Current**: 60 seconds per planning call
+- **Problem**: Complex problems need longer planning → artificial failures contaminate learning signal
+- **Impact**: False action failures affect model learning
+- **Recommended**: 180-300 seconds for full experiments
+- **Status**: ✅ Already configurable via `planner_time_limit` parameter (OLAM)
+
+**3. Low Max Iterations**
+- **Current**: 200 iterations
+- **Problem**: Insufficient sample size for statistical power (need 500-1000+ for medium effect sizes)
+- **Impact**: Weak statistical conclusions, high variance
+- **Recommended**: 1000+ iterations for paper-ready experiments
+- **Status**: ✅ Already configurable via `max_iterations` parameter
+
+**4. Frequent Convergence Checks**
+- **Current**: Every 20 iterations
+- **Problem**: Increases chance of premature convergence
+- **Recommended**: Every 100 iterations, or disable (set to 99999) for data collection
+- **Status**: ✅ Already configurable via `convergence_check_interval`
+
+**Configuration Guide Created**: `docs/EXPERIMENT_CONFIGURATION_GUIDE.md`
+- Conservative configuration templates for full experiments
+- Statistical power analysis and sample size requirements
+- Rationale for each parameter recommendation
+- Phase-based configuration strategy (exploratory → data collection → final validation)
+
+**Status**: Analysis complete, configuration guide created, Information Gain parameters need code changes
 
 ## Next Implementation Tasks
 
 ### Priority: Paper-Ready Experiment Infrastructure
 
-Based on the Experiment Readiness Assessment, the following gaps must be addressed before conducting publishable comparative experiments.
+Based on the Experiment Readiness Assessment and configuration analysis, the following gaps must be addressed before conducting publishable comparative experiments.
+
+### Missing Components Analysis for Full Experiments (October 9, 2025)
+
+**Context**: Comprehensive assessment of what's needed to run full OLAM and Information Gain experiments for academic paper.
+
+**Current Project Readiness: 60-70% Complete**
+
+**✅ COMPLETE - Core Infrastructure**:
+- **ExperimentRunner** (`src/experiments/runner.py`) - Fully automated with YAML configs
+- **MetricsCollector** (`src/experiments/metrics.py`) - Comprehensive action tracking with windowing
+- **StatisticalAnalyzer** (`src/experiments/statistical_analysis.py`) - Phase 1 complete (Oct 6)
+  - Paired t-tests, Cohen's d, confidence intervals, Bonferroni correction
+  - 9 tests passing
+- **ModelValidator** (`src/core/model_validator.py`) - Phase 1 complete (Oct 6)
+  - Ground truth comparison, precision/recall/F1-score
+  - 15 tests passing
+- **OLAM Integration** - Fully validated against paper with configurable parameters
+- **Information Gain Implementation** - Algorithm complete with ~60 tests passing
+- **PDDL Execution** - ActiveEnvironment with real action execution
+- **Configuration System** - YAML-based with multiple domain support
+
+**❌ MISSING - Critical Gaps (3 Remaining)**:
+
+**Gap #1: Automated Comparison Pipeline** (NOT IMPLEMENTED)
+- **File**: `scripts/compare_algorithms.py` - **DOES NOT EXIST**
+- **Problem**: No batch execution of multiple trials with aggregated results
+- **Required Functionality**:
+  - `AlgorithmComparisonRunner` class for multi-trial experiments
+  - Automated YAML config generation for trial batches
+  - Result aggregation across trials (mean, std, CI)
+  - Comparison report generation with statistical tests
+  - Visualization: learning curves, box plots, convergence time
+- **Impact**: Manual experiment execution, time-consuming, error-prone
+- **Estimated Work**: 2-3 days
+
+**Gap #2: Information Gain Convergence Configurability** (PARTIALLY IMPLEMENTED)
+- **File**: `src/algorithms/information_gain.py:40-43` - **PARAMETERS HARDCODED**
+- **Problem**: Convergence parameters are class constants, not configurable via YAML
+- **Required Changes**:
+  - Add convergence parameters to `__init__()` method
+  - Accept from YAML configs via ExperimentRunner
+  - Update convergence check logic to use instance variables
+  - Add tests for configurable parameters
+- **Current Hardcoded Values**: `MODEL_STABILITY_WINDOW=10`, `INFO_GAIN_EPSILON=0.01`, etc.
+- **Impact**: Cannot use conservative settings for full experiments
+- **Estimated Work**: 4-6 hours
+
+**Gap #3: Information Gain Validation Report** (NOT CREATED)
+- **File**: `scripts/validate_information_gain.py` - **DOES NOT EXIST**
+- **Report**: `docs/validation/INFORMATION_GAIN_VALIDATION_REPORT.md` - **DOES NOT EXIST**
+- **Problem**: Unlike OLAM (which has validation report), Information Gain lacks systematic validation
+- **Required Validation**:
+  - Hypothesis space reduction evidence (CNF formula size tracking)
+  - Information gain calculation correctness
+  - Action selection based on information gain values
+  - Model learning convergence to ground truth
+  - Comparison with theoretical behavior
+- **Impact**: Algorithm correctness unverified against theory
+- **Estimated Work**: 1-2 days
+
+**Configuration Infrastructure Gaps**:
+- ❌ Conservative configuration templates (blocksworld, gripper, etc.) with 1000+ iterations
+- ❌ Multi-trial batch configuration generator
+- ✅ Individual algorithm configs (exist but use exploratory settings)
+
+**Visualization Gaps**:
+- ❌ Learning curve plotting with confidence intervals
+- ❌ Box plots for sample complexity comparison
+- ❌ Convergence time visualization
+- ✅ Basic metrics plotting (exists in MetricsCollector)
+
+**Overall Assessment**:
+- **OLAM Experiment Readiness**: 85% (only needs comparison pipeline)
+- **Information Gain Experiment Readiness**: 70% (needs configurability + validation + pipeline)
+- **Paper-Ready Analysis**: 60% (needs visualization + automated comparison)
+
+**Estimated Work to 100%**: 3-4 days focused implementation
 
 ### Phase 1: Statistical Foundation - COMPLETE ✅
 
@@ -678,27 +489,51 @@ Based on the Experiment Readiness Assessment, the following gaps must be address
 
 ### Phase 2: Algorithm Validation (2-3 days) - HIGH PRIORITY
 
-**Goal**: Verify algorithm correctness before comparison
+**Goal**: Verify algorithm correctness and enable flexible configuration before comparison
+
+#### Gap #2: Information Gain Convergence Configurability (NEW - CRITICAL)
+**Component**: `src/algorithms/information_gain.py`
+**Status**: ⚠️ BLOCKING ISSUE - Parameters hardcoded, prevents statistical validity
+
+**Tasks**:
+1. **Make convergence parameters configurable**:
+   - Add to `__init__()`: `model_stability_window`, `info_gain_epsilon`, `success_rate_threshold`, `success_rate_window`
+   - Set conservative defaults: 50, 0.001, 0.98, 50 (currently: 10, 0.01, 0.95, 20)
+   - Update `has_converged()` to use instance variables instead of class constants
+   - Update convergence logic: require ALL 3 criteria (currently ANY 2 of 3)
+2. **Update configuration files**:
+   - Add parameters to `configs/information_gain_blocksworld.yaml`
+   - Create conservative template: `configs/full_experiment_information_gain.yaml`
+3. **Add tests** (8-10 new tests):
+   - Parameter passthrough validation
+   - Conservative vs aggressive convergence behavior
+   - YAML configuration parsing
+   - Convergence logic correctness (ALL 3 criteria)
+4. **Update ExperimentRunner**:
+   - Verify parameters passed via `**kwargs`
+   - Add validation for parameter ranges
+
+**Deliverable**: Configurable convergence for statistical validity ⚠️ **REQUIRED FOR FULL EXPERIMENTS**
 
 #### Gap #3: Convergence Detection Validation
 **Components**:
 - `src/algorithms/olam_adapter.py` (update `has_converged()`)
-- `src/algorithms/information_gain.py` (update `has_converged()`)
+- `src/algorithms/information_gain.py` (validate updated logic)
 
 **Tasks**:
-1. **OLAM Convergence**:
-   - Implement hypothesis space stability check (no changes for N iterations)
-   - Implement high success rate check (>95% in last M actions)
-   - Unit tests for each criterion
-2. **Information Gain Convergence**:
-   - Implement model stability check (no pre(a) changes)
-   - Implement low information gain check (max gain < ε)
-   - Implement high success rate check
-   - Unit tests for each criterion
-3. Integration tests showing early stopping
-4. Validation: Does algorithm converge before max_iterations?
+1. **OLAM Convergence Validation**:
+   - Test existing convergence with conservative settings (500+ iterations)
+   - Verify hypothesis space stability tracking
+   - Unit tests for convergence criteria
+2. **Information Gain Convergence Validation** (after Gap #2 implementation):
+   - Test model stability check with configurable window
+   - Test information gain threshold with configurable epsilon
+   - Test success rate with configurable threshold and window
+   - Verify ALL 3 criteria required (not ANY 2)
+   - Integration tests with conservative settings
+3. Validation: Can algorithms run 1000+ iterations without premature convergence?
 
-**Deliverable**: Reliable convergence detection for both algorithms
+**Deliverable**: Reliable, tested convergence detection with conservative settings
 
 #### Gap #4: Information Gain Validation Report
 **Components**:
@@ -724,41 +559,185 @@ Based on the Experiment Readiness Assessment, the following gaps must be address
 
 ### Phase 3: Comparison Pipeline (2-3 days) - MEDIUM PRIORITY
 
-**Goal**: Automate algorithm comparison experiments
+**Goal**: Automate algorithm comparison experiments with visualization
 
 #### Gap #1: Algorithm Comparison Pipeline
-**Component**: `scripts/compare_algorithms.py`
+**Component**: `scripts/compare_algorithms.py` (NEW - DOES NOT EXIST)
 
 **Tasks**:
-1. Implement `AlgorithmComparisonRunner` class
-   - Run multiple trials (≥5) for each algorithm
-   - Control RNG seeds for fair comparison
-   - Aggregate results across trials
-2. Implement `_run_single_trial()` method
-   - Wrapper around ExperimentRunner
-   - Consistent configuration across trials
-3. Implement `_generate_comparison_report()` method
-   - Call StatisticalAnalyzer (from Phase 1)
-   - Generate human-readable report
-   - Export to CSV and JSON
-4. Create visualization tools
-   - Box plots for sample complexity comparison
-   - Learning curves with error bars (95% CI)
-   - Convergence time comparison
-   - Model accuracy comparison
-5. Optional: LaTeX table generation for papers
 
-**Deliverable**: One-command algorithm comparison pipeline
+**1. AlgorithmComparisonRunner Class Implementation**:
+   - Constructor: Accept domain, problem, algorithms list, trials count, base config
+   - `run_comparison()`: Main entry point for batch experiments
+   - `_run_single_trial(algorithm, seed)`: Execute one experiment trial
+     - Wrapper around ExperimentRunner
+     - Load YAML config with trial-specific seed
+     - Return MetricsCollector results
+   - `_aggregate_results()`: Combine results across trials
+     - Extract sample complexity (actions to convergence)
+     - Extract final model accuracy (using ModelValidator)
+     - Extract learning curves (windowed mistake rates)
+     - Calculate mean, std, 95% CI for each metric
+   - `_generate_comparison_report()`: Statistical analysis and report generation
+     - Call StatisticalAnalyzer.compare_algorithms() for sample complexity
+     - Call StatisticalAnalyzer.compare_algorithms() for final accuracy
+     - Generate markdown report with tables
+     - Export raw data to CSV and JSON
+   - `_create_visualizations()`: Plot generation (see Gap #1B below)
 
-**Usage**:
-```bash
-python scripts/compare_algorithms.py \
-  --domain blocksworld \
-  --problem p01 \
-  --algorithms olam information_gain \
-  --trials 5 \
-  --max-iterations 200
+**2. Configuration Management**:
+   - Accept base YAML config file
+   - Generate trial-specific configs with different seeds
+   - Ensure consistent parameters across algorithms (except algorithm-specific)
+   - Support conservative configuration templates
+
+**3. Result Aggregation Format**:
+   ```python
+   {
+     'algorithm_name': {
+       'sample_complexity': {'mean': float, 'std': float, 'ci_95': (float, float), 'trials': List[int]},
+       'final_accuracy': {'mean': float, 'std': float, 'ci_95': (float, float), 'trials': List[float]},
+       'learning_curves': List[List[float]],  # Per-trial windowed mistake rates
+       'convergence_iterations': List[int],   # Per-trial convergence points
+       'runtime_seconds': {'mean': float, 'std': float, 'trials': List[float]}
+     }
+   }
+   ```
+
+**4. Command-Line Interface**:
+   ```bash
+   python scripts/compare_algorithms.py \
+     --domain blocksworld \
+     --problem p01 \
+     --algorithms olam information_gain \
+     --trials 10 \
+     --max-iterations 1000 \
+     --config configs/full_experiment_template.yaml \
+     --output results/comparison_blocksworld_p01/
+   ```
+
+**5. Tests** (10-12 new tests):
+   - Single trial execution
+   - Multi-trial aggregation
+   - Statistical analysis integration
+   - Result export formats
+   - Configuration override handling
+
+**Deliverable**: Automated multi-trial comparison pipeline with statistical analysis
+
+#### Gap #1B: Visualization Module
+**Component**: `src/experiments/visualization.py` (NEW - DOES NOT EXIST)
+
+**Tasks**:
+
+**1. Learning Curve Plotting**:
+   - `plot_learning_curves(results_dict, title, output_path)`:
+     - X-axis: iteration number
+     - Y-axis: windowed mistake rate or success rate
+     - Plot mean curve with 95% confidence interval shading
+     - Multiple algorithms on same plot (different colors)
+     - Legend, axis labels, grid
+   - Support matplotlib and seaborn backends
+   - Publication-quality output (PDF, 300 DPI)
+
+**2. Sample Complexity Comparison**:
+   - `plot_sample_complexity_boxplot(results_dict, title, output_path)`:
+     - Box plot showing distribution across trials
+     - Algorithms on X-axis, sample complexity on Y-axis
+     - Show mean, median, quartiles, outliers
+     - Statistical significance markers (*, **, ***)
+   - `plot_sample_complexity_bars(results_dict, title, output_path)`:
+     - Bar chart with error bars (95% CI)
+     - Cleaner alternative to box plots
+
+**3. Convergence Analysis**:
+   - `plot_convergence_times(results_dict, title, output_path)`:
+     - Histogram of convergence iterations per algorithm
+     - Side-by-side or overlapping distributions
+   - `plot_convergence_comparison(results_dict, title, output_path)`:
+     - CDF plot: P(convergence by iteration N)
+
+**4. Model Accuracy Visualization**:
+   - `plot_accuracy_comparison(results_dict, title, output_path)`:
+     - Grouped bar chart: precondition F1, add effect F1, delete effect F1
+     - Error bars for 95% CI
+     - Overall accuracy as separate metric
+
+**5. Utility Functions**:
+   - `apply_publication_style()`: Set matplotlib rcParams for papers
+   - `generate_comparison_dashboard(results_dict, output_dir)`: Create all plots
+   - LaTeX table generation: `export_latex_table(results_dict, output_path)`
+
+**6. Tests** (8-10 new tests):
+   - Plot generation with sample data
+   - Confidence interval rendering
+   - Multi-algorithm plot handling
+   - Export format validation
+
+**Deliverable**: Comprehensive visualization suite for paper-ready figures
+
+#### Configuration Templates
+**Components**:
+- `configs/full_experiment_olam.yaml` (NEW)
+- `configs/full_experiment_information_gain.yaml` (NEW)
+
+**Content**: Conservative settings for paper-ready experiments
+- `max_iterations: 1000`
+- `planner_time_limit: 180`
+- `convergence_check_interval: 100` (or 99999 to disable)
+- Information Gain: `model_stability_window: 50`, `info_gain_epsilon: 0.001`, `success_rate_threshold: 0.98`
+- Reference to EXPERIMENT_CONFIGURATION_GUIDE.md for rationale
+
+### Configuration Best Practices for Full Experiments
+
+**Context**: Guidelines for setting up statistically valid experiments based on configuration analysis.
+
+**Exploratory Phase** (quick validation, convergence enabled):
+```yaml
+max_iterations: 200
+planner_time_limit: 60
+convergence_check_interval: 20
+# Use default aggressive convergence for quick feedback
 ```
+**Use case**: Algorithm debugging, parameter tuning, quick sanity checks
+
+**Data Collection Phase** (full runs, no early stopping):
+```yaml
+max_iterations: 1000
+planner_time_limit: 180  # 3 minutes per planning call
+convergence_check_interval: 99999  # Effectively disabled
+algorithm_params:
+  information_gain:
+    model_stability_window: 50      # Conservative
+    info_gain_epsilon: 0.001         # Conservative
+    success_rate_threshold: 0.98     # Conservative
+    success_rate_window: 50          # Conservative
+```
+**Use case**: Initial data collection for paper, algorithm comparison
+
+**Publication-Ready Phase** (maximum rigor):
+```yaml
+max_iterations: 1000
+planner_time_limit: 300  # 5 minutes per planning call
+convergence_check_interval: 99999  # Disabled
+# Run 10+ trials per algorithm with different seeds
+# Conservative convergence parameters (as above)
+```
+**Use case**: Final experiments for paper submission
+
+**Key Principles**:
+1. **Disable convergence for data collection**: Set `convergence_check_interval: 99999`
+2. **Longer is better**: Use 1000+ iterations for sufficient statistical power
+3. **Generous timeouts**: 180-300 seconds prevents false failures
+4. **Multiple trials**: 10+ trials per algorithm for robust statistics
+5. **Fixed seeds**: Control randomness for reproducibility
+
+**Sample Size Requirements** (for medium effect size, Cohen's d=0.5, α=0.05, power=0.80):
+- **Minimum**: 5 trials per algorithm
+- **Recommended**: 10 trials per algorithm
+- **Ideal**: 20+ trials per algorithm
+
+See `docs/EXPERIMENT_CONFIGURATION_GUIDE.md` for detailed rationale and examples.
 
 ### Phase 4: ModelLearner Integration (BLOCKED - Low Priority)
 
@@ -774,19 +753,18 @@ python scripts/compare_algorithms.py \
 
 ### Implementation Priority Order
 
-**Week 1**: Phase 1 (Statistical foundation)
-- Day 1-2: StatisticalAnalyzer implementation + tests
-- Day 2-3: ModelValidator implementation + tests
+**Phase 1**: Statistical foundation - ✅ **COMPLETE** (October 6, 2025)
 
-**Week 2**: Phase 2 (Algorithm validation)
-- Day 1: Convergence detection implementation + tests
-- Day 2-3: Information Gain validation script + report
+**Phase 2**: Algorithm validation + configuration flexibility (2-3 days)
+- Day 1: Make Information Gain convergence configurable (Gap #2) ⚠️ **BLOCKING**
+- Day 2: Convergence detection validation (Gap #3)
+- Day 3: Information Gain validation script + report (Gap #4)
 
-**Week 3**: Phase 3 (Comparison pipeline)
-- Day 1-2: AlgorithmComparisonRunner implementation
-- Day 3: Visualization tools + final testing
+**Phase 3**: Comparison pipeline + visualization (2-3 days)
+- Day 1-2: AlgorithmComparisonRunner implementation (Gap #1)
+- Day 2-3: Visualization module + configuration templates (Gap #1B)
 
-**Total estimated time**: 6-9 days for paper-ready infrastructure
+**Total remaining time**: 4-6 days for paper-ready infrastructure (from 60% → 100%)
 
 ## Testing Status
 
@@ -798,6 +776,10 @@ python scripts/compare_algorithms.py \
   - Model validator: 15 tests
 - **Integration tests**: OLAM fully tested, ModelValidator integrated with PDDLHandler
 - **Validation**: OLAM paper behaviors confirmed
+- **Configuration flexibility**:
+  - ✅ OLAM: 11 configuration tests passing (October 9) - planner timeouts, max iterations, convergence configurable
+  - ❌ Information Gain: Convergence parameters hardcoded (Gap #2) - **NEEDS IMPLEMENTATION**
+  - ✅ ExperimentRunner: Supports arbitrary algorithm parameters via `**kwargs`
 
 ## File Structure
 See [DEVELOPMENT_RULES.md](DEVELOPMENT_RULES.md) for complete directory structure.
