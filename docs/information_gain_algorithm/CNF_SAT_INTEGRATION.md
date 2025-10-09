@@ -43,15 +43,22 @@ Complete CNF formula management with PySAT integration.
   - `has_clauses()` - Check if formula has clauses
   - `add_unit_constraint(fluent, must_be_true)` - Add unit clause for fluent
 
-### 2. PDDL Handler (`src/core/pddl_handler.py`) ✅ IMPLEMENTED
-Unified Planning integration with CNF extraction.
+### 2. PDDL Components (New Architecture - October 2025) ✅ REFACTORED
+Clean layered architecture replacing monolithic PDDLHandler.
+
+**Components:**
+- **PDDLReader** (`src/core/pddl_io.py`) - Parse PDDL domain and problem files
+- **LiftedDomainKnowledge** (`src/core/lifted_domain.py`) - Central domain representation with lifted actions/predicates
+- **Grounding Utilities** (`src/core/grounding.py`) - Functional bindP/bindP⁻¹ operations for literal grounding/lifting
+- **UPAdapter** (`src/core/up_adapter.py`) - Stateless conversions between UP and project types
 
 **Key Functions:**
-- `parse_domain_and_problem()` - Parse PDDL files
-- `get_lifted_action()` - Access action schemas
-- `extract_lifted_preconditions_cnf()` - Convert to CNF
-- `get_type_hierarchy()` - Type hierarchy with 'object' root
-- **Expression Tree Handling**: Proper FNode traversal
+- `parse_pddl(domain_file, problem_file)` - Parse PDDL files (returns domain, initial_state)
+- `domain.get_parameter_bound_literals(action_name)` - Get all literals for action schema
+- `grounding.ground_literal_set(literals, objects)` - Ground literals (bindP⁻¹)
+- `grounding.lift_fluent_set(fluents, objects, domain)` - Lift fluents (bindP)
+- `domain.get_action(action_name)` - Access action schemas
+- `domain.is_subtype(type1, type2)` - Type hierarchy operations
 
 ### 3. Future Components (To Be Implemented)
 The following components will be created in `src/sat_integration/`:
@@ -95,7 +102,7 @@ def calculate_entropy(cnf_formula):
 
 ## Architecture and Separation of Concerns
 
-### Clean Separation (Oct 5, 2025 Refactoring)
+### Clean Separation (October 2025 Refactoring)
 The implementation maintains strict separation between:
 
 1. **Algorithm Logic** (`src/algorithms/information_gain.py`)
@@ -110,17 +117,18 @@ The implementation maintains strict separation between:
    - Constraint handling
    - Variable mapping
 
-3. **PDDL Handling** (`src/core/pddl_handler.py`)
-   - Parameter-bound literal generation
-   - Fluent grounding/lifting
-   - Action schema manipulation
-   - Domain/problem parsing
+3. **PDDL Components** (Layered Architecture)
+   - **Domain Representation** (`src/core/lifted_domain.py`) - Parameter-bound literal generation, action schemas
+   - **Grounding Operations** (`src/core/grounding.py`) - Fluent grounding/lifting (bindP/bindP⁻¹)
+   - **PDDL I/O** (`src/core/pddl_io.py`) - Domain/problem parsing
+   - **UP Integration** (`src/core/up_adapter.py`) - Format conversions
 
 This separation ensures:
 - Algorithm code focuses only on learning logic
 - CNF operations are centralized and reusable
 - PDDL handling is consistent across the framework
 - Testing is modular and focused
+- Clean data flow: UP → Adapter → Domain → Grounding → Algorithm
 
 ## Algorithm Workflow
 
