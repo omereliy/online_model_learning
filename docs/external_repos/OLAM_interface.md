@@ -12,6 +12,24 @@ OLAM (Online Learning of Action Models) - Lamanna et al.'s algorithm for learnin
 ## Repository Location
 `/home/omer/projects/OLAM/`
 
+## Experiment Requirements
+
+### Java JDK (REQUIRED)
+OLAM requires Oracle JDK 17+ for action filtering via `compute_not_executable_actions.jar`.
+
+**Installation**:
+1. Download from: https://www.oracle.com/java/technologies/downloads/
+2. Extract to `/home/omer/projects/OLAM/Java/jdk-*/`
+3. Verify: `ls /home/omer/projects/OLAM/Java/*/bin/java`
+
+**Note**: No Python bypass available in native OLAM. Our adapter supports bypass mode for testing only.
+
+### External Planners
+- FastDownward: Required for planning
+- FastForward: Used for action grounding
+
+See [OLAM EXPERIMENT_GUIDE.md](/home/omer/projects/OLAM/EXPERIMENT_GUIDE.md) for full setup.
+
 ## Main Classes
 
 ### `OLAM.Learner`
@@ -68,11 +86,49 @@ Per Lamanna et al. paper:
 ```python
 from src.algorithms.olam_adapter import OLAMAdapter
 
+# Production: Use Java (default)
+adapter = OLAMAdapter(
+    domain_file,
+    problem_file,
+    bypass_java=False  # Use OLAM's bundled Java
+)
+
+# Testing only: Bypass Java
 adapter = OLAMAdapter(domain_file, problem_file, bypass_java=True)
+
 action, objects = adapter.select_action(state)
 adapter.observe(state, action, objects, success, next_state)
 model = adapter.get_learned_model()
 ```
+
+## Experiment Integration
+
+### Adapter vs Native OLAM
+Our adapter integrates OLAM as a library for algorithm comparison research. Key differences from native OLAM experiments:
+
+| Aspect | Native OLAM | Our Adapter |
+|--------|-------------|-------------|
+| Java | Required | Optional (testing) |
+| Workflow | Multi-instance sequential | Single problem |
+| Results | Excel + per-instance | CSV/JSON unified |
+| PDDL Directory | Persistent | Temporary |
+| Transfer Learning | Yes | No |
+
+### Configuration Mapping
+**Native OLAM** (`Configuration.py`):
+- `TIME_LIMIT_SECONDS`, `MAX_ITER`, `PLANNER_TIME_LIMIT`
+- `NEG_EFF_ASSUMPTION`, `OUTPUT_CONSOLE`
+
+**Our Framework** (YAML):
+- `stopping_criteria.max_runtime_seconds`
+- `algorithm_params.olam.max_iterations`
+
+### For Detailed Analysis
+See [OLAM Experiment Review](../reviews/experimenting_OLAM_review.md) for:
+- Complete file structure comparison
+- Code misalignment analysis
+- Configuration differences
+- Result format conversions
 
 ## References
 Lamanna, L., Saetti, A., Serafini, L., Gerevini, A., & Traverso, P. (2021). "Online Learning of Action Models for PDDL Planning"

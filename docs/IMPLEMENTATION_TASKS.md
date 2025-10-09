@@ -86,7 +86,10 @@ Building experiment framework to compare three online action model learning algo
 #### OLAM Integration
 - **OLAM Adapter** (`src/algorithms/olam_adapter.py`) - Fully validated against paper
 - **Base Learner** (`src/algorithms/base_learner.py`) - Abstract interface
-- **Java bypass** with learned model filtering (no ground truth)
+- **Java Requirement** - Oracle JDK 17+ required for production use
+  - Location: `/home/omer/projects/OLAM/Java/jdk-*/`
+  - Bypass mode (`bypass_java=True`) only for testing
+  - See [OLAM Experiment Review](reviews/experimenting_OLAM_review.md)
 - **Domain compatibility** - Works with blocksworld/gripper (no negative preconditions)
 - **Validation confirmed** - All 4 paper behaviors demonstrated
 
@@ -125,6 +128,46 @@ Building experiment framework to compare three online action model learning algo
 - See [ModelLearner_interface.md](external_repos/ModelLearner_interface.md)
 
 ## Recent Updates (October 9, 2025)
+
+### OLAM Configuration Parameters - Extended Support (October 9, 2025)
+**Context**: OLAM review document identified missing OLAM Configuration.py parameters that weren't exposed through the adapter.
+
+**Problem**:
+- OLAM has 6 important Configuration.py parameters not accessible via adapter
+- No way to fine-tune OLAM's advanced features from YAML configs
+- Missing: `PLANNER_TIME_LIMIT`, `MAX_PRECS_LENGTH`, `NEG_EFF_ASSUMPTION`, `OUTPUT_CONSOLE`, `RANDOM_SEED`, `TIME_LIMIT_SECONDS`
+
+**Solution**: Added configuration parameter passthrough to OLAMAdapter
+- **OLAMAdapter parameters** (`src/algorithms/olam_adapter.py`):
+  - `planner_time_limit`: OLAM planner subprocess timeout (seconds)
+  - `max_precs_length`: Negative precondition search depth
+  - `neg_eff_assumption`: STRIPS negative effects assumption
+  - `output_console`: Console vs file logging
+  - `random_seed`: Numpy random seed
+  - `time_limit_seconds`: Total experiment timeout (seconds)
+- **Configuration method** (`_configure_java_settings()`):
+  - Applies parameters to OLAM's Configuration module if provided
+  - None values use OLAM's defaults (no override)
+  - Logs each parameter setting for debugging
+- **YAML config** (`configs/experiment_blocksworld.yaml`):
+  - Added all 6 parameters with inline documentation
+  - Marked as optional (uses OLAM defaults if omitted)
+
+**Tests**: 11 tests in `tests/algorithms/test_olam_configuration.py`
+- Parameter passthrough validation
+- Multiple parameter combinations
+- Type checking
+- None value handling (no override)
+- All tests passing
+
+**Benefits**:
+- Full control over OLAM's advanced features
+- Configuration documented in YAML files
+- Simple passthrough (no validation added)
+- Backward compatible (all parameters optional)
+- ExperimentRunner automatically passes parameters via **kwargs
+
+**Status**: COMPLETE - All 51 curated tests + 11 new tests passing
 
 ### Documentation Update - New Architecture (October 9, 2025)
 **Context**: Updated all documentation to reflect the new layered architecture after major refactoring.

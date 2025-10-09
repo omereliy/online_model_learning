@@ -11,11 +11,14 @@ from typing import Tuple, List, Dict, Optional, Any, Set
 from pathlib import Path
 import re
 from collections import defaultdict
+from contextlib import contextmanager
+
+# Import centralized path configuration
+from src.configuration.paths import OLAM_DIR
 
 # Add OLAM to path
-olam_path = '/home/omer/projects/OLAM'
-if olam_path not in sys.path:
-    sys.path.append(olam_path)
+if str(OLAM_DIR) not in sys.path:
+    sys.path.append(str(OLAM_DIR))
 
 # Import OLAM components
 try:
@@ -47,6 +50,12 @@ class OLAMAdapter(BaseActionModelLearner):
                  pddl_handler=None,
                  bypass_java: bool = False,
                  use_system_java: bool = False,
+                 planner_time_limit: Optional[int] = None,
+                 max_precs_length: Optional[int] = None,
+                 neg_eff_assumption: Optional[bool] = None,
+                 output_console: Optional[bool] = None,
+                 random_seed: Optional[int] = None,
+                 time_limit_seconds: Optional[int] = None,
                  **kwargs):
         """
         Initialize OLAM adapter.
@@ -59,6 +68,12 @@ class OLAMAdapter(BaseActionModelLearner):
             pddl_handler: Optional PDDLHandler instance for proper grounding
             bypass_java: If True, bypass Java dependency for action filtering
             use_system_java: If True, try to use system Java instead of bundled
+            planner_time_limit: OLAM planner subprocess timeout (seconds)
+            max_precs_length: OLAM negative precondition search depth
+            neg_eff_assumption: OLAM STRIPS negative effects assumption
+            output_console: OLAM console vs file logging
+            random_seed: OLAM numpy random seed
+            time_limit_seconds: OLAM total experiment timeout (seconds)
             **kwargs: Additional parameters
         """
         logger.info(f"Initializing OLAM adapter with domain={domain_file}, problem={problem_file}")
@@ -66,12 +81,25 @@ class OLAMAdapter(BaseActionModelLearner):
             f"Configuration: max_iterations={max_iterations}, eval_frequency={eval_frequency}, "
             f"bypass_java={bypass_java}, use_system_java={use_system_java}")
 
+        # Convert paths to absolute before any directory changes
+        domain_file = str(Path(domain_file).resolve())
+        problem_file = str(Path(problem_file).resolve())
+        logger.debug(f"Resolved absolute paths: domain={domain_file}, problem={problem_file}")
+
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
         self.eval_frequency = eval_frequency
         self.bypass_java = bypass_java
         self.use_system_java = use_system_java
+
+        # Store OLAM configuration parameters
+        self.planner_time_limit = planner_time_limit
+        self.max_precs_length = max_precs_length
+        self.neg_eff_assumption = neg_eff_assumption
+        self.output_console = output_console
+        self.random_seed = random_seed
+        self.time_limit_seconds = time_limit_seconds
 
         # Initialize domain knowledge for proper action grounding
         # OLAM requires injective bindings (no repeated objects in action parameters)
@@ -111,27 +139,47 @@ class OLAMAdapter(BaseActionModelLearner):
         logger.info(
             f"OLAM adapter initialization complete with {len(self.action_idx_to_str)} actions mapped")
 
+    @contextmanager
+    def _olam_context(self):
+        """
+        Context manager to run OLAM operations in OLAM's working directory.
+
+        OLAM expects to find its planner and other resources relative to its base directory.
+        This context manager ensures OLAM operations run from the correct directory.
+        """
+        original_dir = os.getcwd()
+        try:
+            os.chdir(OLAM_DIR)
+            logger.debug(f"Changed to OLAM directory: {OLAM_DIR}")
+            yield
+        finally:
+            os.chdir(original_dir)
+            logger.debug(f"Restored working directory: {original_dir}")
+
     def _initialize_olam(self):
         """Initialize OLAM learner and related components."""
-        # Configure Java settings before OLAM initialization
+        # Configure Java settings before OLAM initialization (no dir change needed)
         self._configure_java_settings()
 
-        # Create temporary PDDL directory for OLAM (it expects files in PDDL/)
-        self._setup_olam_pddl_directory()
+        # Create temporary PDDL directory for OLAM (uses absolute paths, no dir change needed)
+        with self._olam_context():
+            self._setup_olam_pddl_directory()
 
         # Domain knowledge already initialized in __init__
         # No need to re-parse here
 
-        # Initialize OLAM parser
-        self.parser = PddlParser()
+        # Initialize OLAM parser and learner in OLAM context
+        with self._olam_context():
+            # Initialize OLAM parser
+            self.parser = PddlParser()
 
-        # Extract action list from domain
-        self.action_list = self._extract_action_list()
+            # Extract action list from domain
+            self.action_list = self._extract_action_list()
 
-        # Initialize OLAM learner
-        self.learner = OLAMLearner(self.parser, self.action_list, self.eval_frequency)
+            # Initialize OLAM learner
+            self.learner = OLAMLearner(self.parser, self.action_list, self.eval_frequency)
 
-        # Initialize required OLAM attributes
+        # Initialize required OLAM attributes (no dir change needed)
         from timeit import default_timer
         self.learner.initial_timer = default_timer()
         self.learner.now = default_timer()  # Initialize timing attribute
@@ -232,13 +280,12 @@ class OLAMAdapter(BaseActionModelLearner):
         logger.info(f"Built bidirectional mappings for {len(self.action_idx_to_str)} actions")
 
     def _configure_java_settings(self):
-        """Configure Java settings for OLAM."""
+        """Configure Java and additional OLAM settings."""
+        # Configure Java path
         if self.bypass_java:
             # Set empty path to avoid Java calls
             Configuration.JAVA_BIN_PATH = ""
-            return
-
-        if self.use_system_java:
+        elif self.use_system_java:
             # Try to use system Java
             Configuration.JAVA_BIN_PATH = "java"
             logger.info("Configured to use system Java")
@@ -259,6 +306,31 @@ class OLAMAdapter(BaseActionModelLearner):
                     Configuration.JAVA_BIN_PATH = ""
             else:
                 Configuration.JAVA_BIN_PATH = ""
+
+        # Apply additional OLAM configuration parameters if provided
+        if self.planner_time_limit is not None:
+            Configuration.PLANNER_TIME_LIMIT = self.planner_time_limit
+            logger.debug(f"Set PLANNER_TIME_LIMIT = {self.planner_time_limit}")
+
+        if self.max_precs_length is not None:
+            Configuration.MAX_PRECS_LENGTH = self.max_precs_length
+            logger.debug(f"Set MAX_PRECS_LENGTH = {self.max_precs_length}")
+
+        if self.neg_eff_assumption is not None:
+            Configuration.NEG_EFF_ASSUMPTION = self.neg_eff_assumption
+            logger.debug(f"Set NEG_EFF_ASSUMPTION = {self.neg_eff_assumption}")
+
+        if self.output_console is not None:
+            Configuration.OUTPUT_CONSOLE = self.output_console
+            logger.debug(f"Set OUTPUT_CONSOLE = {self.output_console}")
+
+        if self.random_seed is not None:
+            Configuration.RANDOM_SEED = self.random_seed
+            logger.debug(f"Set RANDOM_SEED = {self.random_seed}")
+
+        if self.time_limit_seconds is not None:
+            Configuration.TIME_LIMIT_SECONDS = self.time_limit_seconds
+            logger.debug(f"Set TIME_LIMIT_SECONDS = {self.time_limit_seconds}")
 
     def _setup_java_bypass(self):
         """Setup bypass for Java-dependent methods."""
@@ -386,9 +458,10 @@ class OLAMAdapter(BaseActionModelLearner):
         olam_state = self._up_state_to_olam(state)
         self._update_simulator_state(olam_state)
 
-        # Use OLAM's action selection
+        # Use OLAM's action selection (runs in OLAM context for planner access)
         logger.debug("Calling OLAM learner.select_action()")
-        action_idx, strategy = self.learner.select_action()
+        with self._olam_context():
+            action_idx, strategy = self.learner.select_action()
         self.last_action_idx = action_idx
         logger.info(f"OLAM selected action index {action_idx} using strategy: {strategy}")
 
@@ -438,7 +511,8 @@ class OLAMAdapter(BaseActionModelLearner):
                 self._update_simulator_state(olam_state)
 
                 logger.debug("Calling OLAM learn_failed_action_precondition()")
-                self.learner.learn_failed_action_precondition(self.simulator)
+                with self._olam_context():
+                    self.learner.learn_failed_action_precondition(self.simulator)
                 logger.info(f"Learned precondition constraints from failed action: {action_str}")
             else:
                 logger.warning("No last_action_idx available for failed action learning")
@@ -453,7 +527,8 @@ class OLAMAdapter(BaseActionModelLearner):
 
                 # Update preconditions
                 logger.debug(f"Calling OLAM add_operator_precondition() for {action_str}")
-                changed = self.learner.add_operator_precondition(action_str)
+                with self._olam_context():
+                    changed = self.learner.add_operator_precondition(action_str)
                 if changed:
                     logger.info(f"Updated preconditions for {action_str}")
                 else:
@@ -461,7 +536,8 @@ class OLAMAdapter(BaseActionModelLearner):
 
                 # Update effects
                 logger.debug(f"Calling OLAM add_operator_effects() for {action_str}")
-                self.learner.add_operator_effects(action_str, olam_state, olam_next_state)
+                with self._olam_context():
+                    self.learner.add_operator_effects(action_str, olam_state, olam_next_state)
                 logger.info(f"Updated effects for {action_str}")
 
                 # Update simulator state

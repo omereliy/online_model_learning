@@ -15,6 +15,13 @@ algorithm_params:
   olam:
     max_iterations: 200
     eval_frequency: 10
+    # OLAM Configuration.py parameters (optional - use OLAM defaults if not specified)
+    planner_time_limit: 60        # Planner subprocess timeout (seconds)
+    max_precs_length: 8           # Negative precondition search depth
+    neg_eff_assumption: false     # STRIPS negative effects assumption
+    output_console: false         # Console vs file logging
+    random_seed: 42               # Numpy random seed (matches experiment seed)
+    time_limit_seconds: 600       # Total experiment timeout (seconds)
 
 # Metrics collection - record EVERY action
 metrics:

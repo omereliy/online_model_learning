@@ -127,6 +127,20 @@ grep -r "TODO" src/ --include="*.py"
 grep -r "NotImplementedError" src/ --include="*.py"
 ```
 
+### OLAM Commands
+```bash
+# Verify Java installation
+ls /home/omer/projects/OLAM/Java/*/bin/java
+/home/omer/projects/OLAM/Java/jdk-*/bin/java -version
+
+# Run native OLAM experiment
+cd /home/omer/projects/OLAM
+python3 main.py -d blocksworld
+
+# See OLAM Experiment Review for details
+cat docs/reviews/experimenting_OLAM_review.md
+```
+
 ## Code Patterns
 
 ### State Format Conversions:
@@ -249,6 +263,39 @@ config = {
         'max_clauses': 1000
     }
 }
+```
+
+### OLAM Adapter Usage
+```python
+from src.algorithms.olam_adapter import OLAMAdapter
+
+# Production: Use OLAM's bundled Java (REQUIRED)
+adapter = OLAMAdapter(
+    domain_file='benchmarks/blocksworld/domain.pddl',
+    problem_file='benchmarks/blocksworld/p01.pddl',
+    bypass_java=False  # Use Java (default)
+)
+
+# Testing only: Bypass Java (NOT for production)
+adapter = OLAMAdapter(
+    domain_file='domain.pddl',
+    problem_file='problem.pddl',
+    bypass_java=True  # Python fallback
+)
+
+# With custom OLAM Configuration.py parameters
+adapter = OLAMAdapter(
+    domain_file='domain.pddl',
+    problem_file='problem.pddl',
+    max_iterations=200,
+    eval_frequency=10,
+    planner_time_limit=60,        # Planner subprocess timeout (seconds)
+    max_precs_length=8,           # Negative precondition search depth
+    neg_eff_assumption=False,     # STRIPS negative effects assumption
+    output_console=False,         # Console vs file logging
+    random_seed=42,               # Numpy random seed
+    time_limit_seconds=600        # Total experiment timeout (seconds)
+)
 ```
 
 ## Import Patterns

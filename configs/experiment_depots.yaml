@@ -15,7 +15,13 @@ algorithm_params:
   olam:
     max_iterations: 300
     eval_frequency: 15
-    bypass_java: true  # No Java available - use Python fallback
+    # OLAM Configuration.py parameters
+    planner_time_limit: 60
+    max_precs_length: 8
+    neg_eff_assumption: false
+    output_console: false
+    random_seed: 42
+    time_limit_seconds: 600
 
 # Metrics collection - record EVERY action
 metrics:

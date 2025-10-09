@@ -1,26 +1,53 @@
-# Experiment configuration for Logistics domain
+# Experiment configuration for logistics domain with enhanced metrics
+# Complex logistics planning with trucks, airplanes, and packages
+
 experiment:
-  name: "logistics_learning"
+  name: "logistics_detailed"
+  algorithm: "olam"
+  seed: 42
+
+domain_problem:
   domain: "benchmarks/olam-compatible/logistics/domain.pddl"
   problem: "benchmarks/olam-compatible/logistics/p01.pddl"
-  algorithms:
-    - olam
-  metrics:
-    - mistake_rate
-    - cumulative_mistakes
-    - per_action_success_rate
-    - runtime
-  stopping_criteria:
-    max_iterations: 1000
-    convergence_threshold: 0.95
-    check_convergence_every: 20
-    timeout: 600  # 10 minutes
-  output:
-    directory: "results/logistics"
-    formats: ["csv", "json"]
-  random_seed: 42
 
 # Algorithm-specific parameters
-olam:
-  exploration_rate: 0.1
-  max_learning_iterations: 100
+algorithm_params:
+  olam:
+    max_iterations: 400
+    eval_frequency: 20
+    # OLAM Configuration.py parameters (optional - use OLAM defaults if not specified)
+    planner_time_limit: 60        # Planner subprocess timeout (seconds)
+    max_precs_length: 8           # Negative precondition search depth
+    neg_eff_assumption: false     # STRIPS negative effects assumption
+    output_console: false         # Console vs file logging
+    random_seed: 42               # Numpy random seed (matches experiment seed)
+    time_limit_seconds: 900       # Total experiment timeout (seconds)
+
+# Metrics collection - record EVERY action
+metrics:
+  interval: 1  # Record every single action
+  window_size: 50  # Default window
+
+# Enhanced logging configuration
+logging:
+  level: "DEBUG"
+  console_level: "INFO"
+  file_level: "DEBUG"
+  log_state_transitions: true
+  log_action_selections: true
+  log_learning_updates: true
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Stopping criteria
+stopping_criteria:
+  max_iterations: 400
+  max_runtime_seconds: 900  # 15 minutes max
+  convergence_check_interval: 30
+
+# Output configuration
+output:
+  directory: "results/"
+  formats: ["csv", "json"]
+  save_learned_model: true
+  save_intermediate_checkpoints: true  # Save every 75 iterations
+  checkpoint_interval: 75

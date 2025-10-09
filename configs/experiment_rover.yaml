@@ -1,5 +1,5 @@
 # Experiment configuration for rover domain with enhanced metrics
-# Complex domain with navigation and sampling tasks
+# Complex domain with navigation, sampling, and imaging tasks
 
 experiment:
   name: "rover_detailed"
@@ -7,14 +7,21 @@ experiment:
   seed: 42
 
 domain_problem:
-  domain: "benchmarks/olam-incompatible/rover/domain.pddl"
-  problem: "benchmarks/olam-incompatible/rover/p01.pddl"
+  domain: "benchmarks/olam-compatible/rover/domain.pddl"
+  problem: "benchmarks/olam-compatible/rover/p01.pddl"
 
 # Algorithm-specific parameters
 algorithm_params:
   olam:
     max_iterations: 400
     eval_frequency: 20
+    # OLAM Configuration.py parameters (optional - use OLAM defaults if not specified)
+    planner_time_limit: 60        # Planner subprocess timeout (seconds)
+    max_precs_length: 8           # Negative precondition search depth
+    neg_eff_assumption: false     # STRIPS negative effects assumption
+    output_console: false         # Console vs file logging
+    random_seed: 42               # Numpy random seed (matches experiment seed)
+    time_limit_seconds: 900       # Total experiment timeout (seconds)
 
 # Metrics collection - record EVERY action
 metrics:
@@ -29,11 +36,11 @@ logging:
   log_state_transitions: true
   log_action_selections: true
   log_learning_updates: true
-  log_format: "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+  log_format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # Stopping criteria
 stopping_criteria:
-  max_iterations: 300
+  max_iterations: 400
   max_runtime_seconds: 900  # 15 minutes for complex domain
   convergence_check_interval: 30
 

@@ -184,3 +184,5 @@ slurm_*.log
 # Archive directory (keep structure, track files)
 !/docs/archive/
 !/docs/validation/
+/scripts/personal_use_debugging/*
+

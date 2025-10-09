@@ -250,6 +250,24 @@ pyeda>=0.28.0  # For formula minimization
 - Val validator: `/home/omer/projects/Val/`
 - PDDL domains: `/home/omer/projects/online_model_learning/benchmarks/`
 
+### OLAM Java Setup (REQUIRED)
+OLAM requires Java JDK for action filtering via `compute_not_executable_actions.jar`.
+
+**Installation**:
+1. Download Oracle JDK 17+: https://www.oracle.com/java/technologies/downloads/
+2. Extract to `/home/omer/projects/OLAM/Java/`:
+   ```bash
+   cd /home/omer/projects/OLAM/Java
+   tar -xzvf jdk-17_linux-x64_bin.tar.gz
+   ```
+3. Verify: `ls /home/omer/projects/OLAM/Java/jdk-*/bin/java`
+
+**Configuration**:
+- OLAM sets `Configuration.JAVA_BIN_PATH` automatically from `Java/` directory
+- OLAMAdapter defaults to using OLAM's bundled Java
+- Bypass mode (`bypass_java=True`) only for testing without Java
+- See [OLAM Experiment Review](reviews/experimenting_OLAM_review.md) for details
+
 ## CNF/SAT Specific Rules
 - Use minisat as default solver (fast and reliable)
 - Cache CNF formula evaluations for performance
