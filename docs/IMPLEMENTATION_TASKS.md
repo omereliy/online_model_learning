@@ -487,9 +487,11 @@ Based on the Experiment Readiness Assessment and configuration analysis, the fol
 
 **Deliverable**: Can verify learned models against ground truth
 
-### Phase 2: Algorithm Validation (2-3 days) - HIGH PRIORITY
+### Phase 2: Algorithm Validation - ⚠️ BLOCKED BY CRITICAL BUGS
 
 **Goal**: Verify algorithm correctness and enable flexible configuration before comparison
+
+**Status**: BLOCKED - Information Gain algorithm validation revealed non-functional learning mechanism (October 9, 2025)
 
 #### Gap #2: Information Gain Convergence Configurability - COMPLETE ✅ (October 9, 2025)
 **Component**: `src/algorithms/information_gain.py`
@@ -571,29 +573,123 @@ Based on the Experiment Readiness Assessment and configuration analysis, the fol
 
 **Deliverable**: ✅ Reliable convergence detection validated for long experiments
 
-#### Gap #4: Information Gain Validation Report
-**Components**:
-- `scripts/validate_information_gain.py` (new)
-- `docs/validation/INFORMATION_GAIN_VALIDATION_REPORT.md` (new)
+#### Gap #4: Information Gain Validation Report - ⚠️ REVEALS CRITICAL BUGS (October 9, 2025)
+**Status**: VALIDATION COMPLETE - Algorithm is **NON-FUNCTIONAL**, requires major debugging
 
-**Tasks**:
-1. Create validation script with verbose logging
-   - Log initial hypothesis space size
-   - Log action selections with information gain values
-   - Log model updates after observations
-   - Log hypothesis space reduction over time
-   - Log model entropy decrease
-2. Run validation experiment on blocksworld
-3. Generate validation report documenting:
-   - Hypothesis space reduction (evidence)
-   - Information gain-based selection (evidence)
-   - Model entropy decrease (evidence)
-   - Ground truth comparison (using ModelValidator from Phase 1)
-4. Verify algorithm behaves as theoretically expected
+**Components Created**:
+- ✅ `scripts/validate_information_gain.py` (490 lines)
+- ✅ `docs/validation/INFORMATION_GAIN_VALIDATION_REPORT.md` (comprehensive analysis)
+- ✅ `validation_logs/information_gain_validation_20251009_185254.json` (raw data)
 
-**Deliverable**: Validation report confirming Information Gain correctness
+**Validation Results**: **1/4 behaviors confirmed** - Algorithm does NOT learn
+- ✗ Hypothesis space reduction - NO reduction (remained at 2,099,200 for 100 iterations)
+- ✗ Model entropy decrease - NO decrease (remained at 0.00 throughout)
+- ✓ Information gain-based selection - Working (100% greedy selections)
+- ✗ Ground truth convergence - FAILED (F1=0.07, extremely low)
 
-### Phase 3: Comparison Pipeline (2-3 days) - MEDIUM PRIORITY
+**Critical Bugs Discovered**:
+1. **CNF Formula Construction**: No CNF clauses built from observations (0 clauses throughout)
+2. **Observation Integration**: `observe()` method not updating model despite 100 failure observations
+3. **Effect Learning**: No effects learned at all (F1=0.00 for all add/delete effects)
+4. **Entropy Calculation**: Remained at 0.00 (incorrect or broken implementation)
+5. **Stuck Behavior**: Selected same action (`pick-up(a)`) 100 times with identical IG=1.500
+
+**Evidence of Non-Functionality**:
+```
+Iteration 1-100: pick-up(a) selected, FAILURE, IG=1.500
+Hypothesis space: 2,099,200 (no change)
+Success rate: 0% (0/100 actions succeeded)
+Model F1-score: 0.07 (essentially random)
+```
+
+**Deliverable**: ❌ **FAILED** - Validation reveals algorithm is broken, NOT ready for experiments
+
+**Next Steps**: See new Gap #0 below - must fix Information Gain implementation before proceeding
+
+#### Gap #0: FIX Information Gain Implementation - 🚨 CRITICAL BLOCKER (NEW - October 9, 2025)
+**Status**: NOT STARTED - Required before any experiments can run
+
+**Context**: Gap #4 validation revealed the Information Gain algorithm does not learn from observations. The validation infrastructure works correctly and showed that the algorithm itself is broken.
+
+**Component**: `src/algorithms/information_gain.py` (~800 lines, ~60 tests passing but incorrect behavior)
+
+**Critical Issues to Fix**:
+
+1. **CNF Formula Construction from Observations** (HIGHEST PRIORITY)
+   - **Problem**: `_build_cnf_formula()` never creates CNF clauses from observations
+   - **Evidence**: "CNF formula built: 0 clauses, 0 unique variables" for all actions throughout 100 iterations
+   - **Debug Required**:
+     - Check `_add_failure_observation()` and `_add_success_observation()` methods
+     - Verify observations are being stored in internal data structures (self.pre, self.add, self.delete)
+     - Verify CNF variable mapping and clause construction logic
+     - Test with single observation to see if CNF clause is created
+   - **Expected Behavior**: After observing `pick-up(a)` fail in state S, CNF should encode constraint eliminating models where pick-up(a) is applicable in S
+
+2. **Hypothesis Space Tracking**
+   - **Problem**: Hypothesis space never decreased (stayed at 2,099,200)
+   - **Debug Required**:
+     - Verify `_calculate_total_hypothesis_space()` uses CNF satisfiability
+     - Check that pre/add/delete sets are properly updated after observations
+     - Verify SAT model counting is working (test CNF manager separately)
+   - **Expected Behavior**: Hypothesis space should monotonically decrease as observations constrain models
+
+3. **Effect Learning**
+   - **Problem**: No effects learned at all (F1=0.00 for all add/delete effects)
+   - **Debug Required**:
+     - Verify `_add_success_observation()` extracts effects from state transitions
+     - Check that add/delete effect sets are being populated
+     - Verify effects are incorporated into learned model export
+   - **Expected Behavior**: After successful actions, add/delete effects should be learned from pre/post state differences
+
+4. **Entropy Calculation**
+   - **Problem**: Entropy remained at 0.00 throughout
+   - **Debug Required**:
+     - Verify `_calculate_entropy()` implementation
+     - Check relationship between hypothesis space size and entropy
+     - May be incorrect formula or broken calculation
+   - **Expected Behavior**: Entropy should equal log(hypothesis_space), should decrease as uncertainty reduces
+
+**Implementation Tasks**:
+1. **Add Unit Tests for Observation Integration** (FIRST)
+   - Test: Single failure observation creates CNF clause
+   - Test: Single success observation learns effects
+   - Test: Hypothesis space decreases after observation
+   - Test: Multiple observations accumulate constraints
+   - Test: Entropy calculation from hypothesis space size
+   - **Goal**: Establish ground truth for correct behavior
+
+2. **Debug CNF Observation Encoding** (SECOND)
+   - Add detailed logging to `observe()` method
+   - Log: observation details, CNF clauses added, hypothesis space after update
+   - Use simple 2-action domain for easier debugging
+   - Verify each observation creates expected CNF clause
+
+3. **Fix Core Learning Mechanism** (THIRD)
+   - Implement/fix CNF clause construction from observations
+   - Implement/fix effect extraction from successful observations
+   - Verify hypothesis space calculation
+   - Verify entropy calculation
+
+4. **Validate Fix on Simple Domain** (FOURTH)
+   - Create minimal test domain (1-2 actions, 2-3 fluents)
+   - Run 10-20 iterations
+   - Verify: hypothesis space decreases, effects learned, model converges
+   - Only proceed to blocksworld after simple domain works
+
+5. **Re-run Full Validation** (FINAL)
+   - Re-run `scripts/validate_information_gain.py` on blocksworld
+   - Target: 4/4 behaviors confirmed (all checkmarks)
+   - Target: F1 > 0.8 (high accuracy)
+   - Target: Hypothesis space reduction visible
+   - Update INFORMATION_GAIN_VALIDATION_REPORT.md with success
+
+**Estimated Work**: 2-3 days (depends on depth of issues)
+
+**Deliverable**: ✅ Information Gain algorithm that demonstrably learns from observations
+
+**BLOCKING**: All Phase 3 work (comparison pipeline) is blocked until this is resolved. Cannot run experiments with a non-functional algorithm.
+
+### Phase 3: Comparison Pipeline (2-3 days) - BLOCKED
 
 **Goal**: Automate algorithm comparison experiments with visualization
 
@@ -787,20 +883,33 @@ See `docs/EXPERIMENT_CONFIGURATION_GUIDE.md` for detailed rationale and examples
 5. Validate against ModelLearner paper
 6. Three-way comparison (OLAM vs Information Gain vs ModelLearner)
 
-### Implementation Priority Order
+### Implementation Priority Order - REVISED (October 9, 2025)
 
 **Phase 1**: Statistical foundation - ✅ **COMPLETE** (October 6, 2025)
 
-**Phase 2**: Algorithm validation + configuration flexibility (2-3 days)
-- Day 1: Make Information Gain convergence configurable (Gap #2) ⚠️ **BLOCKING**
-- Day 2: Convergence detection validation (Gap #3)
-- Day 3: Information Gain validation script + report (Gap #4)
+**Phase 2**: Algorithm validation + configuration flexibility - ⚠️ **PARTIALLY COMPLETE**
+- ✅ Gap #2: Information Gain convergence configurability (COMPLETE, Oct 9)
+- ✅ Gap #3: Convergence detection validation (COMPLETE, Oct 9)
+- ✅ Gap #4: Validation script created, experiment run (COMPLETE, Oct 9)
+- ❌ **Gap #4 Result**: Algorithm is broken - validation FAILED
+- 🚨 **NEW Gap #0**: Fix Information Gain implementation (2-3 days) - **CRITICAL BLOCKER**
 
-**Phase 3**: Comparison pipeline + visualization (2-3 days)
+**Phase 2.5**: Re-validation (NEW - required after Gap #0) - 1 day
+- Re-run validation script after fixes
+- Verify 4/4 behaviors confirmed
+- Update INFORMATION_GAIN_VALIDATION_REPORT.md with success
+- Mark Gap #4 as truly complete
+
+**Phase 3**: Comparison pipeline + visualization (2-3 days) - **BLOCKED until Phase 2.5 complete**
 - Day 1-2: AlgorithmComparisonRunner implementation (Gap #1)
 - Day 2-3: Visualization module + configuration templates (Gap #1B)
 
-**Total remaining time**: 4-6 days for paper-ready infrastructure (from 60% → 100%)
+**Total remaining time**: 5-7 days for paper-ready infrastructure
+- 2-3 days: Fix Information Gain algorithm (NEW, blocking)
+- 1 day: Re-run validation and update report
+- 2-3 days: Comparison pipeline + visualization (original Phase 3)
+
+**Current Blocker**: Information Gain algorithm does not learn - must be fixed before any experiments
 
 ## Testing Status
 
