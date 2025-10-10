@@ -57,7 +57,8 @@ class ExperimentRunner:
         self.learner = self._init_learner()
         self.metrics = MetricsCollector(
             interval=self.config['metrics']['interval'],
-            window_size=self.config['metrics']['window_size']
+            window_size=self.config['metrics']['window_size'],
+            track_learning_evidence=self.config['output'].get('track_learning_evidence', False)
         )
         self.environment = self._init_environment()
 
@@ -253,7 +254,7 @@ class ExperimentRunner:
         while iteration < self.config['stopping_criteria']['max_iterations']:
             # Collect metrics for this iteration
             if self.metrics.should_collect(iteration):
-                self.metrics.collect_snapshot(iteration)
+                self.metrics.collect_snapshot(iteration, learner=self.learner)
 
             # Get current state
             state = self.environment.get_state()
@@ -319,7 +320,7 @@ class ExperimentRunner:
             stopping_reason = 'max_iterations'
 
         # Final metrics collection
-        self.metrics.collect_snapshot(iteration)
+        self.metrics.collect_snapshot(iteration, learner=self.learner)
 
         # Complete results
         self.end_time = datetime.now()
@@ -441,7 +442,9 @@ class ExperimentRunner:
             error: Exception that occurred
             iteration: Current iteration when error occurred
         """
+        import traceback
         logger.error(f"Handled error at iteration {iteration}: {error}")
+        logger.error(f"Traceback:\n{''.join(traceback.format_tb(error.__traceback__))}")
         # For now, just log. In production, might want to save state or retry
 
     def _export_results(self, results: Dict[str, Any]) -> None:

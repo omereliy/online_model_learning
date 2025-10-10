@@ -474,7 +474,8 @@ class TestExperimentRunner:
             # Check metrics initialized with config params
             mock_metrics_class.assert_called_with(
                 interval=10,
-                window_size=50
+                window_size=50,
+                track_learning_evidence=False
             )
 
     def test_experiment_metadata(self, config_file):

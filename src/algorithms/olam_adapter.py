@@ -194,12 +194,13 @@ class OLAMAdapter(BaseActionModelLearner):
         # Disable eval_log which has path dependencies
         self.learner.eval_log = lambda: None
 
+        # Create simulator for state tracking (needs OLAM context for file paths)
+        with self._olam_context():
+            self.simulator = Simulator()
+
         # If bypassing Java, monkey-patch the Java computation method
         if self.bypass_java:
             self._setup_java_bypass()
-
-        # Create simulator for state tracking
-        self.simulator = Simulator()
 
         logger.info(f"Initialized OLAM with {len(self.action_list)} actions")
         if self.bypass_java:
@@ -970,15 +971,60 @@ class OLAMAdapter(BaseActionModelLearner):
 
     def _update_simulator_state(self, olam_state: List[str]):
         """
-        Update OLAM's simulator with current state.
+        Update OLAM's simulator and write state to PDDL/facts.pddl file.
+
+        OLAM reads state from file, so we must keep the file synchronized.
 
         Args:
             olam_state: State in OLAM format
         """
-        # OLAM's simulator expects state as a list of PDDL predicates
         logger.debug(f"Updating OLAM simulator state with {len(olam_state)} predicates")
+
+        # Update in-memory state
         self.simulator.state = olam_state
-        logger.debug(f"Simulator state updated successfully")
+
+        # Write to PDDL/facts.pddl so OLAM's compute_executable_actions() reads correct state
+        with self._olam_context():
+            self._write_facts_file(olam_state)
+
+        logger.debug(f"Simulator state and facts file updated successfully")
+
+    def _write_facts_file(self, state: List[str]):
+        """
+        Write current state to PDDL/facts.pddl in the format OLAM expects.
+
+        Args:
+            state: Current state as list of PDDL predicates
+        """
+        # Read the original problem file to preserve goal and other sections
+        facts_path = Path("PDDL/facts.pddl")
+
+        with open(facts_path, "r") as f:
+            lines = f.readlines()
+
+        # Find :init section and replace it with current state
+        new_lines = []
+        in_init = False
+
+        for line in lines:
+            if "(:init" in line or "(: init" in line:
+                in_init = True
+                new_lines.append("  (:init\n")
+                # Add all current state predicates
+                for pred in sorted(state):
+                    new_lines.append(f"    {pred}\n")
+            elif in_init and ("(:goal" in line or "(: goal" in line):
+                in_init = False
+                new_lines.append("  )\n")  # Close :init
+                new_lines.append(line)  # Add :goal line
+            elif not in_init:
+                new_lines.append(line)
+
+        # Write back the updated file
+        with open(facts_path, "w") as f:
+            f.writelines(new_lines)
+
+        logger.debug(f"Wrote {len(state)} predicates to {facts_path}")
 
     def reset(self) -> None:
         """Reset the learner to initial state."""

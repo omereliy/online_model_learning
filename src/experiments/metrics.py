@@ -21,16 +21,18 @@ class MetricsCollector:
     and provides export functionality for analysis.
     """
 
-    def __init__(self, interval: int = 10, window_size: int = 50):
+    def __init__(self, interval: int = 10, window_size: int = 50, track_learning_evidence: bool = False):
         """
         Initialize the metrics collector.
 
         Args:
             interval: How often to collect snapshot metrics (in steps)
             window_size: Size of sliding window for mistake rate calculation
+            track_learning_evidence: If True, capture parameter-bound learning evidence at each snapshot
         """
         self.interval = interval
         self.window_size = window_size
+        self.track_learning_evidence = track_learning_evidence
 
         # Main metrics storage
         self.metrics_df = pd.DataFrame()
@@ -47,6 +49,8 @@ class MetricsCollector:
         self._lock = threading.RLock()
 
         logger.info(f"Initialized MetricsCollector with interval={interval}, window_size={window_size}")
+        if track_learning_evidence:
+            logger.info("Learning evidence tracking enabled (parameter-bound literals)")
 
     def record_action(self, step: int, action: str, objects: List[str],
                      success: bool, runtime: float) -> None:
@@ -209,18 +213,91 @@ class MetricsCollector:
 
             return snapshot
 
-    def collect_snapshot(self, step: int) -> None:
+    def collect_snapshot(self, step: int, learner=None) -> None:
         """
         Collect and store a snapshot at the current step.
 
         Args:
             step: Current step number
+            learner: Optional learner instance for capturing learning evidence
         """
         snapshot = self.get_snapshot(step)
+
+        # Add learning evidence if enabled and learner provided
+        if self.track_learning_evidence and learner is not None:
+            try:
+                snapshot['learning_evidence'] = self._capture_learning_evidence(learner)
+                logger.debug(f"Captured learning evidence at step {step}")
+            except Exception as e:
+                logger.warning(f"Failed to capture learning evidence at step {step}: {e}")
+
         with self._lock:
             self.snapshots.append(snapshot)
 
         logger.debug(f"Collected snapshot at step {step}: mistake_rate={snapshot['mistake_rate']:.3f}")
+
+    def _capture_learning_evidence(self, learner) -> Dict[str, Any]:
+        """
+        Capture learning state in PARAMETER-BOUND form from the learner.
+
+        Returns literals like "on(?x,?y)", "clear(?x)" NOT grounded forms.
+        This shows what's learned at the schema level (lifted representation).
+
+        Args:
+            learner: Learner instance (OLAMAdapter or InformationGainLearner)
+
+        Returns:
+            Dictionary with parameter-bound learning evidence
+        """
+        evidence = {
+            'actions': {},
+            'algorithm': learner.__class__.__name__
+        }
+
+        # Information Gain: Access internal state directly (already parameter-bound)
+        if hasattr(learner, 'pre'):  # InformationGainLearner
+            for action_name in learner.pre.keys():
+                evidence['actions'][action_name] = {
+                    # Preconditions (parameter-bound literals)
+                    'preconditions_possible': list(learner.pre[action_name]),
+                    'preconditions_num_constraints': len(learner.pre_constraints[action_name]),
+
+                    # Effects confirmed (parameter-bound literals)
+                    'effects_add_confirmed': list(learner.eff_add[action_name]),
+                    'effects_del_confirmed': list(learner.eff_del[action_name]),
+
+                    # Effects possible/uncertain (counts only to reduce output size)
+                    'effects_add_possible_count': len(learner.eff_maybe_add[action_name]),
+                    'effects_del_possible_count': len(learner.eff_maybe_del[action_name]),
+
+                    # Observations
+                    'num_observations': len(learner.observation_history[action_name])
+                }
+
+        # OLAM: Access operator-level storage (already parameter-bound)
+        elif hasattr(learner, 'learner') and hasattr(learner.learner, 'operator_certain_predicates'):
+            # Get unique operator names (not grounded actions)
+            operators_seen = set()
+            for action_label in learner.action_list:
+                operator_name = action_label.split("(")[0]
+                if operator_name in operators_seen:
+                    continue
+                operators_seen.add(operator_name)
+
+                evidence['actions'][operator_name] = {
+                    # Preconditions (parameter-bound form)
+                    'preconditions_certain': learner.learner.operator_certain_predicates.get(operator_name, []),
+                    'preconditions_uncertain': learner.learner.operator_uncertain_predicates.get(operator_name, []),
+                    'preconditions_negative': learner.learner.operator_negative_preconditions.get(operator_name, []),
+
+                    # Effects (parameter-bound form)
+                    'effects_positive': learner.learner.operator_positive_effects.get(operator_name, [])
+                        if hasattr(learner.learner, 'operator_positive_effects') else [],
+                    'effects_negative': learner.learner.operator_negative_effects.get(operator_name, [])
+                        if hasattr(learner.learner, 'operator_negative_effects') else [],
+                }
+
+        return evidence
 
     def get_action_distribution(self) -> Dict[str, int]:
         """
