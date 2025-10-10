@@ -1,5 +1,7 @@
 # Claude Code Context Guide - Navigation Index
 
+- Dont over engineer solutions/architecture
+
 ## 🚨 MANDATORY: Read First
 **[DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md)** - ALWAYS read this file first in every conversation
 - Project conventions, architecture, implementation rules

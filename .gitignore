@@ -186,3 +186,4 @@ slurm_*.log
 !/docs/validation/
 /scripts/personal_use_debugging/*
 
+/validation_logs/*

@@ -272,19 +272,18 @@ class TestCNFManagerEntropy:
         assert entropy == 0.0
 
     def test_entropy_balanced_formula(self):
-        """Test entropy for formula with balanced probabilities."""
+        """Test entropy for formula with multiple satisfying models."""
         cnf = CNFManager()
-        # Formula where each variable has probability 0.5
-        cnf.add_clause(['a', '-a'])  # Tautology - always true
+        # Formula: (a OR b) - has 3 satisfying models
+        # Models: {a}, {b}, {a,b}
+        # Expected entropy: log2(3) ≈ 1.585
+        cnf.add_clause(['a', 'b'])
 
-        # For single variable with p=0.5: entropy = -0.5*log2(0.5) - 0.5*log2(0.5) = 1.0
-        # But this creates a tautology, so we need a different approach
-
-        # Create formula: (a OR NOT a) which is always true
-        # This doesn't constrain 'a', so it should have entropy
         entropy = cnf.get_entropy()
-        # Tautology should have maximum entropy for involved variables
-        assert entropy >= 0
+        import math
+        expected_entropy = math.log2(3)
+        assert abs(entropy - expected_entropy) < 0.001, \
+            f"Expected entropy log2(3)={expected_entropy:.3f}, got {entropy:.3f}"
 
 
 class TestCNFManagerOperations:

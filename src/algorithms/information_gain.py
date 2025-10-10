@@ -287,45 +287,39 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Calculate entropy of action model to measure uncertainty.
 
-        Higher entropy means more uncertainty about the action's preconditions and effects.
+        Entropy is measured as the log2 of the number of satisfying models in the
+        CNF hypothesis space. This directly measures our uncertainty about which
+        precondition model is correct.
+
+        H = log2(|SAT(cnf_pre?(a))|)
+
+        Higher entropy means more uncertainty (more possible models).
 
         Args:
             action: Action name
 
         Returns:
-            Entropy value (non-negative)
+            Entropy value (non-negative, in bits)
         """
-        # Entropy based on size of uncertain sets
-        # H = -Σ p(x) * log(p(x))
+        # Build CNF formula if needed
+        if not self.cnf_managers[action].has_clauses():
+            self._build_cnf_formula(action)
 
-        # Calculate entropy from possible preconditions
-        la_size = len(self.pre[action])
-        if la_size == 0:
-            pre_entropy = 0.0
-        else:
-            # Uncertain preconditions contribute to entropy
-            uncertain_pre = len(self.pre[action]) - len(self.eff_add[action]) - len(self.eff_del[action])
-            p_uncertain = uncertain_pre / la_size if la_size > 0 else 0
-            p_certain = 1.0 - p_uncertain
+        cnf = self.cnf_managers[action]
 
-            pre_entropy = 0.0
-            if p_uncertain > 0:
-                pre_entropy -= p_uncertain * math.log2(p_uncertain)
-            if p_certain > 0:
-                pre_entropy -= p_certain * math.log2(p_certain)
+        # If no clauses, maximum uncertainty
+        if not cnf.has_clauses():
+            la_size = len(self.pre[action])
+            max_models = 2 ** la_size if la_size > 0 else 1
+            # Maximum entropy for uniform distribution over all possible models
+            entropy = math.log2(max_models) if max_models > 1 else 0.0
+            logger.debug(f"Entropy for {action}: {entropy:.3f} (no constraints, {max_models} models)")
+            return entropy
 
-        # Calculate entropy from possible effects
-        eff_entropy = 0.0
-        for eff_set in [self.eff_maybe_add[action], self.eff_maybe_del[action]]:
-            if len(eff_set) > 0:
-                # Each undetermined effect adds to entropy
-                p = len(eff_set) / la_size if la_size > 0 else 0
-                if p > 0:
-                    eff_entropy -= p * math.log2(p)
-
-        total_entropy = pre_entropy + eff_entropy
-        logger.debug(f"Entropy for {action}: {total_entropy:.3f} (pre: {pre_entropy:.3f}, eff: {eff_entropy:.3f})")
-        return total_entropy
+        # Use CNF manager's entropy calculation (log2 of model count)
+        entropy = cnf.get_entropy()
+        logger.debug(f"Entropy for {action}: {entropy:.3f}")
+        return entropy
 
     def _calculate_potential_gain_success(self, action: str, objects: List[str], state: Set[str]) -> float:
         r"""
@@ -624,10 +618,10 @@ class InformationGainLearner(BaseActionModelLearner):
                 success: bool,
                 next_state: Optional[Any] = None) -> None:
         """
-        Observe action execution result.
+        Observe action execution result and update model.
 
-        Phase 1: Records observation.
-        Phase 2 will implement model update logic.
+        Records the observation and immediately processes it to update
+        the action model according to Information Gain algorithm rules.
 
         Args:
             state: State before action execution
@@ -660,6 +654,10 @@ class InformationGainLearner(BaseActionModelLearner):
         self._success_history.append(success)
 
         logger.debug(f"Total observations for '{action}': {len(self.observation_history[action])}")
+
+        # Automatically update model after recording observation
+        # This ensures the model learns immediately from each observation
+        self.update_model()
 
     def update_model(self) -> None:
         """

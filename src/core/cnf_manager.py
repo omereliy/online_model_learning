@@ -488,26 +488,31 @@ class CNFManager:
 
     def get_entropy(self) -> float:
         """
-        Calculate entropy of the CNF formula based on solution distribution.
+        Calculate Shannon entropy of the hypothesis space.
+
+        Entropy measures uncertainty about which model is correct.
+        H = log2(number_of_satisfying_models)
 
         Returns:
-            Entropy value
+            Entropy value in bits (non-negative)
         """
         import math
 
-        solutions = self.get_all_solutions()
-        if not solutions or len(solutions) == 1:
+        # If no clauses, maximum uncertainty
+        if not self.has_clauses():
+            num_vars = len(self.fluent_to_var)
+            max_models = 2 ** num_vars if num_vars > 0 else 1
+            return math.log2(max_models) if max_models > 1 else 0.0
+
+        # Count satisfying models
+        num_models = self.count_solutions()
+
+        # No uncertainty if 0 or 1 model
+        if num_models <= 1:
             return 0.0
 
-        # Calculate entropy based on fluent distributions
-        total_entropy = 0.0
-
-        for fluent in self.fluent_to_var.keys():
-            p = self.get_probability(fluent)
-            if 0 < p < 1:
-                total_entropy -= p * math.log2(p) + (1-p) * math.log2(1-p)
-
-        return total_entropy
+        # Entropy is log2 of model count
+        return math.log2(num_models)
 
     def __str__(self) -> str:
         """String representation."""
