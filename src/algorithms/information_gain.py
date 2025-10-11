@@ -11,10 +11,9 @@ import random
 from collections import defaultdict
 from typing import Tuple, List, Dict, Optional, Any, Set
 
+from src.core import grounding
 from src.core.cnf_manager import CNFManager
 from src.core.pddl_io import PDDLReader
-from src.core.lifted_domain import LiftedDomainKnowledge
-from src.core import grounding
 from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
@@ -110,7 +109,7 @@ class InformationGainLearner(BaseActionModelLearner):
         # Action model state variables (per action schema)
         # Structure: Dict[action_name, data]
         self.pre: Dict[str, Set[str]] = {}          # Possible preconditions (not ruled out)
-        self.pre_constraints: Dict[str, List[Set[str]]] = {}  # Constraint sets (pre?)
+        self.pre_constraints: Dict[str, Set[frozenset[str]]] = {}  # Constraint sets (pre?)
         self.eff_add: Dict[str, Set[str]] = {}      # Confirmed add effects
         self.eff_del: Dict[str, Set[str]] = {}      # Confirmed delete effects
         self.eff_maybe_add: Dict[str, Set[str]] = {}  # Possible add effects (not determined)
@@ -156,7 +155,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
             # Initialize state variables according to algorithm
             self.pre[action_name] = La.copy()  # Initially all literals possible
-            self.pre_constraints[action_name] = []  # Empty constraint set
+            self.pre_constraints[action_name] = set()  # Empty constraint set
             self.eff_add[action_name] = set()  # No confirmed add effects
             self.eff_del[action_name] = set()  # No confirmed delete effects
             self.eff_maybe_add[action_name] = La.copy()  # All possible add effects
@@ -389,6 +388,12 @@ class InformationGainLearner(BaseActionModelLearner):
         state_internal = self._state_to_internal(state)
         satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
 
+        # Check if constraint already exists - if so, no information gain from failure
+        unsatisfied = frozenset(self.pre[action] - satisfied_literals)
+        if unsatisfied in self.pre_constraints[action]:
+            logger.debug(f"Failure constraint for {action} already exists, no gain")
+            return 0.0
+
         # Build CNF formula if needed
         if not self.cnf_managers[action].has_clauses():
             self._build_cnf_formula(action)
@@ -403,10 +408,9 @@ class InformationGainLearner(BaseActionModelLearner):
         else:
             current_models = cnf.count_solutions()
 
-        # Simulate adding failure constraint
-        unsatisfied = self.pre[action] - satisfied_literals
+        # Check if no unsatisfied literals (all preconditions satisfied)
         if len(unsatisfied) == 0:
-            # All preconditions satisfied but action failed - shouldn't happen
+            # All preconditions satisfied meaning itr will not fail so return 0
             return 0.0
 
         # Create temporary CNF with new constraint
@@ -468,12 +472,18 @@ class InformationGainLearner(BaseActionModelLearner):
             Tuple of (action_name, objects)
         """
         self.iteration_count += 1
-        logger.debug(f"Selecting action for iteration {self.iteration_count}, strategy: {self.selection_strategy}")
 
         # Ensure state is in set format
         state = self._ensure_state_is_set(state)
 
-        # Calculate expected information gains for all actions
+        # Log current state (detailed logging for debugging)
+        logger.debug(f"\n{'='*80}")
+        logger.debug(f"ITERATION {self.iteration_count}")
+        logger.debug(f"{'='*80}")
+        logger.debug(f"State: {len(state)} fluents")
+        logger.debug(f"State fluents: {sorted(list(state)[:5])}..." if len(state) > 5 else f"State fluents: {sorted(state)}")
+
+        # Calculate expected information gains for all actions (with logging inside)
         action_gains = self._calculate_all_action_gains(state)
 
         if not action_gains:
@@ -483,11 +493,20 @@ class InformationGainLearner(BaseActionModelLearner):
         # Track maximum information gain for convergence detection
         self._last_max_gain = action_gains[0][2] if action_gains else 0.0
 
+        # If maximum gain is effectively zero, no action provides information - signal convergence
+        if self._last_max_gain < self.FLOAT_COMPARISON_EPSILON:
+            logger.info(f"\nNo action provides information gain (max_gain={self._last_max_gain:.6f}), stopping")
+            return "no_action", []
+
         # Select action based on strategy
         selected_action, selected_objects = self._select_by_strategy(action_gains)
 
         logger.info(f"Selected action: {selected_action}({','.join(selected_objects)}) "
                    f"[iteration {self.iteration_count}, gain: {action_gains[0][2]:.3f}]")
+
+        # Log action model state before execution
+        self._log_action_model_state(selected_action, selected_objects, state)
+
         return selected_action, selected_objects
 
     def _ensure_state_is_set(self, state: Any) -> Set[str]:
@@ -519,15 +538,40 @@ class InformationGainLearner(BaseActionModelLearner):
         if not grounded_actions:
             return []
 
+        # Log detailed action selection breakdown (debug level)
+        logger.debug("\nAction Selection (sorted by expected gain):")
+
         action_gains = []
-        for grounded_action in grounded_actions:
+        for i, grounded_action in enumerate(grounded_actions):
             try:
-                expected_gain = self._calculate_expected_information_gain(
+                # Calculate all components for logging
+                prob_success = self._calculate_applicability_probability(
                     grounded_action.action_name,
                     grounded_action.objects,
                     state
                 )
+                gain_success = self._calculate_potential_gain_success(
+                    grounded_action.action_name,
+                    grounded_action.objects,
+                    state
+                )
+                gain_failure = self._calculate_potential_gain_failure(
+                    grounded_action.action_name,
+                    grounded_action.objects,
+                    state
+                )
+                expected_gain = prob_success * gain_success + (1.0 - prob_success) * gain_failure
+
                 action_gains.append((grounded_action.action_name, grounded_action.objects, expected_gain))
+
+                # Log detailed breakdown for first 10 and last action
+                if i < 10 or i == len(grounded_actions) - 1:
+                    action_str = f"{grounded_action.action_name}({','.join(grounded_action.objects)})"
+                    logger.debug(f"  {action_str:30s} E[gain]={expected_gain:.6f} "
+                               f"[P(success)={prob_success:.3f}, gain_success={gain_success:.3f}, gain_failure={gain_failure:.3f}]")
+                elif i == 10:
+                    logger.debug(f"  ... ({len(grounded_actions) - 11} more actions)")
+
             except Exception as e:
                 logger.warning(f"Error calculating gain for {grounded_action.action_name}: {e}")
                 # Add with zero gain as fallback
@@ -536,7 +580,69 @@ class InformationGainLearner(BaseActionModelLearner):
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
 
+        # Log top action after sorting
+        if action_gains:
+            top_action, top_objects, top_gain = action_gains[0]
+            logger.debug(f"\nTop action after sorting: {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
+
         return action_gains
+
+    def _log_action_model_state(self, action: str, objects: List[str], state: Set[str]) -> None:
+        """
+        Log the current action model state before execution (debug level for detailed diagnostics).
+
+        Args:
+            action: Action name
+            objects: Object binding
+            state: Current state
+        """
+        logger.debug(f"\nApplying: {action}({','.join(objects)})")
+
+        # Log preconditions
+        if self.pre[action]:
+            logger.debug(f"  Preconditions pre(a): {{{', '.join(sorted(list(self.pre[action])[:10]))}{'...' if len(self.pre[action]) > 10 else ''}}}")
+            logger.debug(f"    Total: {len(self.pre[action])} literals")
+        else:
+            logger.debug(f"  Preconditions pre(a): ∅ (empty)")
+
+        # Log constraints
+        if self.pre_constraints[action]:
+            logger.debug(f"  Constraints pre?(a): {len(self.pre_constraints[action])} constraint sets")
+            for i, constraint in enumerate(list(self.pre_constraints[action])[:3], 1):
+                logger.debug(f"    {i}. {{{', '.join(sorted(list(constraint))[:5])}{' ...' if len(constraint) > 5 else ''}}} ({len(constraint)} literals)")
+            if len(self.pre_constraints[action]) > 3:
+                logger.debug(f"    ... ({len(self.pre_constraints[action]) - 3} more constraints)")
+        else:
+            logger.debug(f"  Constraints pre?(a): ∅ (no constraints yet)")
+
+        # Log CNF statistics
+        cnf = self.cnf_managers[action]
+        if cnf.has_clauses():
+            num_clauses = len(cnf.cnf.clauses)
+            num_vars = len(cnf.fluent_to_var)
+            num_models = cnf.count_solutions()
+            logger.debug(f"  CNF formula: {num_clauses} clauses, {num_vars} variables, {num_models} satisfying models")
+        else:
+            logger.debug(f"  CNF formula: empty (no constraints)")
+
+        # Log confirmed effects
+        if self.eff_add[action] or self.eff_del[action]:
+            logger.debug(f"  Confirmed effects:")
+            if self.eff_add[action]:
+                logger.debug(f"    Add: {{{', '.join(sorted(list(self.eff_add[action])[:5]))}{'...' if len(self.eff_add[action]) > 5 else ''}}} ({len(self.eff_add[action])} total)")
+            else:
+                logger.debug(f"    Add: ∅")
+            if self.eff_del[action]:
+                logger.debug(f"    Del: {{{', '.join(sorted(list(self.eff_del[action])[:5]))}{'...' if len(self.eff_del[action]) > 5 else ''}}} ({len(self.eff_del[action])} total)")
+            else:
+                logger.debug(f"    Del: ∅")
+        else:
+            logger.debug(f"  Confirmed effects: None yet")
+
+        # Log uncertain effects summary
+        maybe_add_count = len(self.eff_maybe_add[action])
+        maybe_del_count = len(self.eff_maybe_del[action])
+        logger.debug(f"  Uncertain effects: {maybe_add_count} maybe-add, {maybe_del_count} maybe-del")
 
     def _select_by_strategy(self, action_gains: List[Tuple[str, List[str], float]]) -> Tuple[str, List[str]]:
         """
@@ -700,7 +806,13 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Rebuild CNF formula after updates
         logger.debug(f"Rebuilding CNF formula for '{action}'")
+        cnf_before_clauses = len(self.cnf_managers[action].cnf.clauses) if self.cnf_managers[action].has_clauses() else 0
         self._build_cnf_formula(action)
+        cnf_after_clauses = len(self.cnf_managers[action].cnf.clauses) if self.cnf_managers[action].has_clauses() else 0
+
+        if cnf_before_clauses != cnf_after_clauses:
+            logger.debug(f"  CNF clauses: {cnf_before_clauses} → {cnf_after_clauses}")
+
         logger.info(f"Model update complete for '{action}'")
 
     def _update_success(self, action: str, objects: List[str],
@@ -772,12 +884,12 @@ class InformationGainLearner(BaseActionModelLearner):
         # Update constraint sets
         # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
         constraints_before = len(self.pre_constraints[action])
-        updated_constraints = []
+        updated_constraints = set()
         for constraint in self.pre_constraints[action]:
             # Keep only literals from constraint that were satisfied
             updated = constraint.intersection(satisfied_in_state)
             if updated:  # Don't add empty constraints
-                updated_constraints.append(updated)
+                updated_constraints.add(frozenset(updated))
         self.pre_constraints[action] = updated_constraints
         # Invalidate cache after modifying constraints
         self._invalidate_constraint_cache(action)
@@ -786,6 +898,16 @@ class InformationGainLearner(BaseActionModelLearner):
 
         logger.info(f"Success update complete for {action}: |pre|={len(self.pre[action])}, "
                     f"|eff+|={len(self.eff_add[action])}, |eff-|={len(self.eff_del[action])}")
+
+        # Detailed logging of changes (debug level)
+        logger.debug(f"\nResult: SUCCESS")
+        logger.debug(f"Updated model for {action}:")
+        logger.debug(f"  Preconditions refined: {pre_before} → {len(self.pre[action])} literals")
+        if added_fluents:
+            logger.debug(f"  Add effects confirmed: {eff_add_before} → {len(self.eff_add[action])}")
+        if deleted_fluents:
+            logger.debug(f"  Del effects confirmed: {eff_del_before} → {len(self.eff_del[action])}")
+        logger.debug(f"  Constraints refined: {constraints_before} → {len(self.pre_constraints[action])}")
 
     def _update_failure(self, action: str, objects: List[str], state: Set[str]) -> None:
         r"""
@@ -806,20 +928,34 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Add new constraint: unsatisfied literals from pre(a)
         # pre?(a) = pre?(a) ∪ {pre(a) \ bindP(s, O)}
-        unsatisfied = self.pre[action] - satisfied_in_state
+        unsatisfied = frozenset(self.pre[action] - satisfied_in_state)
 
         if unsatisfied:
             constraints_before = len(self.pre_constraints[action])
-            self.pre_constraints[action].append(unsatisfied)
+            self.pre_constraints[action].add(unsatisfied)
             # Invalidate cache after modifying constraints
             self._invalidate_constraint_cache(action)
-            logger.info(
-                f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
-                f"(total constraints: {constraints_before} → {len(self.pre_constraints[action])})")
+            new_count = len(self.pre_constraints[action])
+            if new_count > constraints_before:
+                logger.info(
+                    f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
+                    f"(total constraints: {constraints_before} → {new_count})")
+            else:
+                logger.debug(
+                    f"Failure update for {action}: Constraint already exists (no new information gained)")
         else:
             # This shouldn't happen - if all preconditions were satisfied, action should succeed
             logger.warning(
                 f"Failed action {action} had all preconditions satisfied - possible environment issue")
+
+        # Detailed logging of changes (debug level)
+        logger.debug(f"\nResult: FAILURE")
+        if unsatisfied and new_count > constraints_before:
+            logger.debug(f"Updated model for {action}:")
+            logger.debug(f"  Added constraint: {{{', '.join(sorted(list(unsatisfied))[:5])}{' ...' if len(unsatisfied) > 5 else ''}}} ({len(unsatisfied)} literals)")
+            logger.debug(f"  Total constraints: {constraints_before} → {new_count}")
+        elif unsatisfied:
+            logger.debug(f"No new information for {action}: constraint already exists")
 
     def _state_to_internal(self, state: Set[str]) -> Set[str]:
         """

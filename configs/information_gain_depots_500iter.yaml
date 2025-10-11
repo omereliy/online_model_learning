@@ -14,10 +14,10 @@ domain_problem:
 algorithm_params:
   information_gain:
     selection_strategy: "greedy"  # Always select max information gain
-    max_iterations: 500
+    max_iterations: 100
 
     # Conservative convergence parameters (prevent premature convergence)
-    # These are more restrictive than the defaults to ensure full 500-iteration runs
+    # These are more restrictive than the defaults to ensure full validation runs
     model_stability_window: 50      # No model changes for 50 iterations
     info_gain_epsilon: 0.001         # Very low information gain threshold
     success_rate_threshold: 0.98     # 98% success rate required
@@ -32,9 +32,9 @@ metrics:
 
 # Stopping criteria - conservative settings
 stopping_criteria:
-  max_iterations: 500
-  max_runtime_seconds: 7200  # 2 hours maximum
-  convergence_check_interval: 100  # Conservative - check every 100 iterations
+  max_iterations: 100
+  max_runtime_seconds: 1200  # 20 minutes maximum
+  convergence_check_interval: 50  # Check every 50 iterations
 
 # Output configuration
 output:

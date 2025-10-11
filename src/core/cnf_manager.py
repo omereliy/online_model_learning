@@ -13,7 +13,7 @@ except ImportError:
 
 import itertools
 import logging
-from typing import List, Dict, Set, Optional
+from typing import List, Dict, Set, Optional, FrozenSet
 
 logger = logging.getLogger(__name__)
 
@@ -560,7 +560,7 @@ class CNFManager:
             # Add unit clause [-fluent] (fluent must be false)
             self.add_clause(['-' + fluent])
 
-    def add_constraint_from_unsatisfied(self, unsatisfied_literals: Set[str]):
+    def add_constraint_from_unsatisfied(self, unsatisfied_literals: FrozenSet[str]):
         """
         Add a constraint clause from a set of unsatisfied literals.
 
@@ -588,7 +588,7 @@ class CNFManager:
         if clause:
             self.add_clause(clause)
 
-    def build_from_constraint_sets(self, constraint_sets: List[Set[str]]):
+    def build_from_constraint_sets(self, constraint_sets: Set[FrozenSet[str]]):
         """
         Build CNF formula from constraint sets.
 

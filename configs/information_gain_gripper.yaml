@@ -1,11 +1,10 @@
 # Information Gain Algorithm - Gripper Domain
-# Uses epsilon-greedy selection strategy (exploration with probability epsilon)
+# Validation test with greedy selection
 
 experiment:
-  name: "information_gain_gripper_epsilon"
+  name: "information_gain_gripper_validation"
   algorithm: "information_gain"
   seed: 42
-  environment_type: "pddl"
 
 domain_problem:
   domain: "benchmarks/olam-compatible/gripper/domain.pddl"
@@ -14,9 +13,12 @@ domain_problem:
 # Algorithm-specific parameters
 algorithm_params:
   information_gain:
-    selection_strategy: "epsilon_greedy"  # Explore with probability epsilon
-    epsilon: 0.1  # 10% random exploration
-    max_iterations: 200
+    selection_strategy: "greedy"
+    max_iterations: 100
+    model_stability_window: 50
+    info_gain_epsilon: 0.001
+    success_rate_threshold: 0.98
+    success_rate_window: 50
 
 # Metrics collection
 metrics:
@@ -25,9 +27,9 @@ metrics:
 
 # Stopping criteria
 stopping_criteria:
-  max_iterations: 200
+  max_iterations: 100
   max_runtime_seconds: 600
-  convergence_check_interval: 20
+  convergence_check_interval: 50
 
 # Output configuration
 output:
