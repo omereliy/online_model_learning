@@ -310,7 +310,8 @@ class LiftedDomainKnowledge:
         Get all parameter-bound literals (La) for an action.
 
         This generates all possible lifted fluents using the action's parameters,
-        including both positive and negative literals.
+        including both positive and negative literals. Only generates type-safe
+        literals where parameter types match predicate signatures.
 
         Args:
             action_name: Action name
@@ -337,7 +338,10 @@ class LiftedDomainKnowledge:
         num_params = action.arity
         param_names = self._generate_parameter_names(num_params)
 
-        # For each predicate, generate all valid parameter combinations
+        # Create mapping from parameter names to types
+        param_types = {param_names[i]: action.parameters[i].type for i in range(num_params)}
+
+        # For each predicate, generate type-safe parameter combinations
         import itertools
         for pred_name, pred_sig in self.predicates.items():
             if pred_sig.arity == 0:
@@ -348,16 +352,23 @@ class LiftedDomainKnowledge:
                 # Generate combinations of parameters
                 for combo in itertools.combinations_with_replacement(param_names, pred_sig.arity):
                     if len(combo) == pred_sig.arity:
-                        # Create positive literal
-                        literal = f"{pred_name}({','.join(combo)})"
-                        La.add(literal)
-                        # Create negative literal
-                        La.add(f"¬{literal}")
+                        # Check type compatibility: each parameter's type must match predicate's expected type
+                        types_match = all(
+                            self.is_subtype(param_types[param], pred_sig.parameters[i].type)
+                            for i, param in enumerate(combo)
+                        )
+
+                        if types_match:
+                            # Create positive literal
+                            literal = f"{pred_name}({','.join(combo)})"
+                            La.add(literal)
+                            # Create negative literal
+                            La.add(f"¬{literal}")
 
         # Cache result
         self._La_cache[action_name] = La
 
-        logger.debug(f"Generated {len(La)} parameter-bound literals for {action_name}")
+        logger.debug(f"Generated {len(La)} type-safe parameter-bound literals for {action_name}")
         return La
 
     @staticmethod

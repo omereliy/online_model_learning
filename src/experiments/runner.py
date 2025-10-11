@@ -270,6 +270,12 @@ class ExperimentRunner:
                 if self.verbose_debug:
                     logger.debug(f"Iteration {iteration}: Selected {action}({','.join(objects)})")
 
+                # Check for convergence signal
+                if action == "no_action":
+                    logger.info(f"Algorithm signaled convergence (no information gain) at iteration {iteration}")
+                    stopping_reason = 'convergence'
+                    break
+
                 # Execute action
                 success, runtime = self._execute_action(action, objects)
 

@@ -33,6 +33,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Note: Set level to logging.DEBUG for detailed action selection diagnostics
+
 
 class InformationGainValidator:
     """Validates Information Gain algorithm theoretical correctness."""
@@ -154,6 +156,12 @@ class InformationGainValidator:
             # Select action using learner's strategy (internally calculates all gains)
             try:
                 action, objects = learner.select_action(state)
+
+                # Check for convergence signal
+                if action == "no_action":
+                    logger.info(f"\n✓ Algorithm signaled convergence (no information gain) at iteration {i+1}")
+                    break
+
                 action_str = f"{action}({','.join(objects)})"
 
                 # Get the information gain for the selected action
@@ -458,15 +466,26 @@ class InformationGainValidator:
 
 
 def main():
-    """Run Information Gain validation with blocksworld domain."""
+    """Run Information Gain validation."""
+    import argparse
+    import yaml
 
-    # Use blocksworld - standard test domain
-    domain = 'benchmarks/olam-compatible/blocksworld/domain.pddl'
-    problem = 'benchmarks/olam-compatible/blocksworld/p01.pddl'
+    parser = argparse.ArgumentParser(description='Validate Information Gain algorithm')
+    parser.add_argument('config', help='Path to experiment config YAML file')
+    parser.add_argument('--max-iterations', type=int, default=None, help='Override max iterations from config')
+    args = parser.parse_args()
+
+    # Load config
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    domain = config['domain_problem']['domain']
+    problem = config['domain_problem']['problem']
+    max_iterations = args.max_iterations or config.get('stopping_criteria', {}).get('max_iterations', 100)
 
     # Run validation
     validator = InformationGainValidator(domain, problem)
-    results = validator.run_validation(max_iterations=100)
+    results = validator.run_validation(max_iterations=max_iterations)
 
     return results
 
