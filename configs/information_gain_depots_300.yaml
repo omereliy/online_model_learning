@@ -1,20 +1,20 @@
-# Information Gain Algorithm - Gripper Domain
-# Validation test with greedy selection
+# Information Gain Algorithm - Depots Domain (300 iterations)
+# Main experiment configuration for paper
 
 experiment:
-  name: "information_gain_gripper_validation"
+  name: "information_gain_depots_300"
   algorithm: "information_gain"
   seed: 42
 
 domain_problem:
-  domain: "benchmarks/olam-compatible/gripper/domain.pddl"
-  problem: "benchmarks/olam-compatible/gripper/p01.pddl"
+  domain: "benchmarks/olam-compatible/depots/domain.pddl"
+  problem: "benchmarks/olam-compatible/depots/p01.pddl"
 
 # Algorithm-specific parameters
 algorithm_params:
   information_gain:
     selection_strategy: "greedy"
-    max_iterations: 100
+    max_iterations: 300
     model_stability_window: 50
     info_gain_epsilon: 0.001
     success_rate_threshold: 0.98
@@ -27,8 +27,8 @@ metrics:
 
 # Stopping criteria
 stopping_criteria:
-  max_iterations: 100
-  max_runtime_seconds: 600
+  max_iterations: 300
+  max_runtime_seconds: 1800  # 30 minutes max
   convergence_check_interval: 50
 
 # Output configuration

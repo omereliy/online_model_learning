@@ -1,9 +1,9 @@
-# Information Gain Algorithm - Logistics Domain
-# Validation test with greedy selection
+# OLAM Test - Logistics Domain
+# Quick validation test (100 iterations)
 
 experiment:
-  name: "information_gain_logistics_validation"
-  algorithm: "information_gain"
+  name: "olam_logistics_test"
+  algorithm: "olam"
   seed: 42
 
 domain_problem:
@@ -12,24 +12,25 @@ domain_problem:
 
 # Algorithm-specific parameters
 algorithm_params:
-  information_gain:
-    selection_strategy: "greedy"
+  olam:
     max_iterations: 100
-    model_stability_window: 50
-    info_gain_epsilon: 0.001
-    success_rate_threshold: 0.98
-    success_rate_window: 50
+    eval_frequency: 10
+    planner_time_limit: 240
+    max_precs_length: 8
+    neg_eff_assumption: false
+    output_console: false
+    random_seed: 42
 
 # Metrics collection
 metrics:
-  interval: 1  # Record every action
+  interval: 1
   window_size: 50
 
 # Stopping criteria
 stopping_criteria:
   max_iterations: 100
-  max_runtime_seconds: 600
-  convergence_check_interval: 50
+  max_runtime_seconds: 600  # 10 minutes max
+  convergence_check_interval: 100
 
 # Output configuration
 output:

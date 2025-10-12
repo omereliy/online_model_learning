@@ -127,6 +127,58 @@ grep -r "TODO" src/ --include="*.py"
 grep -r "NotImplementedError" src/ --include="*.py"
 ```
 
+### Experiment Commands
+```bash
+# Run full experiment suite (24 experiments: 4 domains × 2 algorithms × 3 problems)
+python scripts/run_all_experiments.py
+
+# Run specific algorithm(s)
+python scripts/run_all_experiments.py --algorithms olam
+python scripts/run_all_experiments.py --algorithms information_gain
+python scripts/run_all_experiments.py --algorithms olam information_gain
+
+# Run specific domain(s)
+python scripts/run_all_experiments.py --domains blocksworld depots
+python scripts/run_all_experiments.py --domains gripper
+
+# Run specific problem(s)
+python scripts/run_all_experiments.py --problems 0 1  # Run p00 and p01
+python scripts/run_all_experiments.py --problems 2    # Run p02 only
+
+# Combined filters
+python scripts/run_all_experiments.py --algorithms olam --domains blocksworld --problems 0 1
+
+# Dry-run (plan without executing)
+python scripts/run_all_experiments.py --dry-run
+
+# Run single experiment
+python scripts/run_experiment.py configs/olam_blocksworld_300.yaml
+
+# Run with specific problem file (manual)
+# Edit config to change problem: "problem: benchmarks/olam-compatible/blocksworld/p02.pddl"
+python scripts/run_experiment.py configs/information_gain_depots_300.yaml
+```
+
+### Config Files Structure
+```
+configs/
+├── *_300.yaml          # Main 300-iteration experiment configs (8 files)
+│   ├── olam_blocksworld_300.yaml
+│   ├── olam_depots_300.yaml
+│   ├── olam_gripper_300.yaml
+│   ├── olam_logistics_300.yaml
+│   ├── information_gain_blocksworld_300.yaml
+│   ├── information_gain_depots_300.yaml
+│   ├── information_gain_gripper_300.yaml
+│   └── information_gain_logistics_300.yaml
+├── *_test.yaml         # Quick test configs (2 files)
+│   ├── olam_depots_test.yaml
+│   └── olam_logistics_test.yaml
+└── *_500iter.yaml      # Extended validation configs (2 files)
+    ├── olam_depots_500iter.yaml
+    └── information_gain_depots_500iter.yaml
+```
+
 ### OLAM Commands
 ```bash
 # Verify Java installation

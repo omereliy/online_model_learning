@@ -187,3 +187,4 @@ slurm_*.log
 /scripts/personal_use_debugging/*
 
 /validation_logs/*
+/results/tests/*

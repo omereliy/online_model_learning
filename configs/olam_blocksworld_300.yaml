@@ -1,19 +1,19 @@
-# OLAM Short Test - Depots Domain
-# Quick validation test (20 iterations)
+# OLAM Algorithm - Blocksworld Domain (300 iterations)
+# Main experiment configuration for paper
 
 experiment:
-  name: "olam_depots_test"
+  name: "olam_blocksworld_300"
   algorithm: "olam"
   seed: 42
 
 domain_problem:
-  domain: "benchmarks/olam-compatible/depots/domain.pddl"
-  problem: "benchmarks/olam-compatible/depots/p01.pddl"
+  domain: "benchmarks/olam-compatible/blocksworld/domain.pddl"
+  problem: "benchmarks/olam-compatible/blocksworld/p01.pddl"
 
 # Algorithm-specific parameters
 algorithm_params:
   olam:
-    max_iterations: 100
+    max_iterations: 300
     eval_frequency: 10
     planner_time_limit: 240
     max_precs_length: 8
@@ -28,8 +28,8 @@ metrics:
 
 # Stopping criteria
 stopping_criteria:
-  max_iterations: 100
-  max_runtime_seconds: 600  # 10 minutes max
+  max_iterations: 300
+  max_runtime_seconds: 1800  # 30 minutes max
   convergence_check_interval: 100
 
 # Output configuration
