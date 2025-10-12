@@ -36,3 +36,4 @@
   :parameters (?x - hoist ?y - crate ?z - truck ?p - place)
   :precondition (and (at ?x ?p) (at ?z ?p) (available ?x) (in ?y ?z))
   :effect (and (not (in ?y ?z)) (not (available ?x)) (lifting ?x ?y)))
+)

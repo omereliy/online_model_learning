@@ -124,6 +124,10 @@ class InformationGainLearner(BaseActionModelLearner):
         # Performance optimization: cache for constraint literals
         self._constraint_literals_cache: Dict[str, Set[str]] = {}
 
+        # Performance optimization: cache base CNF model counts (Phase 1 enhancement)
+        # Invalidated when CNF formula changes (after observe() → update_model())
+        self._base_cnf_count_cache: Dict[str, int] = {}
+
         # Phase 3: Action selection strategy
         self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
         self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
@@ -247,8 +251,8 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"Action {action} has empty CNF, probability = 1.0")
             return 1.0
 
-        # Count satisfying models for unrestricted formula
-        total_models = cnf.count_solutions()
+        # Count satisfying models for unrestricted formula (cached)
+        total_models = self._get_base_model_count(action)
         if total_models == 0:
             # Contradiction in formula
             logger.warning(f"Action {action} has contradictory constraints")
@@ -275,8 +279,9 @@ class InformationGainLearner(BaseActionModelLearner):
                 # Positive literal is unsatisfied, so it must be false
                 state_constraints[literal] = False
 
-        # Count models with state constraints using CNF manager method
-        state_models = cnf.count_models_with_constraints(state_constraints)
+        # Count models with state constraints using assumptions (Phase 2 enhancement - no deep copy!)
+        assumptions = cnf.state_constraints_to_assumptions(state_constraints)
+        state_models = cnf.count_models_with_assumptions(assumptions)
 
         probability = state_models / total_models if total_models > 0 else 0.0
         logger.debug(f"Applicability probability for {action}: {state_models}/{total_models} = {probability:.3f}")
@@ -306,18 +311,17 @@ class InformationGainLearner(BaseActionModelLearner):
 
         cnf = self.cnf_managers[action]
 
-        # If no clauses, maximum uncertainty
-        if not cnf.has_clauses():
-            la_size = len(self.pre[action])
-            max_models = 2 ** la_size if la_size > 0 else 1
-            # Maximum entropy for uniform distribution over all possible models
-            entropy = math.log2(max_models) if max_models > 1 else 0.0
-            logger.debug(f"Entropy for {action}: {entropy:.3f} (no constraints, {max_models} models)")
-            return entropy
+        # Get model count (cached)
+        num_models = self._get_base_model_count(action)
 
-        # Use CNF manager's entropy calculation (log2 of model count)
-        entropy = cnf.get_entropy()
-        logger.debug(f"Entropy for {action}: {entropy:.3f}")
+        # No uncertainty if 0 or 1 model
+        if num_models <= 1:
+            entropy = 0.0
+        else:
+            # Entropy is log2 of model count
+            entropy = math.log2(num_models)
+
+        logger.debug(f"Entropy for {action}: {entropy:.3f} ({num_models} models)")
         return entropy
 
     def _calculate_potential_gain_success(self, action: str, objects: List[str], state: Set[str]) -> float:
@@ -401,24 +405,16 @@ class InformationGainLearner(BaseActionModelLearner):
         # Current CNF model count
         cnf = self.cnf_managers[action]
 
-        # If CNF is empty, use maximum possible models
-        if not cnf.has_clauses():
-            la_size = len(self._get_parameter_bound_literals(action))
-            current_models = 2 ** la_size if la_size > 0 else 1
-        else:
-            current_models = cnf.count_solutions()
+        # Get current model count (cached)
+        current_models = self._get_base_model_count(action)
 
         # Check if no unsatisfied literals (all preconditions satisfied)
         if len(unsatisfied) == 0:
             # All preconditions satisfied meaning itr will not fail so return 0
             return 0.0
 
-        # Create temporary CNF with new constraint
-        temp_cnf = cnf.copy()
-        temp_cnf.add_constraint_from_unsatisfied(unsatisfied)
-
-        # Count models with new constraint
-        new_models = temp_cnf.count_solutions()
+        # Count models with temporary constraint (Phase 2 enhancement - no deep copy!)
+        new_models = cnf.count_models_with_temporary_clause(unsatisfied)
 
         # Calculate information gain
         la_size = len(self._get_parameter_bound_literals(action))
@@ -810,6 +806,9 @@ class InformationGainLearner(BaseActionModelLearner):
         self._build_cnf_formula(action)
         cnf_after_clauses = len(self.cnf_managers[action].cnf.clauses) if self.cnf_managers[action].has_clauses() else 0
 
+        # Invalidate base CNF count cache after formula changes (Phase 1 enhancement)
+        self._base_cnf_count_cache.pop(action, None)
+
         if cnf_before_clauses != cnf_after_clauses:
             logger.debug(f"  CNF clauses: {cnf_before_clauses} → {cnf_after_clauses}")
 
@@ -1069,6 +1068,42 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.info(f"CNF formula built for '{action}': {len(cnf.cnf.clauses)} clauses, "
                     f"{len(cnf.fluent_to_var)} unique variables")
         return cnf
+
+    def _get_base_model_count(self, action: str) -> int:
+        """
+        Get cached base CNF model count for action (Phase 1 performance enhancement).
+
+        Caches the model count to avoid redundant expensive SAT solving calls
+        within the same iteration. Cache is invalidated after CNF formula changes.
+
+        Args:
+            action: Action name
+
+        Returns:
+            Number of satisfying models for base CNF formula
+        """
+        # Check cache first
+        if action in self._base_cnf_count_cache:
+            return self._base_cnf_count_cache[action]
+
+        # Build CNF if needed
+        if not self.cnf_managers[action].has_clauses():
+            self._build_cnf_formula(action)
+
+        cnf = self.cnf_managers[action]
+
+        # If still empty, use maximum possible models
+        if not cnf.has_clauses():
+            la_size = len(self._get_parameter_bound_literals(action))
+            count = 2 ** la_size if la_size > 0 else 1
+        else:
+            # Perform expensive count and cache it
+            count = cnf.count_solutions()
+
+        # Cache the result
+        self._base_cnf_count_cache[action] = count
+        logger.debug(f"Cached base model count for {action}: {count}")
+        return count
 
     def get_learned_model(self) -> Dict[str, Any]:
         """
