@@ -74,11 +74,20 @@ def load_and_modify_config(config_path: str, problem_file: str) -> dict:
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
 
+    # Convert relative paths to absolute paths based on project root
+    domain_path = Path(config['domain_problem']['domain'])
+    if not domain_path.is_absolute():
+        domain_path = project_root / domain_path
+    config['domain_problem']['domain'] = str(domain_path)
+
     # Extract domain from original problem path
     original_problem = config['domain_problem']['problem']
-    domain_dir = Path(original_problem).parent
+    problem_path = Path(original_problem)
+    if not problem_path.is_absolute():
+        problem_path = project_root / problem_path
+    domain_dir = problem_path.parent
 
-    # Update problem file
+    # Update problem file with absolute path
     config['domain_problem']['problem'] = str(domain_dir / problem_file)
 
     # Update experiment name to include problem
