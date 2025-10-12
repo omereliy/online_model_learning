@@ -98,7 +98,7 @@ def load_and_modify_config(config_path: str, problem_file: str) -> dict:
     return config
 
 
-def run_single_experiment(config_path: str, problem_file: str, output_base_dir: Path) -> dict:
+def run_single_experiment(config_path: str, problem_file: str, output_base_dir: Path, override_iterations: int = None) -> dict:
     """
     Run a single experiment with a specific problem file.
 
@@ -116,6 +116,14 @@ def run_single_experiment(config_path: str, problem_file: str, output_base_dir: 
     # Load and modify config
     config = load_and_modify_config(config_path, problem_file)
     experiment_name = config['experiment']['name']
+
+    # Override iterations if specified
+    if override_iterations:
+        config['stopping_criteria']['max_iterations'] = override_iterations
+        if 'algorithm_params' in config:
+            for algo_params in config['algorithm_params'].values():
+                if 'max_iterations' in algo_params:
+                    algo_params['max_iterations'] = override_iterations
 
     # Create experiment-specific output directory
     experiment_dir = output_base_dir / experiment_name / timestamp
@@ -197,7 +205,7 @@ def run_single_experiment(config_path: str, problem_file: str, output_base_dir: 
         return error_info
 
 
-def run_experiment_suite(algorithms=None, domains=None, problems=None, dry_run=False):
+def run_experiment_suite(algorithms=None, domains=None, problems=None, dry_run=False, override_iterations=None):
     """
     Run the full experiment suite with optional filters.
 
@@ -206,6 +214,7 @@ def run_experiment_suite(algorithms=None, domains=None, problems=None, dry_run=F
         domains: List of domains to run (default: all)
         problems: List of problem indices to run (default: all)
         dry_run: If True, print plan without executing
+        override_iterations: If set, override max_iterations in configs
     """
     # Setup basic logging for dry-run or full logging for real run
     if dry_run:
@@ -252,6 +261,8 @@ def run_experiment_suite(algorithms=None, domains=None, problems=None, dry_run=F
     logger.info(f"Algorithms: {', '.join(algorithms)}")
     logger.info(f"Problems: {', '.join(problem_files)}")
     logger.info(f"Total experiments: {len(experiments)}")
+    if override_iterations:
+        logger.info(f"Iteration override: {override_iterations}")
     logger.info("=" * 80)
 
     if dry_run:
@@ -278,7 +289,8 @@ def run_experiment_suite(algorithms=None, domains=None, problems=None, dry_run=F
         result = run_single_experiment(
             exp['config_path'],
             exp['problem_file'],
-            output_base_dir
+            output_base_dir,
+            override_iterations
         )
         results.append(result)
 
@@ -352,6 +364,9 @@ def main():
     parser.add_argument('--dry-run', action='store_true',
                        help='Print experiment plan without running')
 
+    parser.add_argument('--iterations', type=int,
+                       help='Override max iterations for quick testing')
+
     args = parser.parse_args()
 
     # Handle 'all' keyword
@@ -364,7 +379,8 @@ def main():
         algorithms=algorithms,
         domains=domains,
         problems=problems,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
+        override_iterations=args.iterations
     )
 
 

@@ -228,6 +228,10 @@ class OLAMAdapter(BaseActionModelLearner):
         shutil.copy(self.domain_file, pddl_dir / "domain.pddl")
         logger.debug(f"Copied domain file: {self.domain_file} -> {pddl_dir / 'domain.pddl'}")
 
+        # OLAM also reads from domain_input.pddl when parsing actions
+        shutil.copy(self.domain_file, pddl_dir / "domain_input.pddl")
+        logger.debug(f"Copied domain file: {self.domain_file} -> {pddl_dir / 'domain_input.pddl'}")
+
         shutil.copy(self.problem_file, pddl_dir / "facts.pddl")
         logger.debug(f"Copied problem file: {self.problem_file} -> {pddl_dir / 'facts.pddl'}")
 
