@@ -1105,6 +1105,138 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug(f"Cached base model count for {action}: {count}")
         return count
 
+    def get_action_model_metrics(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get detailed learning metrics for each action showing what has been learned.
+
+        For each action, computes:
+        - Certain components (definitively in the model)
+        - Excluded components (definitively NOT in the model)
+        - Uncertain components (still unsure)
+
+        This is a standard metric in action model learning papers.
+
+        Returns:
+            Dict[action_name -> metrics] where metrics contains counts and percentages
+        """
+        action_metrics = {}
+
+        for action_name in self.pre.keys():
+            # Get La: all possible parameter-bound literals for this action
+            La = self._get_parameter_bound_literals(action_name)
+            la_size = len(La)
+
+            # === PRECONDITIONS ===
+            # Certain preconditions: literals that MUST be preconditions
+            # These are in the intersection of all satisfying models of the CNF
+            # For practical tracking: literals that appear in all constraint sets
+            # (In the absence of explicit model intersection, we use pre(a) as "possible")
+            certain_pre = set()
+            if self.pre_constraints[action_name]:
+                # Literals that appear in ALL constraints are required preconditions
+                certain_pre = set.intersection(*self.pre_constraints[action_name]) if self.pre_constraints[action_name] else set()
+
+            # Excluded preconditions: literals that are definitely NOT preconditions
+            # These are La \ pre(a) - ruled out by successful actions
+            excluded_pre = La - self.pre[action_name]
+
+            # Uncertain preconditions: literals that might be preconditions
+            # These are pre(a) \ certain_pre
+            uncertain_pre = self.pre[action_name] - certain_pre
+
+            # === ADD EFFECTS ===
+            # Certain add effects: eff_add[action] - confirmed by observations
+            certain_eff_add = self.eff_add[action_name]
+
+            # Excluded add effects: literals that are definitely NOT add effects
+            # These are La \ (eff_add ∪ eff_maybe_add)
+            excluded_eff_add = La - (self.eff_add[action_name] | self.eff_maybe_add[action_name])
+
+            # Uncertain add effects: eff_maybe_add[action]
+            uncertain_eff_add = self.eff_maybe_add[action_name]
+
+            # === DELETE EFFECTS ===
+            # Certain delete effects: eff_del[action] - confirmed by observations
+            certain_eff_del = self.eff_del[action_name]
+
+            # Excluded delete effects: literals that are definitely NOT delete effects
+            # These are La \ (eff_del ∪ eff_maybe_del)
+            excluded_eff_del = La - (self.eff_del[action_name] | self.eff_maybe_del[action_name])
+
+            # Uncertain delete effects: eff_maybe_del[action]
+            uncertain_eff_del = self.eff_maybe_del[action_name]
+
+            # Compute metrics
+            action_metrics[action_name] = {
+                # Counts
+                'La_size': la_size,
+                'observations': len(self.observation_history[action_name]),
+
+                # Preconditions
+                'preconditions': {
+                    'certain_count': len(certain_pre),
+                    'excluded_count': len(excluded_pre),
+                    'uncertain_count': len(uncertain_pre),
+                    'certain_percent': (len(certain_pre) / la_size * 100) if la_size > 0 else 0,
+                    'excluded_percent': (len(excluded_pre) / la_size * 100) if la_size > 0 else 0,
+                    'uncertain_percent': (len(uncertain_pre) / la_size * 100) if la_size > 0 else 0,
+                },
+
+                # Add effects
+                'add_effects': {
+                    'certain_count': len(certain_eff_add),
+                    'excluded_count': len(excluded_eff_add),
+                    'uncertain_count': len(uncertain_eff_add),
+                    'certain_percent': (len(certain_eff_add) / la_size * 100) if la_size > 0 else 0,
+                    'excluded_percent': (len(excluded_eff_add) / la_size * 100) if la_size > 0 else 0,
+                    'uncertain_percent': (len(uncertain_eff_add) / la_size * 100) if la_size > 0 else 0,
+                },
+
+                # Delete effects
+                'delete_effects': {
+                    'certain_count': len(certain_eff_del),
+                    'excluded_count': len(excluded_eff_del),
+                    'uncertain_count': len(uncertain_eff_del),
+                    'certain_percent': (len(certain_eff_del) / la_size * 100) if la_size > 0 else 0,
+                    'excluded_percent': (len(excluded_eff_del) / la_size * 100) if la_size > 0 else 0,
+                    'uncertain_percent': (len(uncertain_eff_del) / la_size * 100) if la_size > 0 else 0,
+                },
+
+                # Overall learning progress
+                'learning_progress': {
+                    # Total certain knowledge (preconditions + effects)
+                    'total_certain': len(certain_pre) + len(certain_eff_add) + len(certain_eff_del),
+                    # Total excluded knowledge
+                    'total_excluded': len(excluded_pre) + len(excluded_eff_add) + len(excluded_eff_del),
+                    # Total uncertain
+                    'total_uncertain': len(uncertain_pre) + len(uncertain_eff_add) + len(uncertain_eff_del),
+                    # Percentage of model space explored (certain + excluded)
+                    'explored_percent': ((len(certain_pre) + len(excluded_pre) +
+                                        len(certain_eff_add) + len(excluded_eff_add) +
+                                        len(certain_eff_del) + len(excluded_eff_del)) / (3 * la_size) * 100) if la_size > 0 else 0,
+                }
+            }
+
+        return action_metrics
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Get learning statistics including detailed action model metrics.
+
+        Returns:
+            Dictionary with learning statistics and per-action metrics
+        """
+        # Get base statistics
+        stats = super().get_statistics()
+
+        # Add information gain specific stats
+        stats['max_information_gain'] = self._last_max_gain
+
+        # Add detailed action model metrics
+        stats['action_model_metrics'] = self.get_action_model_metrics()
+
+        return stats
+
     def get_learned_model(self) -> Dict[str, Any]:
         """
         Export the current learned model.
@@ -1178,11 +1310,12 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Check if learning has converged.
 
-        Convergence is determined by multiple criteria:
-        1. Max iterations reached (forced convergence)
-        2. Model stability: no precondition changes for MODEL_STABILITY_WINDOW iterations
-        3. Low information gain: max gain < INFO_GAIN_EPSILON
-        4. High success rate: >95% success in last SUCCESS_RATE_WINDOW actions
+        Convergence occurs when:
+        1. Max iterations reached (forced convergence), OR
+        2. All actions have zero expected information gain (max gain < epsilon)
+
+        This is a strict criterion that ensures learning continues until no more
+        information can be gained from any action.
 
         Returns:
             True if model has converged, False otherwise
@@ -1193,34 +1326,28 @@ class InformationGainLearner(BaseActionModelLearner):
             self._converged = True
             return True
 
-        # Need minimum observations before checking other criteria
-        if self.iteration_count < self.MODEL_STABILITY_WINDOW:
+        # Need at least one observation to check information gain
+        if self.observation_count == 0:
             return False
 
-        # Criterion 1: Model stability check
-        # Check if preconditions (pre(a)) haven't changed for N iterations
-        model_stable = self._check_model_stability()
+        # Check if maximum expected gain across all actions is effectively zero
+        # This means no action provides any information gain
+        zero_gain = self._last_max_gain < self.FLOAT_COMPARISON_EPSILON
 
-        # Criterion 2: Low information gain check
-        # Check if maximum expected gain is below epsilon threshold
-        low_info_gain = self._check_low_information_gain()
-
-        # Criterion 3: High success rate check
-        # Check if success rate is above threshold in recent window
-        high_success_rate = self._check_high_success_rate()
-
-        # Converge only if ALL three criteria are met (conservative for statistical validity)
-        # Previous aggressive logic (ANY 2 of 3) caused premature convergence
-        all_criteria_met = model_stable and low_info_gain and high_success_rate
-
-        if all_criteria_met:
+        if zero_gain:
             if not self._converged:
                 logger.info(
-                    f"Convergence: All criteria met "
-                    f"(stable={model_stable}, low_gain={low_info_gain}, high_success={high_success_rate})"
+                    f"Convergence: Zero information gain across all actions "
+                    f"(max_gain={self._last_max_gain:.6f} < ε={self.FLOAT_COMPARISON_EPSILON})"
                 )
             self._converged = True
             return True
+
+        # Log current status for debugging
+        logger.debug(
+            f"Not converged: max_gain={self._last_max_gain:.6f}, "
+            f"iterations={self.iteration_count}/{self.max_iterations}"
+        )
 
         return False
 
