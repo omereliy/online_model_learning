@@ -124,6 +124,10 @@ class InformationGainLearner(BaseActionModelLearner):
         # Performance optimization: cache for constraint literals
         self._constraint_literals_cache: Dict[str, Set[str]] = {}
 
+        # Performance optimization: cache base CNF model counts (Phase 1 enhancement)
+        # Invalidated when CNF formula changes (after observe() → update_model())
+        self._base_cnf_count_cache: Dict[str, int] = {}
+
         # Phase 3: Action selection strategy
         self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
         self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
@@ -247,8 +251,8 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"Action {action} has empty CNF, probability = 1.0")
             return 1.0
 
-        # Count satisfying models for unrestricted formula
-        total_models = cnf.count_solutions()
+        # Count satisfying models for unrestricted formula (cached)
+        total_models = self._get_base_model_count(action)
         if total_models == 0:
             # Contradiction in formula
             logger.warning(f"Action {action} has contradictory constraints")
@@ -275,8 +279,9 @@ class InformationGainLearner(BaseActionModelLearner):
                 # Positive literal is unsatisfied, so it must be false
                 state_constraints[literal] = False
 
-        # Count models with state constraints using CNF manager method
-        state_models = cnf.count_models_with_constraints(state_constraints)
+        # Count models with state constraints using assumptions (Phase 2 enhancement - no deep copy!)
+        assumptions = cnf.state_constraints_to_assumptions(state_constraints)
+        state_models = cnf.count_models_with_assumptions(assumptions)
 
         probability = state_models / total_models if total_models > 0 else 0.0
         logger.debug(f"Applicability probability for {action}: {state_models}/{total_models} = {probability:.3f}")
@@ -306,18 +311,17 @@ class InformationGainLearner(BaseActionModelLearner):
 
         cnf = self.cnf_managers[action]
 
-        # If no clauses, maximum uncertainty
-        if not cnf.has_clauses():
-            la_size = len(self.pre[action])
-            max_models = 2 ** la_size if la_size > 0 else 1
-            # Maximum entropy for uniform distribution over all possible models
-            entropy = math.log2(max_models) if max_models > 1 else 0.0
-            logger.debug(f"Entropy for {action}: {entropy:.3f} (no constraints, {max_models} models)")
-            return entropy
+        # Get model count (cached)
+        num_models = self._get_base_model_count(action)
 
-        # Use CNF manager's entropy calculation (log2 of model count)
-        entropy = cnf.get_entropy()
-        logger.debug(f"Entropy for {action}: {entropy:.3f}")
+        # No uncertainty if 0 or 1 model
+        if num_models <= 1:
+            entropy = 0.0
+        else:
+            # Entropy is log2 of model count
+            entropy = math.log2(num_models)
+
+        logger.debug(f"Entropy for {action}: {entropy:.3f} ({num_models} models)")
         return entropy
 
     def _calculate_potential_gain_success(self, action: str, objects: List[str], state: Set[str]) -> float:
@@ -401,24 +405,16 @@ class InformationGainLearner(BaseActionModelLearner):
         # Current CNF model count
         cnf = self.cnf_managers[action]
 
-        # If CNF is empty, use maximum possible models
-        if not cnf.has_clauses():
-            la_size = len(self._get_parameter_bound_literals(action))
-            current_models = 2 ** la_size if la_size > 0 else 1
-        else:
-            current_models = cnf.count_solutions()
+        # Get current model count (cached)
+        current_models = self._get_base_model_count(action)
 
         # Check if no unsatisfied literals (all preconditions satisfied)
         if len(unsatisfied) == 0:
             # All preconditions satisfied meaning itr will not fail so return 0
             return 0.0
 
-        # Create temporary CNF with new constraint
-        temp_cnf = cnf.copy()
-        temp_cnf.add_constraint_from_unsatisfied(unsatisfied)
-
-        # Count models with new constraint
-        new_models = temp_cnf.count_solutions()
+        # Count models with temporary constraint (Phase 2 enhancement - no deep copy!)
+        new_models = cnf.count_models_with_temporary_clause(unsatisfied)
 
         # Calculate information gain
         la_size = len(self._get_parameter_bound_literals(action))
@@ -810,6 +806,9 @@ class InformationGainLearner(BaseActionModelLearner):
         self._build_cnf_formula(action)
         cnf_after_clauses = len(self.cnf_managers[action].cnf.clauses) if self.cnf_managers[action].has_clauses() else 0
 
+        # Invalidate base CNF count cache after formula changes (Phase 1 enhancement)
+        self._base_cnf_count_cache.pop(action, None)
+
         if cnf_before_clauses != cnf_after_clauses:
             logger.debug(f"  CNF clauses: {cnf_before_clauses} → {cnf_after_clauses}")
 
@@ -1070,6 +1069,174 @@ class InformationGainLearner(BaseActionModelLearner):
                     f"{len(cnf.fluent_to_var)} unique variables")
         return cnf
 
+    def _get_base_model_count(self, action: str) -> int:
+        """
+        Get cached base CNF model count for action (Phase 1 performance enhancement).
+
+        Caches the model count to avoid redundant expensive SAT solving calls
+        within the same iteration. Cache is invalidated after CNF formula changes.
+
+        Args:
+            action: Action name
+
+        Returns:
+            Number of satisfying models for base CNF formula
+        """
+        # Check cache first
+        if action in self._base_cnf_count_cache:
+            return self._base_cnf_count_cache[action]
+
+        # Build CNF if needed
+        if not self.cnf_managers[action].has_clauses():
+            self._build_cnf_formula(action)
+
+        cnf = self.cnf_managers[action]
+
+        # If still empty, use maximum possible models
+        if not cnf.has_clauses():
+            la_size = len(self._get_parameter_bound_literals(action))
+            count = 2 ** la_size if la_size > 0 else 1
+        else:
+            # Perform expensive count and cache it
+            count = cnf.count_solutions()
+
+        # Cache the result
+        self._base_cnf_count_cache[action] = count
+        logger.debug(f"Cached base model count for {action}: {count}")
+        return count
+
+    def get_action_model_metrics(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get detailed learning metrics for each action showing what has been learned.
+
+        For each action, computes:
+        - Certain components (definitively in the model)
+        - Excluded components (definitively NOT in the model)
+        - Uncertain components (still unsure)
+
+        This is a standard metric in action model learning papers.
+
+        Returns:
+            Dict[action_name -> metrics] where metrics contains counts and percentages
+        """
+        action_metrics = {}
+
+        for action_name in self.pre.keys():
+            # Get La: all possible parameter-bound literals for this action
+            La = self._get_parameter_bound_literals(action_name)
+            la_size = len(La)
+
+            # === PRECONDITIONS ===
+            # Certain preconditions: literals that MUST be preconditions
+            # These are in the intersection of all satisfying models of the CNF
+            # For practical tracking: literals that appear in all constraint sets
+            # (In the absence of explicit model intersection, we use pre(a) as "possible")
+            certain_pre = set()
+            if self.pre_constraints[action_name]:
+                # Literals that appear in ALL constraints are required preconditions
+                certain_pre = set.intersection(*self.pre_constraints[action_name]) if self.pre_constraints[action_name] else set()
+
+            # Excluded preconditions: literals that are definitely NOT preconditions
+            # These are La \ pre(a) - ruled out by successful actions
+            excluded_pre = La - self.pre[action_name]
+
+            # Uncertain preconditions: literals that might be preconditions
+            # These are pre(a) \ certain_pre
+            uncertain_pre = self.pre[action_name] - certain_pre
+
+            # === ADD EFFECTS ===
+            # Certain add effects: eff_add[action] - confirmed by observations
+            certain_eff_add = self.eff_add[action_name]
+
+            # Excluded add effects: literals that are definitely NOT add effects
+            # These are La \ (eff_add ∪ eff_maybe_add)
+            excluded_eff_add = La - (self.eff_add[action_name] | self.eff_maybe_add[action_name])
+
+            # Uncertain add effects: eff_maybe_add[action]
+            uncertain_eff_add = self.eff_maybe_add[action_name]
+
+            # === DELETE EFFECTS ===
+            # Certain delete effects: eff_del[action] - confirmed by observations
+            certain_eff_del = self.eff_del[action_name]
+
+            # Excluded delete effects: literals that are definitely NOT delete effects
+            # These are La \ (eff_del ∪ eff_maybe_del)
+            excluded_eff_del = La - (self.eff_del[action_name] | self.eff_maybe_del[action_name])
+
+            # Uncertain delete effects: eff_maybe_del[action]
+            uncertain_eff_del = self.eff_maybe_del[action_name]
+
+            # Compute metrics
+            action_metrics[action_name] = {
+                # Counts
+                'La_size': la_size,
+                'observations': len(self.observation_history[action_name]),
+
+                # Preconditions
+                'preconditions': {
+                    'certain_count': len(certain_pre),
+                    'excluded_count': len(excluded_pre),
+                    'uncertain_count': len(uncertain_pre),
+                    'certain_percent': (len(certain_pre) / la_size * 100) if la_size > 0 else 0,
+                    'excluded_percent': (len(excluded_pre) / la_size * 100) if la_size > 0 else 0,
+                    'uncertain_percent': (len(uncertain_pre) / la_size * 100) if la_size > 0 else 0,
+                },
+
+                # Add effects
+                'add_effects': {
+                    'certain_count': len(certain_eff_add),
+                    'excluded_count': len(excluded_eff_add),
+                    'uncertain_count': len(uncertain_eff_add),
+                    'certain_percent': (len(certain_eff_add) / la_size * 100) if la_size > 0 else 0,
+                    'excluded_percent': (len(excluded_eff_add) / la_size * 100) if la_size > 0 else 0,
+                    'uncertain_percent': (len(uncertain_eff_add) / la_size * 100) if la_size > 0 else 0,
+                },
+
+                # Delete effects
+                'delete_effects': {
+                    'certain_count': len(certain_eff_del),
+                    'excluded_count': len(excluded_eff_del),
+                    'uncertain_count': len(uncertain_eff_del),
+                    'certain_percent': (len(certain_eff_del) / la_size * 100) if la_size > 0 else 0,
+                    'excluded_percent': (len(excluded_eff_del) / la_size * 100) if la_size > 0 else 0,
+                    'uncertain_percent': (len(uncertain_eff_del) / la_size * 100) if la_size > 0 else 0,
+                },
+
+                # Overall learning progress
+                'learning_progress': {
+                    # Total certain knowledge (preconditions + effects)
+                    'total_certain': len(certain_pre) + len(certain_eff_add) + len(certain_eff_del),
+                    # Total excluded knowledge
+                    'total_excluded': len(excluded_pre) + len(excluded_eff_add) + len(excluded_eff_del),
+                    # Total uncertain
+                    'total_uncertain': len(uncertain_pre) + len(uncertain_eff_add) + len(uncertain_eff_del),
+                    # Percentage of model space explored (certain + excluded)
+                    'explored_percent': ((len(certain_pre) + len(excluded_pre) +
+                                        len(certain_eff_add) + len(excluded_eff_add) +
+                                        len(certain_eff_del) + len(excluded_eff_del)) / (3 * la_size) * 100) if la_size > 0 else 0,
+                }
+            }
+
+        return action_metrics
+
+    def get_statistics(self) -> Dict[str, Any]:
+        """
+        Get learning statistics including detailed action model metrics.
+
+        Returns:
+            Dictionary with learning statistics and per-action metrics
+        """
+        # Get base statistics
+        stats = super().get_statistics()
+
+        # Add information gain specific stats
+        stats['max_information_gain'] = self._last_max_gain
+
+        # Add detailed action model metrics
+        stats['action_model_metrics'] = self.get_action_model_metrics()
+
+        return stats
+
     def get_learned_model(self) -> Dict[str, Any]:
         """
         Export the current learned model.
@@ -1143,11 +1310,12 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Check if learning has converged.
 
-        Convergence is determined by multiple criteria:
-        1. Max iterations reached (forced convergence)
-        2. Model stability: no precondition changes for MODEL_STABILITY_WINDOW iterations
-        3. Low information gain: max gain < INFO_GAIN_EPSILON
-        4. High success rate: >95% success in last SUCCESS_RATE_WINDOW actions
+        Convergence occurs when:
+        1. Max iterations reached (forced convergence), OR
+        2. All actions have zero expected information gain (max gain < epsilon)
+
+        This is a strict criterion that ensures learning continues until no more
+        information can be gained from any action.
 
         Returns:
             True if model has converged, False otherwise
@@ -1158,34 +1326,28 @@ class InformationGainLearner(BaseActionModelLearner):
             self._converged = True
             return True
 
-        # Need minimum observations before checking other criteria
-        if self.iteration_count < self.MODEL_STABILITY_WINDOW:
+        # Need at least one observation to check information gain
+        if self.observation_count == 0:
             return False
 
-        # Criterion 1: Model stability check
-        # Check if preconditions (pre(a)) haven't changed for N iterations
-        model_stable = self._check_model_stability()
+        # Check if maximum expected gain across all actions is effectively zero
+        # This means no action provides any information gain
+        zero_gain = self._last_max_gain < self.FLOAT_COMPARISON_EPSILON
 
-        # Criterion 2: Low information gain check
-        # Check if maximum expected gain is below epsilon threshold
-        low_info_gain = self._check_low_information_gain()
-
-        # Criterion 3: High success rate check
-        # Check if success rate is above threshold in recent window
-        high_success_rate = self._check_high_success_rate()
-
-        # Converge only if ALL three criteria are met (conservative for statistical validity)
-        # Previous aggressive logic (ANY 2 of 3) caused premature convergence
-        all_criteria_met = model_stable and low_info_gain and high_success_rate
-
-        if all_criteria_met:
+        if zero_gain:
             if not self._converged:
                 logger.info(
-                    f"Convergence: All criteria met "
-                    f"(stable={model_stable}, low_gain={low_info_gain}, high_success={high_success_rate})"
+                    f"Convergence: Zero information gain across all actions "
+                    f"(max_gain={self._last_max_gain:.6f} < ε={self.FLOAT_COMPARISON_EPSILON})"
                 )
             self._converged = True
             return True
+
+        # Log current status for debugging
+        logger.debug(
+            f"Not converged: max_gain={self._last_max_gain:.6f}, "
+            f"iterations={self.iteration_count}/{self.max_iterations}"
+        )
 
         return False
 

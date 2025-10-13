@@ -188,3 +188,4 @@ slurm_*.log
 
 /validation_logs/*
 /results/tests/*
+/results/full_suite/*
