@@ -1121,12 +1121,16 @@ class PaperVisualizer:
 
                     iterations = np.arange(len(avg_success))
 
-                    # Plot success and failure counts
+                    # Get final counts for legend
+                    final_success = int(avg_success[-1])
+                    final_failure = int(avg_failure[-1])
+
+                    # Plot success and failure counts with final totals in legend
                     ax.plot(iterations, avg_success,
-                           label=f'{ALGORITHM_LABELS[algorithm]} (Success)',
+                           label=f'{ALGORITHM_LABELS[algorithm]} (Success: {final_success})',
                            color=COLORS[algorithm], linewidth=2, linestyle='-')
                     ax.plot(iterations, avg_failure,
-                           label=f'{ALGORITHM_LABELS[algorithm]} (Failure)',
+                           label=f'{ALGORITHM_LABELS[algorithm]} (Failure: {final_failure})',
                            color=COLORS[algorithm], linewidth=2, linestyle='--', alpha=0.7)
 
             ax.set_xlabel('Iteration')
