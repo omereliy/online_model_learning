@@ -614,7 +614,8 @@ class TestCNFManagerConstraintOperations:
 
         # Add constraint from unsatisfied literals
         unsatisfied_literals = {'on_a_b', '¬clear_b', 'handempty'}
-        cnf.add_constraint_from_unsatisfied(unsatisfied_literals)
+        frozen_unsatisfied = frozenset(unsatisfied_literals)
+        cnf.add_constraint_from_unsatisfied(frozen_unsatisfied)
 
         # Expected: One clause with the unsatisfied literals
         assert len(cnf.cnf.clauses) == 1

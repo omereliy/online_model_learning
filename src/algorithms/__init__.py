@@ -3,6 +3,6 @@ Algorithm implementations for online action model learning.
 """
 
 from .base_learner import BaseActionModelLearner
-from .olam_adapter import OLAMAdapter
+from .olam_external_runner import OLAMExternalRunner
 
-__all__ = ['BaseActionModelLearner', 'OLAMAdapter']
+__all__ = ['BaseActionModelLearner', 'OLAMExternalRunner']

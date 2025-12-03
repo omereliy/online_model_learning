@@ -5,10 +5,13 @@ Implements a CNF/SAT-based information-theoretic approach to learning action mod
 using expected information gain for action selection.
 """
 
+import json
 import logging
 import math
 import random
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
 from typing import Tuple, List, Dict, Optional, Any, Set
 
 from src.core import grounding
@@ -37,8 +40,8 @@ class InformationGainLearner(BaseActionModelLearner):
 
     # Convergence detection parameters (defaults - conservative for statistical validity)
     DEFAULT_MODEL_STABILITY_WINDOW = 50  # Number of iterations to check for model stability
-    DEFAULT_INFO_GAIN_EPSILON = 0.001  # Threshold for low information gain
-    DEFAULT_SUCCESS_RATE_THRESHOLD = 0.98  # 98% success rate threshold
+    DEFAULT_INFO_GAIN_EPSILON = 0.0  # Threshold for low information gain
+    DEFAULT_SUCCESS_RATE_THRESHOLD = 1 # 98% success rate threshold
     DEFAULT_SUCCESS_RATE_WINDOW = 50  # Window size for success rate calculation
 
     def __init__(self,
@@ -489,13 +492,26 @@ class InformationGainLearner(BaseActionModelLearner):
         # Track maximum information gain for convergence detection
         self._last_max_gain = action_gains[0][2] if action_gains else 0.0
 
-        # If maximum gain is effectively zero, no action provides information - signal convergence
-        if self._last_max_gain < self.FLOAT_COMPARISON_EPSILON:
-            logger.info(f"\nNo action provides information gain (max_gain={self._last_max_gain:.6f}), stopping")
-            return "no_action", []
+        # If maximum gain is zero or less, try to select an applicable action randomly
+        # instead of stopping early - this avoids premature convergence
+        if self._last_max_gain <= 0:
+            logger.info(f"\nNo information gain available (max_gain={self._last_max_gain:.6f})")
 
-        # Select action based on strategy
-        selected_action, selected_objects = self._select_by_strategy(action_gains)
+            # Find actions that are likely applicable based on learned preconditions
+            applicable_actions = self._filter_applicable_actions(action_gains, state)
+
+            if applicable_actions:
+                # Select random applicable action to continue exploring
+                selected_action, selected_objects = random.choice(applicable_actions)
+                logger.info(f"Selecting random applicable action to continue exploring: "
+                           f"{selected_action}({','.join(selected_objects)})")
+            else:
+                # No applicable actions found, truly converged
+                logger.info("No applicable actions found - stopping")
+                return "no_action", []
+        else:
+            # Select action based on strategy (normal information gain-based selection)
+            selected_action, selected_objects = self._select_by_strategy(action_gains)
 
         logger.info(f"Selected action: {selected_action}({','.join(selected_objects)}) "
                    f"[iteration {self.iteration_count}, gain: {action_gains[0][2]:.3f}]")
@@ -582,6 +598,30 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"\nTop action after sorting: {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
 
         return action_gains
+
+    def _filter_applicable_actions(self, action_gains: List[Tuple[str, List[str], float]],
+                                   state: Set[str]) -> List[Tuple[str, List[str]]]:
+        """
+        Find applicable actions when information gain is zero.
+
+        An action is considered applicable if it has positive applicability probability
+        based on learned preconditions.
+
+        Args:
+            action_gains: List of (action_name, objects, expected_gain) tuples
+            state: Current state
+
+        Returns:
+            List of (action_name, objects) tuples for applicable actions
+        """
+        applicable = []
+        for action_name, objects, _ in action_gains:
+            prob = self._calculate_applicability_probability(action_name, objects, state)
+            if prob > 0:  # Any positive applicability
+                applicable.append((action_name, objects))
+
+        logger.debug(f"Found {len(applicable)}/{len(action_gains)} applicable actions")
+        return applicable
 
     def _log_action_model_state(self, action: str, objects: List[str], state: Set[str]) -> None:
         """
@@ -880,6 +920,9 @@ class InformationGainLearner(BaseActionModelLearner):
         lifted_all_true = self.bindP(all_true_fluents, objects)
         self.eff_maybe_del[action] = self.eff_maybe_del[action] - lifted_all_true
 
+        # Remove contradictions: if l is confirmed as add/delete, ¬l cannot be in maybe sets
+        self._remove_contradictions(action, self.eff_add[action], self.eff_del[action])
+
         # Update constraint sets
         # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
         constraints_before = len(self.pre_constraints[action])
@@ -1134,7 +1177,9 @@ class InformationGainLearner(BaseActionModelLearner):
             certain_pre = set()
             if self.pre_constraints[action_name]:
                 # Literals that appear in ALL constraints are required preconditions
-                certain_pre = set.intersection(*self.pre_constraints[action_name]) if self.pre_constraints[action_name] else set()
+                # Convert frozensets to sets for intersection operation
+                constraint_sets = [set(c) for c in self.pre_constraints[action_name]]
+                certain_pre = set.intersection(*constraint_sets) if constraint_sets else set()
 
             # Excluded preconditions: literals that are definitely NOT preconditions
             # These are La \ pre(a) - ruled out by successful actions
@@ -1246,25 +1291,22 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         logger.debug("Exporting learned model")
 
-        model = {
-            'actions': {},
-            'predicates': set(),
-            'statistics': self.get_statistics()
-        }
+        predicates_set = set()  # Use set for deduplication
+        actions_dict = {}
 
         # Export learned action models
         for action_name in self.pre.keys():
-            model['actions'][action_name] = {
+            actions_dict[action_name] = {
                 'name': action_name,
                 'preconditions': {
-                    'possible': list(self.pre[action_name]),
-                    'constraints': [list(c) for c in self.pre_constraints[action_name]]
+                    'possible': sorted(list(self.pre[action_name])),
+                    'constraints': [sorted(list(c)) for c in self.pre_constraints[action_name]]
                 },
                 'effects': {
-                    'add': list(self.eff_add[action_name]),
-                    'delete': list(self.eff_del[action_name]),
-                    'maybe_add': list(self.eff_maybe_add[action_name]),
-                    'maybe_delete': list(self.eff_maybe_del[action_name])
+                    'add': sorted(list(self.eff_add[action_name])),
+                    'delete': sorted(list(self.eff_del[action_name])),
+                    'maybe_add': sorted(list(self.eff_maybe_add[action_name])),
+                    'maybe_delete': sorted(list(self.eff_maybe_del[action_name]))
                 },
                 'observations': len(self.observation_history[action_name])
             }
@@ -1279,7 +1321,13 @@ class InformationGainLearner(BaseActionModelLearner):
             for literal in self.pre[action_name]:
                 pred_name = self._extract_predicate_name(literal)
                 if pred_name:
-                    model['predicates'].add(pred_name)
+                    predicates_set.add(pred_name)
+
+        model = {
+            'actions': actions_dict,
+            'predicates': sorted(list(predicates_set)),  # Convert set to sorted list for JSON
+            'statistics': self.get_statistics()
+        }
 
         logger.info(f"Model export complete: {len(model['actions'])} actions, "
                     f"{len(model['predicates'])} predicates")
@@ -1305,6 +1353,47 @@ class InformationGainLearner(BaseActionModelLearner):
         if '(' in literal:
             return literal[:literal.index('(')]
         return literal
+
+    def _negate_literal(self, literal: str) -> str:
+        """
+        Get the negation of a literal.
+
+        Args:
+            literal: Literal string (e.g., 'on(?x,?y)' or '¬clear(?x)')
+
+        Returns:
+            Negated literal (e.g., '¬on(?x,?y)' or 'clear(?x)')
+        """
+        if literal.startswith('¬'):
+            # Already negative, remove negation
+            return literal[1:]
+        else:
+            # Positive, add negation
+            return '¬' + literal
+
+    def _remove_contradictions(self, action: str, confirmed_adds: Set[str], confirmed_dels: Set[str]) -> None:
+        """
+        Remove contradictory negative literals from maybe sets after confirming effects.
+
+        When a literal l is confirmed as an add effect, ¬l cannot be an effect.
+        When a literal l is confirmed as a delete effect, ¬l cannot be an effect.
+
+        Args:
+            action: Action name
+            confirmed_adds: Literals confirmed as add effects
+            confirmed_dels: Literals confirmed as delete effects
+        """
+        # For each confirmed add effect, remove its negation from both maybe sets
+        for literal in confirmed_adds:
+            negated = self._negate_literal(literal)
+            self.eff_maybe_add[action].discard(negated)
+            self.eff_maybe_del[action].discard(negated)
+
+        # For each confirmed delete effect, remove its negation from both maybe sets
+        for literal in confirmed_dels:
+            negated = self._negate_literal(literal)
+            self.eff_maybe_add[action].discard(negated)
+            self.eff_maybe_del[action].discard(negated)
 
     def has_converged(self) -> bool:
         """
@@ -1441,6 +1530,99 @@ class InformationGainLearner(BaseActionModelLearner):
             )
 
         return high_rate
+
+    def export_model_snapshot(self, iteration: int, output_dir: Path) -> None:
+        """
+        Export model snapshot at checkpoint.
+
+        Exports the current state of knowledge sets for all actions to a JSON file.
+        This includes preconditions (certain/uncertain), effects (confirmed/possible),
+        and constraint sets for post-processing analysis.
+
+        Args:
+            iteration: Current iteration number
+            output_dir: Directory to export the model snapshot to
+        """
+        models_dir = output_dir / "models"
+        models_dir.mkdir(exist_ok=True)
+
+        # Extract domain and problem names from file paths
+        domain_name = Path(self.domain_file).stem
+        problem_name = Path(self.problem_file).stem
+
+        snapshot = {
+            "iteration": iteration,
+            "algorithm": "information_gain",
+            "actions": {},
+            "metadata": {
+                "domain": domain_name,
+                "problem": problem_name,
+                "export_timestamp": datetime.now().isoformat()
+            }
+        }
+
+        # Export knowledge for each action
+        for action_name in self.pre.keys():
+            # Extract knowledge sets
+            possible_precs = self._get_possible_preconditions(action_name)
+            certain_precs = self._get_certain_preconditions(action_name)
+            uncertain_precs = possible_precs - certain_precs
+
+            # Get action parameters
+            action = self.domain.lifted_actions.get(action_name)
+            parameters = [p.name for p in action.parameters] if action else []
+
+            snapshot["actions"][action_name] = {
+                "parameters": parameters,
+                "possible_preconditions": sorted(list(possible_precs)),
+                "certain_preconditions": sorted(list(certain_precs)),
+                "uncertain_preconditions": sorted(list(uncertain_precs)),
+                "confirmed_add_effects": sorted(list(self.eff_add.get(action_name, set()))),
+                "confirmed_del_effects": sorted(list(self.eff_del.get(action_name, set()))),
+                "possible_add_effects": sorted(list(self.eff_maybe_add.get(action_name, set()))),
+                "possible_del_effects": sorted(list(self.eff_maybe_del.get(action_name, set()))),
+                "constraint_sets": [sorted(list(cs)) for cs in self.pre_constraints.get(action_name, set())]
+            }
+
+        # Write to file
+        output_path = models_dir / f"model_iter_{iteration:03d}.json"
+        with open(output_path, 'w') as f:
+            json.dump(snapshot, f, indent=2)
+
+        logger.debug(f"Exported model snapshot at iteration {iteration} to {output_path}")
+
+    def _get_certain_preconditions(self, action_name: str) -> Set[str]:
+        """
+        Extract certain preconditions (singleton constraint sets).
+
+        A precondition is certain if it appears as a singleton constraint set,
+        meaning it must be true for the action to succeed.
+
+        Args:
+            action_name: Name of the action
+
+        Returns:
+            Set of certain precondition literals
+        """
+        certain = set()
+        for constraint_set in self.pre_constraints.get(action_name, set()):
+            if len(constraint_set) == 1:
+                # Singleton constraint set means this literal is certain
+                literal = next(iter(constraint_set))
+                certain.add(literal)
+        return certain
+
+    def _get_possible_preconditions(self, action_name: str) -> Set[str]:
+        """
+        Get all possible preconditions (not yet ruled out).
+
+        Args:
+            action_name: Name of the action
+
+        Returns:
+            Set of possible precondition literals
+        """
+        return set(self.pre.get(action_name, set()))
 
     def reset(self) -> None:
         """Reset the learner to initial state."""

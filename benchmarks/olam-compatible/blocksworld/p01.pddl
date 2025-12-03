@@ -1,20 +1,22 @@
-(define (problem blocksworld-p01)
-  (:domain blocksworld)
 
-  (:objects
-    a b c - block
-  )
 
-  (:init
-    (clear a)
-    (on a b)
-    (on b c)
-    (ontable c)
-    (handempty)
-  )
-
-  (:goal
-    (and (on c b)
-         (on b a))
-  )
+(define (problem BW-rand-4)
+(:domain blocksworld)
+(:objects b1 b2 b3 b4  - block)
+(:init
+(handempty)
+(on b1 b3)
+(ontable b2)
+(ontable b3)
+(on b4 b2)
+(clear b1)
+(clear b4)
 )
+(:goal
+(and
+(on b2 b4)
+(on b3 b2))
+)
+)
+
+

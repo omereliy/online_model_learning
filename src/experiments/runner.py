@@ -14,13 +14,24 @@ from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 
 from ..algorithms.base_learner import BaseActionModelLearner
-from ..algorithms.olam_adapter import OLAMAdapter
 from ..algorithms.information_gain import InformationGainLearner
 from ..environments.active_environment import ActiveEnvironment
 from ..environments.mock_environment import MockEnvironment
 from .metrics import MetricsCollector
 
+# OLAM has been refactored to external post-processing approach
+# Import only if needed for backward compatibility
+try:
+    from ..algorithms.olam_adapter import OLAMAdapter
+    OLAM_AVAILABLE = True
+except ImportError:
+    OLAM_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+# Model snapshot checkpoints for post-processing analysis
+CHECKPOINTS = [5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100,
+               120, 140, 160, 180, 200, 250, 300, 350, 400]
 
 
 class ExperimentRunner:
@@ -162,6 +173,11 @@ class ExperimentRunner:
         algo_params = self.config.get('algorithm_params', {}).get(algorithm, {})
 
         if algorithm == 'olam':
+            if not OLAM_AVAILABLE:
+                raise RuntimeError(
+                    "OLAM has been refactored to post-processing approach. "
+                    "Use scripts/analyze_olam_results.py for OLAM experiments."
+                )
             learner = OLAMAdapter(
                 domain_file=domain_file,
                 problem_file=problem_file,
@@ -304,6 +320,19 @@ class ExperimentRunner:
                     success=success,
                     next_state=next_state
                 )
+
+                # Export model snapshot at checkpoints
+                if iteration + 1 in CHECKPOINTS:  # +1 because iteration is 0-based
+                    try:
+                        self.learner.export_model_snapshot(
+                            iteration=iteration + 1,
+                            output_dir=Path(self.config['output']['directory'])
+                        )
+                        if self.verbose_debug:
+                            logger.debug(f"Exported model snapshot at iteration {iteration + 1}")
+                    except Exception as e:
+                        logger.warning(f"Failed to export model at iteration {iteration + 1}: {e}")
+                        # Continue experiment even if export fails
 
             except Exception as e:
                 logger.error(f"Error at iteration {iteration}: {e}")

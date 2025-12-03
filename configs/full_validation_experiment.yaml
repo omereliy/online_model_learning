@@ -1,0 +1,17 @@
+name: full_validation_experiment
+algorithms:
+  - olam
+  - information_gain
+domains:
+  - blocksworld
+  - depots
+  - ferry
+  - rover
+problems:
+  - p00
+  - p01
+iterations: 150
+checkpoint_interval: 25
+export_models: true
+export_metrics: true
+use_planner: false

@@ -5,6 +5,7 @@ for learned action models compared to ground truth from PDDL domain files.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Set, Dict, Optional, Any, Tuple
 
@@ -12,6 +13,76 @@ from src.core.pddl_io import PDDLReader
 from src.core.expression_converter import ExpressionConverter
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_predicate_parameters(predicate: str) -> str:
+    """
+    Normalize predicate parameters to positional format for comparison.
+
+    This enables comparison between predicates with different parameter naming schemes
+    and different formats (OLAM vs Information Gain). Produces canonical format that
+    matches Information Gain's ExpressionConverter.to_parameter_bound_string().
+
+    OLAM format: "(at ?param_1 ?param_2)" - outer parens, spaces, no commas
+    Info Gain format: "at(?x,?y)" - no outer parens, commas between params
+    Both normalize to: "at(?0,?1)"
+
+    Args:
+        predicate: Predicate string in any format
+
+    Returns:
+        Normalized predicate: "predicate_name(?0,?1,...)" or "predicate_name()" for 0-arity
+
+    Examples:
+        >>> normalize_predicate_parameters("(at ?param_1 ?param_2)")
+        'at(?0,?1)'
+        >>> normalize_predicate_parameters("at(?x,?y)")
+        'at(?0,?1)'
+        >>> normalize_predicate_parameters("clear(?x)")
+        'clear(?0)'
+        >>> normalize_predicate_parameters("(clear ?param_1)")
+        'clear(?0)'
+        >>> normalize_predicate_parameters("handempty()")
+        'handempty()'
+    """
+    # Strip leading/trailing whitespace
+    predicate = predicate.strip()
+
+    # Strip outer PDDL-style parentheses if present: "(at ?x ?y)" → "at ?x ?y"
+    if predicate.startswith('(') and not predicate.startswith('(?'):
+        # Find matching closing paren
+        paren_count = 0
+        for i, c in enumerate(predicate):
+            if c == '(':
+                paren_count += 1
+            elif c == ')':
+                paren_count -= 1
+                if paren_count == 0 and i == len(predicate) - 1:
+                    # Outer parens wrap the whole thing
+                    predicate = predicate[1:-1].strip()
+                    break
+
+    # Extract all parameters in order of appearance
+    params = re.findall(r'\?[\w_]+', predicate)
+
+    # Extract predicate name (before '(' or before first '?')
+    if '(' in predicate:
+        pred_name = predicate[:predicate.index('(')]
+    elif params:
+        # Space-separated format: "at ?x ?y"
+        pred_name = predicate[:predicate.index(params[0])].strip()
+    else:
+        # No parameters - just the predicate name
+        pred_name = predicate
+
+    # Build normalized format matching Information Gain
+    if not params:
+        # 0-arity predicate
+        return f"{pred_name}()"
+    else:
+        # Create positional parameter mapping
+        positional_params = [f"?{i}" for i in range(len(params))]
+        return f"{pred_name}({','.join(positional_params)})"
 
 
 @dataclass
@@ -76,7 +147,8 @@ class ModelValidator:
 
         # Extract ground truth for each action
         for action in problem.actions:
-            action_name = action.name
+            # Normalize action name to lowercase for consistent comparison
+            action_name = action.name.lower()
 
             # Extract preconditions
             preconditions = self._extract_literals(action.preconditions, action.parameters)
@@ -281,6 +353,9 @@ class ModelValidator:
     ) -> Dict[str, Any]:
         """Calculate precision, recall, F1 for set comparison.
 
+        Normalizes predicate parameters before comparison to handle different
+        parameter naming schemes (e.g., OLAM's ?param_N vs ground truth's ?x, ?y).
+
         Args:
             learned: Set of learned items
             ground_truth: Set of ground truth items
@@ -288,14 +363,18 @@ class ModelValidator:
         Returns:
             Dictionary with metrics and error sets
         """
-        # True positives: in both learned and ground truth
-        true_positives = learned & ground_truth
+        # Normalize parameters in both sets for comparison
+        learned_normalized = {normalize_predicate_parameters(p) for p in learned}
+        ground_truth_normalized = {normalize_predicate_parameters(p) for p in ground_truth}
 
-        # False positives: in learned but not in ground truth
-        false_positives = learned - ground_truth
+        # True positives: in both learned and ground truth (after normalization)
+        true_positives = learned_normalized & ground_truth_normalized
 
-        # False negatives: in ground truth but not in learned
-        false_negatives = ground_truth - learned
+        # False positives: in learned but not in ground truth (after normalization)
+        false_positives = learned_normalized - ground_truth_normalized
+
+        # False negatives: in ground truth but not in learned (after normalization)
+        false_negatives = ground_truth_normalized - learned_normalized
 
         # Calculate metrics
         tp_count = len(true_positives)
@@ -308,8 +387,16 @@ class ModelValidator:
             precision = 1.0
             recall = 1.0
             f1 = 1.0
+        elif tp_count == 0 and fp_count == 0:
+            # Learned set is empty (no predictions made)
+            # Making no claims → no false claims → precision = 1.0
+            # But missing everything → recall = 0.0
+            # Important for safe models with no effects learned yet
+            precision = 1.0
+            recall = 0.0
+            f1 = 0.0
         elif tp_count == 0:
-            # No true positives
+            # No true positives (but have false positives)
             precision = 0.0
             recall = 0.0
             f1 = 0.0
@@ -327,6 +414,7 @@ class ModelValidator:
             "precision": precision,
             "recall": recall,
             "f1": f1,
+            "true_positives": true_positives,
             "false_positives": false_positives,
             "false_negatives": false_negatives
         }

@@ -1,0 +1,79 @@
+experiment:
+  name: "full_benchmark_comparison"
+  description: "Complete OLAM benchmark suite comparison"
+  algorithm: ["olam", "information_gain"]
+  # Run experiments for all algorithm variants
+
+domain_problem:
+  # All 22 domains from OLAM benchmarks
+  domains:
+    - blocksworld
+    - depots
+    - hanoi
+    - ferry
+    - miconic
+    - driverlog
+    - zenotravel
+    - satellite
+    - rover
+    - elevators
+    - floortile
+    - parking
+    - transport
+    - barman
+    - gold-miner
+    - grid
+    - matching-bw
+    - n-puzzle
+    - nomystery
+    - sokoban
+    - spanner
+    - tpp
+
+  # Problems per domain (p00-p02 for quick tests, more for full runs)
+  problems:
+    - p00
+    - p01
+    - p02
+    - p03
+    - p04
+    - p05
+    - p06
+    - p07
+    - p08
+    - p09
+
+stopping_criteria:
+  max_iterations: 500
+  max_runtime_seconds: 3600  # 30 minutes per experiment
+  convergence_threshold: 1
+
+metrics:
+  interval: 1  # Collect metrics every 10 iterations
+  verbose: true
+
+output:
+  directory: "results/paper/full_benchmark_{timestamp}"
+  save_trajectory: true
+  save_model: true
+  save_metrics: true
+
+random:
+  seed: 42
+
+# Algorithm-specific configurations
+algorithm_configs:
+  olam:
+    eval_frequency: 1
+    planner_time_limit: 3600
+    max_precs_length: 20
+    neg_eff_assumption: false
+    use_system_java: true
+
+  information_gain:
+    selection_strategy: "greedy"
+    epsilon: 0
+    temperature: 1.0
+    model_stability_window: 50
+    info_gain_epsilon: 0
+    success_rate_threshold: 1

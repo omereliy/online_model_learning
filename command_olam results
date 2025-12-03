@@ -1,0 +1,21 @@
+
+  Depots Domain
+
+  python scripts/process_olam_results.py \
+      --olam-results /home/omer/projects/olam_results/depots \
+      --ground-truth benchmarks/olam-compatible/depots/domain.pddl \
+      --output-dir results/olam_depots_fixed
+
+  Blocksworld Domain
+
+  python scripts/process_olam_results.py \
+      --olam-results /home/omer/projects/olam_results/blocksworld \
+      --ground-truth benchmarks/olam-compatible/blocksworld/domain.pddl \
+      --output-dir results/olam_blocksworld_fixed
+
+  Any Other Domain
+
+  python scripts/process_olam_results.py \
+      --olam-results /home/omer/projects/olam_results/<domain_name> \
+      --ground-truth benchmarks/olam-compatible/<domain_name>/domain.pddl \
+      --output-dir results/olam_<domain_name>_fixed
