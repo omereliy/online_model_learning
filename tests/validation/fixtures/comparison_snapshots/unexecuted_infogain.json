@@ -1,0 +1,55 @@
+{
+  "iteration": 100,
+  "algorithm": "information_gain",
+  "description": "Snapshot where pick-up action was never executed",
+  "actions": {
+    "pick-up": {
+      "parameters": ["?x"],
+      "possible_preconditions": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)",
+        "on(?0,?1)", "on(?1,?0)"
+      ],
+      "certain_preconditions": [],
+      "uncertain_preconditions": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)",
+        "on(?0,?1)", "on(?1,?0)"
+      ],
+      "confirmed_add_effects": [],
+      "confirmed_del_effects": [],
+      "possible_add_effects": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)",
+        "on(?0,?1)", "on(?1,?0)"
+      ],
+      "possible_del_effects": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)",
+        "on(?0,?1)", "on(?1,?0)"
+      ],
+      "constraint_sets": [],
+      "observations": 0
+    },
+    "put-down": {
+      "parameters": ["?x"],
+      "possible_preconditions": ["holding(?0)", "handempty()", "clear(?0)", "ontable(?0)"],
+      "certain_preconditions": [],
+      "uncertain_preconditions": ["holding(?0)", "handempty()", "clear(?0)", "ontable(?0)"],
+      "confirmed_add_effects": [],
+      "confirmed_del_effects": [],
+      "possible_add_effects": ["holding(?0)", "handempty()", "clear(?0)", "ontable(?0)"],
+      "possible_del_effects": ["holding(?0)", "handempty()", "clear(?0)", "ontable(?0)"],
+      "constraint_sets": [],
+      "observations": 0
+    }
+  },
+  "metadata": {
+    "domain": "blocksworld",
+    "problem": "p01",
+    "expected_safe_prec_precision": 0.0,
+    "expected_safe_prec_recall": 1.0,
+    "expected_safe_eff_precision": 1.0,
+    "expected_safe_eff_recall": 0.0,
+    "expected_complete_prec_precision": 1.0,
+    "expected_complete_prec_recall": 0.0,
+    "expected_complete_eff_precision": 1.0,
+    "expected_complete_eff_recall": 0.0
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "iteration": 100,
+  "algorithm": "olam",
+  "description": "Snapshot where pick-up action was never executed",
+  "actions": {
+    "pick-up": {
+      "parameters": ["?x"],
+      "certain_preconditions": [],
+      "uncertain_preconditions": [],
+      "negative_preconditions": [],
+      "useless_preconditions": [],
+      "certain_add_effects": [],
+      "certain_del_effects": [],
+      "uncertain_add_effects": [],
+      "uncertain_del_effects": [],
+      "observations": 0,
+      "successes": 0,
+      "failures": 0
+    },
+    "put-down": {
+      "parameters": ["?x"],
+      "certain_preconditions": [],
+      "uncertain_preconditions": [],
+      "negative_preconditions": [],
+      "useless_preconditions": [],
+      "certain_add_effects": [],
+      "certain_del_effects": [],
+      "uncertain_add_effects": [],
+      "uncertain_del_effects": [],
+      "observations": 0,
+      "successes": 0,
+      "failures": 0
+    }
+  },
+  "metadata": {
+    "domain": "blocksworld",
+    "problem": "p01",
+    "note": "CURRENT BEHAVIOR (BUG): Safe model has empty preconditions, should have all possible",
+    "current_safe_prec_precision": 1.0,
+    "current_safe_prec_recall": 0.0,
+    "expected_safe_prec_precision": 0.0,
+    "expected_safe_prec_recall": 1.0,
+    "expected_safe_eff_precision": 1.0,
+    "expected_safe_eff_recall": 0.0
+  }
+}

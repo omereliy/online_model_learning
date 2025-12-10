@@ -52,6 +52,9 @@ class InformationGainLearner(BaseActionModelLearner):
                  info_gain_epsilon: Optional[float] = None,
                  success_rate_threshold: Optional[float] = None,
                  success_rate_window: Optional[int] = None,
+                 use_object_subset: bool = True,
+                 spare_objects_per_type: int = 2,
+                 max_iterations_per_subset: int = DEFAULT_MAX_ITERATIONS,
                  **kwargs):
         """
         Initialize Information Gain learner.
@@ -64,6 +67,9 @@ class InformationGainLearner(BaseActionModelLearner):
             info_gain_epsilon: Threshold for low information gain (default: 0.001)
             success_rate_threshold: Success rate threshold for convergence (default: 0.98)
             success_rate_window: Window size for success rate calculation (default: 50)
+            use_object_subset: Enable object subset selection for reduced grounding (default: False)
+            spare_objects_per_type: Extra objects per type beyond minimum requirement (default: 1)
+            max_iterations_per_subset: Max iterations before rotating to new subset (default: 100)
             **kwargs: Additional parameters (selection_strategy, epsilon, temperature)
 
         Raises:
@@ -140,6 +146,23 @@ class InformationGainLearner(BaseActionModelLearner):
         self._model_snapshot_history: List[Dict[str, Set[str]]] = []  # History of pre(a) snapshots
         self._success_history: List[bool] = []  # History of action successes/failures
         self._last_max_gain: float = float('inf')  # Track maximum information gain
+
+        # Object subset selection (for reduced grounding space)
+        self.use_object_subset = use_object_subset
+        self._original_use_object_subset = use_object_subset  # Store for reset()
+        self.spare_objects_per_type = spare_objects_per_type
+        self.max_iterations_per_subset = max_iterations_per_subset
+        self.subset_manager: Optional['ObjectSubsetManager'] = None
+        self._subset_iteration_count = 0
+
+        if self.use_object_subset:
+            from src.core.object_subset_manager import ObjectSubsetManager
+            self.subset_manager = ObjectSubsetManager(
+                domain=self.domain,
+                spare_objects_per_type=self.spare_objects_per_type,
+                random_seed=kwargs.get('seed')
+            )
+            logger.info(f"Object subset selection enabled: {self.subset_manager.get_status()}")
 
         # Initialize action models
         logger.debug("Initializing action models")
@@ -471,9 +494,18 @@ class InformationGainLearner(BaseActionModelLearner):
             Tuple of (action_name, objects)
         """
         self.iteration_count += 1
+        self._subset_iteration_count += 1
 
         # Ensure state is in set format
         state = self._ensure_state_is_set(state)
+
+        # Check for subset rotation BEFORE calculating gains (if using object subsets)
+        if self.use_object_subset and self._should_rotate_subset():
+            if not self._rotate_to_new_subset():
+                # All objects exhausted - switch to using ALL objects for final learning phase
+                logger.info("All subsets exhausted - switching to full object set for final learning")
+                self.use_object_subset = False
+                self._subset_iteration_count = 0
 
         # Log current state (detailed logging for debugging)
         logger.debug(f"\n{'='*80}")
@@ -545,8 +577,17 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        # Use new grounding utilities
-        grounded_actions = grounding.ground_all_actions(self.domain, require_injective=False)
+        # Use subset-aware grounding if enabled, otherwise use full grounding
+        if self.use_object_subset and self.subset_manager:
+            from src.core.grounding import ground_all_actions_with_subset
+            active_objects = self.subset_manager.get_active_object_names()
+            grounded_actions = ground_all_actions_with_subset(
+                self.domain, active_objects, require_injective=False
+            )
+            logger.debug(f"Using object subset with {len(active_objects)} objects")
+        else:
+            grounded_actions = grounding.ground_all_actions(self.domain, require_injective=False)
+
         if not grounded_actions:
             return []
 
@@ -1403,13 +1444,14 @@ class InformationGainLearner(BaseActionModelLearner):
         1. Max iterations reached (forced convergence), OR
         2. All actions have zero expected information gain (max gain < epsilon)
 
-        This is a strict criterion that ensures learning continues until no more
-        information can be gained from any action.
+        With object subset selection enabled:
+        - Converge only when ALL objects exhausted AND zero information gain
+        - Subset rotation is handled separately in select_action()
 
         Returns:
             True if model has converged, False otherwise
         """
-        # Check iteration limit (forced convergence)
+        # Check global iteration limit (forced convergence)
         if self.iteration_count >= self.max_iterations:
             logger.info(f"Convergence: Reached max iterations ({self.max_iterations})")
             self._converged = True
@@ -1419,8 +1461,21 @@ class InformationGainLearner(BaseActionModelLearner):
         if self.observation_count == 0:
             return False
 
-        # Check if maximum expected gain across all actions is effectively zero
-        # This means no action provides any information gain
+        # With object subset selection: only converge when exhausted AND zero gain
+        if self.use_object_subset and self.subset_manager:
+            if self.subset_manager.all_objects_exhausted():
+                zero_gain = self._last_max_gain < self.FLOAT_COMPARISON_EPSILON
+                if zero_gain:
+                    logger.info(
+                        f"Convergence: All objects exhausted and zero information gain "
+                        f"(max_gain={self._last_max_gain:.6f})"
+                    )
+                    self._converged = True
+                    return True
+            # Can still rotate or gain information - not converged
+            return False
+
+        # Original convergence logic for non-subset mode
         zero_gain = self._last_max_gain < self.FLOAT_COMPARISON_EPSILON
 
         if zero_gain:
@@ -1439,6 +1494,59 @@ class InformationGainLearner(BaseActionModelLearner):
         )
 
         return False
+
+    def _should_rotate_subset(self) -> bool:
+        """
+        Check if we should rotate to a new object subset.
+
+        Rotation triggers:
+        1. Max iterations per subset reached, OR
+        2. Information gain converged to zero for current subset
+
+        Returns:
+            True if rotation should occur, False otherwise
+        """
+        if not self.use_object_subset or not self.subset_manager:
+            return False
+
+        if self.subset_manager.all_objects_exhausted():
+            return False
+
+        # Check iteration limit for this subset
+        if self._subset_iteration_count >= self.max_iterations_per_subset:
+            logger.info(
+                f"Subset rotation: Iteration limit reached "
+                f"({self._subset_iteration_count} >= {self.max_iterations_per_subset})"
+            )
+            return True
+
+        # Check if model has converged on current subset (zero info gain)
+        if self._last_max_gain < self.FLOAT_COMPARISON_EPSILON:
+            logger.info(
+                f"Subset rotation: Zero information gain "
+                f"(max_gain={self._last_max_gain:.6f})"
+            )
+            return True
+
+        return False
+
+    def _rotate_to_new_subset(self) -> bool:
+        """
+        Rotate to a new object subset.
+
+        Returns:
+            True if rotation succeeded, False if all objects exhausted
+        """
+        if not self.subset_manager:
+            return False
+
+        if self.subset_manager.rotate_subset():
+            self._subset_iteration_count = 0  # Reset subset iteration counter
+            logger.info(f"Rotated to new subset: {self.subset_manager.get_status()}")
+            return True
+        else:
+            logger.info("Cannot rotate - all objects exhausted")
+            return False
 
     def _check_model_stability(self) -> bool:
         """
@@ -1647,6 +1755,12 @@ class InformationGainLearner(BaseActionModelLearner):
         self._model_snapshot_history.clear()
         self._success_history.clear()
         self._last_max_gain = float('inf')
+
+        # Reset object subset selection to original setting
+        self.use_object_subset = self._original_use_object_subset
+        self._subset_iteration_count = 0
+        if self._original_use_object_subset and self.subset_manager:
+            self.subset_manager.reset()
 
         logger.debug(f"Cleared {num_actions} action models and {num_observations} observations")
 

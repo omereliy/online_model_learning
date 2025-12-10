@@ -1,0 +1,26 @@
+{
+  "iteration": 100,
+  "algorithm": "olam",
+  "description": "Snapshot where pick-up action only failed (5 failures, 0 successes)",
+  "actions": {
+    "pick-up": {
+      "parameters": ["?x"],
+      "certain_preconditions": [],
+      "uncertain_preconditions": [],
+      "negative_preconditions": [],
+      "useless_preconditions": [],
+      "certain_add_effects": [],
+      "certain_del_effects": [],
+      "uncertain_add_effects": [],
+      "uncertain_del_effects": [],
+      "observations": 5,
+      "successes": 0,
+      "failures": 5
+    }
+  },
+  "metadata": {
+    "domain": "blocksworld",
+    "problem": "p01",
+    "note": "OLAM cannot learn from failures alone - needs at least one success for comparison"
+  }
+}

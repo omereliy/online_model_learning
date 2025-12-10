@@ -109,7 +109,8 @@ def analyze_checkpoint(
     checkpoint_file: Path,
     ground_truth_domain: Path,
     ground_truth_problem: Path,
-    problem_dir: Path
+    problem_dir: Path,
+    min_observations: int = 0
 ) -> Dict[str, Any]:
     """
     Analyze a single checkpoint file against ground truth.
@@ -119,6 +120,7 @@ def analyze_checkpoint(
         ground_truth_domain: Path to ground truth domain PDDL
         ground_truth_problem: Path to ground truth problem PDDL
         problem_dir: Problem directory (for loading execution stats)
+        min_observations: Minimum observations to include action in metrics
 
     Returns:
         Dict with metrics for safe and complete models
@@ -134,11 +136,26 @@ def analyze_checkpoint(
     # Compute metrics for both models (pass file paths, not ModelValidator)
     metrics_calculator = ModelMetrics(ground_truth_domain, ground_truth_problem)
 
-    safe_metrics = metrics_calculator.compute_metrics(safe_model)
-    complete_metrics = metrics_calculator.compute_metrics(complete_model)
-
-    # Load execution statistics up to this iteration
+    # Load execution statistics up to this iteration (for filtering)
     execution_stats = load_execution_stats(problem_dir, iteration)
+
+    # Extract observation counts from execution stats
+    observation_counts = {
+        action_name: stats.get('executions', 0)
+        for action_name, stats in execution_stats.items()
+    }
+
+    # Compute metrics with optional filtering
+    safe_metrics = metrics_calculator.compute_metrics(
+        safe_model,
+        observation_counts=observation_counts,
+        min_observations=min_observations
+    )
+    complete_metrics = metrics_calculator.compute_metrics(
+        complete_model,
+        observation_counts=observation_counts,
+        min_observations=min_observations
+    )
 
     return {
         'iteration': iteration,
@@ -152,7 +169,8 @@ def analyze_problem(
     problem_dir: Path,
     ground_truth_domain: Path,
     ground_truth_problem: Path,
-    output_dir: Path
+    output_dir: Path,
+    min_observations: int = 0
 ) -> List[Dict[str, Any]]:
     """
     Analyze all checkpoints for a single problem.
@@ -162,6 +180,7 @@ def analyze_problem(
         ground_truth_domain: Path to ground truth domain
         ground_truth_problem: Path to ground truth problem
         output_dir: Output directory for results
+        min_observations: Minimum observations to include action in metrics
 
     Returns:
         List of metrics per iteration
@@ -185,7 +204,8 @@ def analyze_problem(
                 checkpoint_file,
                 ground_truth_domain,
                 ground_truth_problem,
-                problem_dir
+                problem_dir,
+                min_observations=min_observations
             )
             iterations_metrics.append(metrics)
         except Exception as e:
@@ -451,6 +471,12 @@ def main():
         type=str,
         help="Analyze only specific problem (requires --domain)"
     )
+    parser.add_argument(
+        "--min-observations",
+        type=int,
+        default=0,
+        help="Minimum observations for action to be included in metrics (default: 0, include all)"
+    )
 
     args = parser.parse_args()
 
@@ -492,7 +518,10 @@ def main():
 
         logger.info(f"Analyzing {domain_name}/{problem_name}")
         output_dir = output_base / domain_name / problem_name
-        analyze_problem(problem_dir, ground_truth_domain, ground_truth_problem, output_dir)
+        analyze_problem(
+            problem_dir, ground_truth_domain, ground_truth_problem, output_dir,
+            min_observations=args.min_observations
+        )
 
         logger.info("Done!")
         return 0
@@ -538,7 +567,10 @@ def main():
             logger.info(f"    Analyzing {problem_name}...")
 
             output_dir = output_base / domain_name / problem_name
-            analyze_problem(problem_dir, ground_truth_domain, ground_truth_problem, output_dir)
+            analyze_problem(
+                problem_dir, ground_truth_domain, ground_truth_problem, output_dir,
+                min_observations=args.min_observations
+            )
 
         # Aggregate domain metrics
         logger.info(f"  Aggregating domain metrics...")

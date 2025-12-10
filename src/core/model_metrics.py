@@ -42,16 +42,26 @@ class ModelMetrics:
             problem_file=str(self.problem_file)
         )
 
-    def compute_metrics(self, model: ReconstructedModel) -> Dict[str, Any]:
+    def compute_metrics(
+        self,
+        model: ReconstructedModel,
+        observation_counts: Dict[str, int] = None,
+        min_observations: int = 0
+    ) -> Dict[str, Any]:
         """Compute aggregate precision, recall, and F1 for a reconstructed model.
 
         Args:
             model: ReconstructedModel to evaluate
+            observation_counts: Optional dict mapping action names to observation counts.
+                               Used to filter out unexecuted actions.
+            min_observations: Minimum observations required to include action in metrics.
+                             Default 0 means include all actions.
 
         Returns:
             Dictionary with 'precision', 'recall', 'f1', 'precondition_precision',
             'precondition_recall', 'effect_precision', 'effect_recall' keys, plus
-            'detailed_per_action' with per-action breakdown
+            'detailed_per_action' with per-action breakdown, and 'excluded_actions'
+            listing any actions filtered out.
         """
         if not model.actions:
             logger.warning("Model has no actions, returning zero metrics")
@@ -75,8 +85,21 @@ class ModelMetrics:
 
         action_count = 0
         detailed_per_action = {}
+        excluded_actions = []
 
         for action_name, action_model in model.actions.items():
+            # Filter out actions with insufficient observations
+            if observation_counts is not None and min_observations > 0:
+                obs_count = observation_counts.get(action_name, 0)
+                if obs_count < min_observations:
+                    excluded_actions.append({
+                        'action': action_name,
+                        'observations': obs_count,
+                        'reason': f'observations ({obs_count}) < min_observations ({min_observations})'
+                    })
+                    logger.debug(f"Excluding action {action_name}: {obs_count} < {min_observations} observations")
+                    continue
+
             try:
                 result = self.validator.compare_action(
                     action_name=action_name,
@@ -164,11 +187,13 @@ class ModelMetrics:
                 'precision': 0.0, 'recall': 0.0, 'f1': 0.0,
                 'precondition_precision': 0.0, 'precondition_recall': 0.0,
                 'effect_precision': 0.0, 'effect_recall': 0.0,
-                'detailed_per_action': {}
+                'detailed_per_action': {},
+                'excluded_actions': excluded_actions,
+                'actions_evaluated': 0
             }
 
         # Calculate effect precision/recall from summed TP/FP/FN
-        effect_precision = total_effect_tp / (total_effect_tp + total_effect_fp) if (total_effect_tp + total_effect_fp) > 0 else 0.0
+        effect_precision = total_effect_tp / (total_effect_tp + total_effect_fp) if (total_effect_tp + total_effect_fp) > 0 else 1.0
         effect_recall = total_effect_tp / (total_effect_tp + total_effect_fn) if (total_effect_tp + total_effect_fn) > 0 else 0.0
 
         # Return aggregate and separated metrics
@@ -180,7 +205,9 @@ class ModelMetrics:
             'precondition_recall': total_prec_recall / action_count,
             'effect_precision': effect_precision,
             'effect_recall': effect_recall,
-            'detailed_per_action': detailed_per_action
+            'detailed_per_action': detailed_per_action,
+            'excluded_actions': excluded_actions,
+            'actions_evaluated': action_count
         }
 
     def compute_metrics_from_pddl(self, learned_domain_file: Path) -> Dict[str, float]:

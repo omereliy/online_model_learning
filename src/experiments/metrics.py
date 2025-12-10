@@ -172,7 +172,9 @@ class MetricsCollector:
         Returns:
             True if metrics should be collected at this step
         """
-        return step % self.interval == 0
+        return step % self.interval == 0 or step in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 25, 30, 35,
+                                                     40, 45, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 250,
+                                                     300, 350, 400, 450, 500]
 
     def get_snapshot(self, step: int) -> Dict[str, Any]:
         """

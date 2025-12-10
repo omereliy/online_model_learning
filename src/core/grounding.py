@@ -182,6 +182,88 @@ def _get_parameter_bindings(lifted_action: LiftedAction,
     return bindings
 
 
+def ground_all_actions_with_subset(
+    domain: LiftedDomainKnowledge,
+    active_objects: Set[str],
+    require_injective: bool = False
+) -> List[GroundedAction]:
+    """
+    Generate grounded actions using only specified objects.
+
+    This is used by the object subset selection strategy to reduce
+    the grounding space while learning.
+
+    Args:
+        domain: Lifted domain knowledge
+        active_objects: Set of object names to use for grounding
+        require_injective: If True, skip non-injective bindings
+
+    Returns:
+        List of grounded actions using only active objects
+
+    Example:
+        active = {'a', 'b', 'c'}  # Subset of all blocks
+        actions = ground_all_actions_with_subset(domain, active)
+        # Only generates actions with objects a, b, c
+    """
+    grounded_actions = []
+
+    for action_name, lifted_action in domain.lifted_actions.items():
+        bindings = _get_parameter_bindings_with_subset(
+            lifted_action, domain, active_objects, require_injective
+        )
+
+        for obj_list in bindings:
+            grounded = ground_action(lifted_action, obj_list)
+            grounded_actions.append(grounded)
+
+    logger.debug(
+        f"Generated {len(grounded_actions)} grounded actions "
+        f"from subset of {len(active_objects)} objects (injective={require_injective})"
+    )
+    return grounded_actions
+
+
+def _get_parameter_bindings_with_subset(
+    lifted_action: LiftedAction,
+    domain: LiftedDomainKnowledge,
+    active_objects: Set[str],
+    require_injective: bool
+) -> List[List[str]]:
+    """
+    Get valid object bindings using only active objects.
+
+    Args:
+        lifted_action: Lifted action
+        domain: Domain knowledge for objects and types
+        active_objects: Set of object names to consider
+        require_injective: Skip non-injective bindings
+
+    Returns:
+        List of object lists (only using active objects)
+    """
+    if lifted_action.arity == 0:
+        return [[]]  # No parameters
+
+    # Get valid objects for each parameter, filtered by active set
+    param_options = []
+    for param in lifted_action.parameters:
+        # Get objects matching parameter type (including subtypes)
+        matching_objects = domain.get_objects_of_type(param.type, include_subtypes=True)
+        # Filter to only active objects
+        filtered = [obj.name for obj in matching_objects if obj.name in active_objects]
+        param_options.append(filtered)
+
+    # Generate all combinations
+    bindings = []
+    for combo in itertools.product(*param_options):
+        if require_injective and len(set(combo)) != len(combo):
+            continue
+        bindings.append(list(combo))
+
+    return bindings
+
+
 def ground_parameter_bound_literal(literal: str, objects: List[str]) -> str:
     """
     Ground a parameter-bound literal with concrete objects.

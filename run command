@@ -1,40 +1,41 @@
-python3 -u scripts/run_full_experiments.py --algorithms information_gain \
-  --domains driverlog ferry hanoi logistics miconic \
-  --problems p05 p06 p07 p08 p09 \
-  --iterations 500
-
-
-
-full command:
-
-without blocksworld, driverlog, nomystery
-
-python -u scripts/run_full_experiments.py \
---algorithms information_gain \
---domains driverlog \
+blocksworld \
+    depots \
+    driverlog \
     ferry \
     hanoi \
     logistics \
     miconic \
     satellite \
-    sokoban \
     spanner \
-    tpp \
-    transport \
     n-puzzle \
+    nomystery \
     parking \
     rover \
-    satellite \
     sokoban \
     spanner \
     tpp \
     transport \
     zenotravel \
---problems p05 p06 p07 p08 p09 \
---iterations 500
 
 
-blocksworld \
+python3  scripts/run_full_experiments.py --algorithms information_gain \
+  --domains satellite blocksworld depots driverlog \
+  ferry hanoi miconic n-puzzle \
+  --problems p00 p01 p02 p03 p04 p05 p06 p07 p08 p09 \
+  --iterations 500
+  --output-dir results/consolidated_results_new
+
+
+python3  scripts/run_full_experiments.py --algorithms information_gain -domains blocksworld
+
+
+python3 scripts/run_domain_pipeline.py blocksworld \
+      --infogain-results results/paper/comparison_20251206_204944 \
+      --output-dir results/information_gain_metrics
+
+
+python3  scripts/run_full_experiments.py --algorithms information_gain \
+  --domains blocksworld \
     depots \
     driverlog \
     ferry \
@@ -56,11 +57,125 @@ blocksworld \
     tpp \
     transport \
     zenotravel \
-
-
-python3  scripts/run_full_experiments.py --algorithms information_gain \
-  --domains blocksworld \
   --problems p00 p01 p02 p03 p04 p05 p06 p07 p08 p09 \
   --iterations 500
+  
+  
+   Complete Pipeline Guide: Information Gain & OLAM Comparison
 
-python3  scripts/run_full_experiments.py --algorithms information_gain -domains blocksworld
+  Step-by-Step Commands
+
+  3. Post-Process Information Gain Results
+
+  python3 scripts/analyze_information_gain_metrics.py \
+      --consolidated-dir results/paper/consolidated_experiments \
+      --benchmarks-dir benchmarks/olam-compatible \
+      --output-dir results/information_gain_metrics \
+      --domain blocksworld
+
+  ---
+  Full Pipeline Command (Single Domain)
+
+  Use run_domain_pipeline.py to orchestrate everything:
+
+  python3 scripts/run_domain_pipeline.py blocksworld \
+      --infogain-results results/paper/consolidated_experiments \
+      --olam-results results/olam-results \
+      --output-dir results/information_gain_metrics \
+      --max-iterations 10
+
+  Skip steps if already done:
+  # Skip reconstruction
+  python3 scripts/run_domain_pipeline.py blocksworld --skip-reconstruct
+
+  # Skip metrics (use existing)
+  python3 scripts/run_domain_pipeline.py blocksworld --skip-metrics
+
+  # Skip plots
+  python3 scripts/run_domain_pipeline.py blocksworld --skip-plots
+
+  ---
+  Run Multiple Domains
+
+  # Process all domains
+  for domain in blocksworld depots ferry gripper logistics; do
+      python3 scripts/run_domain_pipeline.py $domain \
+          --infogain-results results/paper/consolidated_experiments \
+          --output-dir results/information_gain_metrics
+  done
+
+  ---
+  Output Locations
+
+  | Step             | Output                                                            |
+  |------------------|-------------------------------------------------------------------|
+  | Experiment       | results/paper/consolidated_experiments/information_gain/{domain}/ |
+  | Reconstructed    | results/model_checkpoints/information_gain/{domain}/              |
+  | InfoGain Metrics | results/information_gain_metrics/{domain}/domain_metrics.json     |
+  | OLAM Metrics     | results/olam_analysis/{domain}/summary.json                       |
+  | Comparison Plots | results/comparison_plots/{domain}_*.png                           |
+
+
+===============================================================
+ python3 scripts/process_olam_results.py \
+          --olam-results /home/omer/projects/olam_results10122025/miconic \
+          --ground-truth benchmarks/olam-compatible/miconic/domain.pddl \
+          --output-dir results/consolidated_results101225/olam/miconic
+
+done: miconic driverlog depots blocksworld hanoi ferry
+================================================================
+
+
+● run_full_experiments.py still exists! I missed it in my guide. Here's the corrected pipeline:
+
+  ---
+  Corrected Pipeline Guide
+
+  1. Run Information Gain Experiment
+
+  Using run_full_experiments.py (recommended):
+
+  # Quick test (5 min) - 5 domains, 1 problem, 100 iterations
+  python scripts/run_full_experiments.py --mode quick
+
+  # Standard (2-4 hours) - 9 domains, 3 problems, 400 iterations
+  python scripts/run_full_experiments.py --mode standard
+
+  # Full suite (8-12 hours) - all 23 domains
+  python scripts/run_full_experiments.py --mode full
+
+  # Custom selection
+  python scripts/run_full_experiments.py \
+      --domains blocksworld depots \
+      --problems p00 p01 p02 \
+      --iterations 200
+
+  # Single domain
+  python scripts/run_full_experiments.py \
+      --domains blocksworld \
+      --problems p00 p01 \
+      --iterations 100
+
+  # Resume interrupted run
+  python scripts/run_full_experiments.py --mode standard --resume-from "rover/p01"
+
+  Output: results/paper/comparison_{timestamp}/
+
+  ---
+  2. Full Pipeline for Single Domain
+
+  # Step 1: Run experiment
+  python scripts/run_full_experiments.py \
+      --domains blocksworld \
+      --problems p00 p01 p02 \
+      --iterations 300
+
+  # Step 2: Post-process (reconstruct checkpoints + extract metrics + generate plots)
+  python scripts/run_domain_pipeline.py blocksworld \
+      --infogain-results results/paper/consolidated_experiments
+
+  # Process one domain
+  python scripts/run_domain_pipeline.py blocksworld \
+      --infogain-results results/paper/cedit the readme to reflect the change
+      onsolidated_experiments
+

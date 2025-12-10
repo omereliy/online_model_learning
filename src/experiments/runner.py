@@ -30,8 +30,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Model snapshot checkpoints for post-processing analysis
-CHECKPOINTS = [5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100,
-               120, 140, 160, 180, 200, 250, 300, 350, 400]
+CHECKPOINTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 25, 30, 35,
+               40, 45, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 250,
+               300, 350, 400, 450, 500]
 
 
 class ExperimentRunner:
@@ -276,7 +277,7 @@ class ExperimentRunner:
             state = self.environment.get_state()
 
             # Verbose debug: log hypothesis space info
-            if self.verbose_debug and iteration % 10 == 0:
+            if self.verbose_debug and iteration % 5 == 0:
                 self._log_hypothesis_space_info(iteration)
 
             try:

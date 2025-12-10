@@ -6,8 +6,17 @@ This script creates:
 1. Precision/Recall comparison plots for preconditions and effects
 2. Cumulative success plots
 3. Analysis of metrics vs execution outcomes
+
+Usage:
+    python scripts/compare_algorithms_plots.py
+
+    python scripts/compare_algorithms_plots.py \\
+        --olam-results results/consolidated_results101225/olam \\
+        --infogain-results results/consolidated_results101225/information_gain \\
+        --domain blocksworld
 """
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -39,12 +48,21 @@ def load_infogain_domain_metrics(domain_path: Path) -> Dict:
     problem_dirs = sorted([d for d in domain_path.iterdir() if d.is_dir()])
 
     all_iterations = defaultdict(lambda: {"safe": [], "complete": []})
-    execution_stats = defaultdict(lambda: defaultdict(lambda: {"successes": 0, "failures": 0}))
+
+    # Per-problem execution stats: {problem_name: {iteration: {action: {successes, failures}}}}
+    per_problem_execution_stats = {}
+
+    # Track which problems reached which iterations for proper averaging
+    # {iteration: [{successes: X, failures: Y}, ...]} - list of totals per problem
+    execution_stats_per_iteration = defaultdict(list)
 
     for problem_dir in problem_dirs:
         metrics_file = problem_dir / "metrics_per_iteration.json"
         if not metrics_file.exists():
             continue
+
+        problem_name = problem_dir.name
+        per_problem_execution_stats[problem_name] = {}
 
         with open(metrics_file) as f:
             data = json.load(f)
@@ -70,11 +88,18 @@ def load_infogain_domain_metrics(domain_path: Path) -> Dict:
                 "effect_recall": complete.get("effect_recall", 0),
             })
 
-            # Extract execution stats
+            # Extract execution stats - store per problem
             exec_stats = iter_data.get("execution_stats", {})
-            for action, stats in exec_stats.items():
-                execution_stats[iteration][action]["successes"] += stats.get("successes", 0)
-                execution_stats[iteration][action]["failures"] += stats.get("failures", 0)
+            per_problem_execution_stats[problem_name][iteration] = exec_stats
+
+            # Sum successes/failures across actions for this problem at this iteration
+            iter_successes = sum(stats.get("successes", 0) for stats in exec_stats.values())
+            iter_failures = sum(stats.get("failures", 0) for stats in exec_stats.values())
+            execution_stats_per_iteration[iteration].append({
+                "successes": iter_successes,
+                "failures": iter_failures,
+                "problem": problem_name
+            })
 
     # Average across problems
     averaged_metrics = {"safe": {}, "complete": {}}
@@ -89,9 +114,22 @@ def load_infogain_domain_metrics(domain_path: Path) -> Dict:
                     "effect_recall": np.mean([m["effect_recall"] for m in metrics_list]),
                 }
 
+    # Average execution stats across problems that reached each iteration
+    averaged_execution_stats = {}
+    for iteration in sorted(execution_stats_per_iteration.keys()):
+        problem_stats = execution_stats_per_iteration[iteration]
+        num_problems = len(problem_stats)
+        if num_problems > 0:
+            averaged_execution_stats[iteration] = {
+                "successes": np.mean([p["successes"] for p in problem_stats]),
+                "failures": np.mean([p["failures"] for p in problem_stats]),
+                "num_problems": num_problems
+            }
+
     return {
         "metrics": averaged_metrics,
-        "execution_stats": dict(execution_stats)
+        "execution_stats": averaged_execution_stats,  # Now properly averaged
+        "per_problem_execution_stats": per_problem_execution_stats  # For per-problem plots
     }
 
 
@@ -185,9 +223,18 @@ def plot_precision_recall_comparison(
     plt.close()
 
 
-def load_olam_traces(domain_name: str) -> Dict:
-    """Load OLAM trace data for cumulative success/failure calculation."""
-    olam_results_path = Path(f"/home/omer/projects/olam_results/{domain_name}")
+def load_olam_traces(domain_name: str, raw_olam_path: str = None) -> Dict:
+    """Load OLAM trace data for cumulative success/failure calculation.
+
+    Args:
+        domain_name: Name of the domain
+        raw_olam_path: Path to raw OLAM results directory (parent of domain dirs)
+    """
+    if raw_olam_path:
+        olam_results_path = Path(raw_olam_path) / domain_name
+    else:
+        # Legacy hardcoded path for backward compatibility
+        olam_results_path = Path(f"/home/omer/projects/olam_results/{domain_name}")
 
     if not olam_results_path.exists():
         return {}
@@ -222,48 +269,59 @@ def load_olam_traces(domain_name: str) -> Dict:
 def plot_cumulative_success(
     domain_name: str,
     infogain_data: Dict,
-    output_dir: Path
+    output_dir: Path,
+    raw_olam_path: str = None
 ):
     """
     Plot cumulative successes and failures over iterations for OLAM vs InfoGain.
+    Also generates per-problem plots.
 
     Args:
         domain_name: Name of the domain
-        infogain_data: Information Gain data with execution_stats
-        output_dir: Directory to save plots
+        infogain_data: Information Gain data with execution_stats (averaged) and per_problem_execution_stats
+        output_dir: Directory to save plots (should be domain-specific subdirectory)
+        raw_olam_path: Path to raw OLAM results for trace data
     """
-    # Load InfoGain execution stats
+    # Load InfoGain execution stats (now properly averaged across problems)
     infogain_stats = infogain_data.get("execution_stats", {})
+    per_problem_stats = infogain_data.get("per_problem_execution_stats", {})
 
     # Load OLAM trace data
-    olam_stats = load_olam_traces(domain_name)
+    olam_stats = load_olam_traces(domain_name, raw_olam_path)
 
     if not infogain_stats and not olam_stats:
         print(f"No execution stats available for {domain_name}")
         return
 
-    # Create plot
+    # === Plot 1: Averaged cumulative success/failure ===
     fig, ax = plt.subplots(figsize=(14, 7))
 
-    # Process InfoGain data
-    # NOTE: InfoGain execution_stats are ALREADY cumulative in the metrics files
+    # Process InfoGain data - now using averaged stats
     if infogain_stats:
         iterations = sorted([int(k) for k in infogain_stats.keys()])
         cumulative_successes = []
         cumulative_failures = []
+        num_problems_list = []
 
+        # Compute cumulative sums of the averaged values
+        cum_success = 0
+        cum_failure = 0
         for iteration in iterations:
             iter_stats = infogain_stats[iteration]
-            # These are already cumulative, just sum across actions
-            iter_success = sum(action_stats["successes"] for action_stats in iter_stats.values())
-            iter_failure = sum(action_stats["failures"] for action_stats in iter_stats.values())
+            # These are per-iteration averages, accumulate them
+            cum_success += iter_stats["successes"]
+            cum_failure += iter_stats["failures"]
+            cumulative_successes.append(cum_success)
+            cumulative_failures.append(cum_failure)
+            num_problems_list.append(iter_stats.get("num_problems", 1))
 
-            cumulative_successes.append(iter_success)
-            cumulative_failures.append(iter_failure)
-
-        ax.plot(iterations, cumulative_successes, 'o-', label='InfoGain Successes',
+        # Add number of problems at final iteration to legend
+        final_num_problems = num_problems_list[-1] if num_problems_list else 0
+        ax.plot(iterations, cumulative_successes, 'o-',
+                label=f'InfoGain Successes (avg of {final_num_problems} problems)',
                 linewidth=2.5, markersize=6, color='#2ca02c')
-        ax.plot(iterations, cumulative_failures, 's-', label='InfoGain Failures',
+        ax.plot(iterations, cumulative_failures, 's-',
+                label=f'InfoGain Failures (avg of {final_num_problems} problems)',
                 linewidth=2.5, markersize=6, color='#d62728')
 
     # Process OLAM data
@@ -289,8 +347,8 @@ def plot_cumulative_success(
                 linewidth=2.5, markersize=6, color='#ff7f0e')
 
     ax.set_xlabel('Steps', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-    ax.set_title(f'{domain_name.upper()} - Cumulative Success/Failure Comparison',
+    ax.set_ylabel('Cumulative Count (averaged across problems)', fontsize=12, fontweight='bold')
+    ax.set_title(f'{domain_name.upper()} - Cumulative Success/Failure (Averaged)',
                  fontsize=14, fontweight='bold')
     ax.legend(loc='best', fontsize=11)
     ax.grid(True, alpha=0.3)
@@ -301,6 +359,57 @@ def plot_cumulative_success(
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Saved: {output_file}")
     plt.close()
+
+    # === Plot 2: Per-problem cumulative success/failure ===
+    if per_problem_stats:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+        # Use a colormap for different problems
+        colors = plt.cm.tab20(np.linspace(0, 1, len(per_problem_stats)))
+
+        for idx, (problem_name, problem_data) in enumerate(sorted(per_problem_stats.items())):
+            if not problem_data:
+                continue
+
+            iterations = sorted([int(k) for k in problem_data.keys()])
+            cumulative_successes = []
+            cumulative_failures = []
+
+            cum_success = 0
+            cum_failure = 0
+            for iteration in iterations:
+                iter_stats = problem_data[iteration]
+                # Sum across actions for this iteration
+                iter_success = sum(stats.get("successes", 0) for stats in iter_stats.values())
+                iter_failure = sum(stats.get("failures", 0) for stats in iter_stats.values())
+                cum_success += iter_success
+                cum_failure += iter_failure
+                cumulative_successes.append(cum_success)
+                cumulative_failures.append(cum_failure)
+
+            ax1.plot(iterations, cumulative_successes, '-', label=problem_name,
+                     linewidth=1.5, color=colors[idx], alpha=0.7)
+            ax2.plot(iterations, cumulative_failures, '-', label=problem_name,
+                     linewidth=1.5, color=colors[idx], alpha=0.7)
+
+        ax1.set_xlabel('Steps', fontsize=11, fontweight='bold')
+        ax1.set_ylabel('Cumulative Successes', fontsize=11, fontweight='bold')
+        ax1.set_title(f'{domain_name.upper()} - InfoGain Per-Problem Successes', fontsize=12, fontweight='bold')
+        ax1.grid(True, alpha=0.3)
+        ax1.legend(loc='best', fontsize=8, ncol=2)
+
+        ax2.set_xlabel('Steps', fontsize=11, fontweight='bold')
+        ax2.set_ylabel('Cumulative Failures', fontsize=11, fontweight='bold')
+        ax2.set_title(f'{domain_name.upper()} - InfoGain Per-Problem Failures', fontsize=12, fontweight='bold')
+        ax2.grid(True, alpha=0.3)
+        ax2.legend(loc='best', fontsize=8, ncol=2)
+
+        plt.tight_layout()
+
+        per_problem_file = output_dir / f"{domain_name}_per_problem_success_failure.png"
+        plt.savefig(per_problem_file, dpi=300, bbox_inches='tight')
+        print(f"Saved: {per_problem_file}")
+        plt.close()
 
 
 def suggest_mistake_correlation_approach():
@@ -390,17 +499,70 @@ APPROACH: Precision/Recall vs Mistakes/Success Analysis
 
 def main():
     """Main execution function."""
+    parser = argparse.ArgumentParser(
+        description="Generate comparison plots between OLAM and Information Gain algorithms"
+    )
+    parser.add_argument(
+        "--olam-results",
+        type=str,
+        default="results/olam-results",
+        help="Directory containing OLAM results (default: results/olam-results)"
+    )
+    parser.add_argument(
+        "--infogain-results",
+        type=str,
+        default="results/information_gain_metrics",
+        help="Directory containing InfoGain results (default: results/information_gain_metrics)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        default="results/comparison_plots",
+        help="Output directory for plots (default: results/comparison_plots)"
+    )
+    parser.add_argument(
+        "--domain",
+        type=str,
+        help="Process single domain (optional, processes all common domains if not specified)"
+    )
+    parser.add_argument(
+        "--raw-olam-path",
+        type=str,
+        help="Path to raw OLAM results for trace data (e.g., /path/to/olam_results)"
+    )
+
+    args = parser.parse_args()
+
     # Setup paths
     base_dir = Path("/home/omer/projects/online_model_learning")
-    olam_results_dir = base_dir / "results" / "olam-results"
-    infogain_results_dir = base_dir / "results" / "information_gain_metrics"
-    output_dir = base_dir / "results" / "comparison_plots"
+    olam_results_dir = base_dir / args.olam_results
+    infogain_results_dir = base_dir / args.infogain_results
+    output_dir = base_dir / args.output_dir
     output_dir.mkdir(exist_ok=True, parents=True)
+
+    # Check if directories exist
+    if not olam_results_dir.exists():
+        print(f"ERROR: OLAM results directory not found: {olam_results_dir}")
+        return 1
+    if not infogain_results_dir.exists():
+        print(f"ERROR: InfoGain results directory not found: {infogain_results_dir}")
+        return 1
 
     # Get all domains (intersection of both algorithms)
     olam_domains = set([d.name for d in olam_results_dir.iterdir() if d.is_dir()])
     infogain_domains = set([d.name for d in infogain_results_dir.iterdir() if d.is_dir()])
-    common_domains = sorted(olam_domains & infogain_domains)
+
+    # Filter to single domain if specified
+    if args.domain:
+        if args.domain not in olam_domains:
+            print(f"ERROR: Domain '{args.domain}' not found in OLAM results")
+            return 1
+        if args.domain not in infogain_domains:
+            print(f"ERROR: Domain '{args.domain}' not found in InfoGain results")
+            return 1
+        common_domains = [args.domain]
+    else:
+        common_domains = sorted(olam_domains & infogain_domains)
 
     print(f"Found {len(common_domains)} common domains: {common_domains}")
     print()
@@ -410,6 +572,10 @@ def main():
         print(f"Processing domain: {domain}")
         print("-" * 60)
 
+        # Create domain-specific output directory
+        domain_output_dir = output_dir / domain
+        domain_output_dir.mkdir(exist_ok=True, parents=True)
+
         try:
             # Load metrics
             olam_metrics = load_olam_domain_metrics(olam_results_dir / domain)
@@ -417,16 +583,16 @@ def main():
 
             # Create comparison plots for preconditions
             plot_precision_recall_comparison(
-                domain, olam_metrics, infogain_data, output_dir, "preconditions"
+                domain, olam_metrics, infogain_data, domain_output_dir, "preconditions"
             )
 
             # Create comparison plots for effects
             plot_precision_recall_comparison(
-                domain, olam_metrics, infogain_data, output_dir, "effects"
+                domain, olam_metrics, infogain_data, domain_output_dir, "effects"
             )
 
-            # Create cumulative success plots (Information Gain only for now)
-            plot_cumulative_success(domain, infogain_data, output_dir)
+            # Create cumulative success plots
+            plot_cumulative_success(domain, infogain_data, domain_output_dir, args.raw_olam_path)
 
             print()
 
@@ -447,6 +613,9 @@ def main():
         f.write(suggest_mistake_correlation_approach())
     print(f"\nApproach saved to: {approach_file}")
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    import sys
+    sys.exit(main())

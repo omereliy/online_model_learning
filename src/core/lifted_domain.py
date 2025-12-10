@@ -349,8 +349,10 @@ class LiftedDomainKnowledge:
                 La.add(pred_name)
                 La.add(f"¬{pred_name}")
             else:
-                # Generate combinations of parameters
-                for combo in itertools.combinations_with_replacement(param_names, pred_sig.arity):
+                # Generate all possible parameter orderings (permutations with repetition)
+                # Using product instead of combinations_with_replacement to ensure ALL orderings
+                # are included. For example, for on_board(?i,?s) we need both (?x,?z) AND (?z,?x)
+                for combo in itertools.product(param_names, repeat=pred_sig.arity):
                     if len(combo) == pred_sig.arity:
                         # Check type compatibility: each parameter's type must match predicate's expected type
                         types_match = all(

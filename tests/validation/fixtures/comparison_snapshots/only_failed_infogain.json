@@ -1,0 +1,32 @@
+{
+  "iteration": 100,
+  "algorithm": "information_gain",
+  "description": "Snapshot where pick-up action only failed (5 failures, 0 successes)",
+  "actions": {
+    "pick-up": {
+      "parameters": ["?x"],
+      "possible_preconditions": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)"
+      ],
+      "certain_preconditions": ["handempty()"],
+      "uncertain_preconditions": ["clear(?0)", "ontable(?0)", "holding(?0)"],
+      "confirmed_add_effects": [],
+      "confirmed_del_effects": [],
+      "possible_add_effects": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)"
+      ],
+      "possible_del_effects": [
+        "clear(?0)", "ontable(?0)", "handempty()", "holding(?0)"
+      ],
+      "constraint_sets": [
+        ["handempty()"]
+      ],
+      "observations": 5
+    }
+  },
+  "metadata": {
+    "domain": "blocksworld",
+    "problem": "p01",
+    "note": "InfoGain can learn from failures via constraint sets"
+  }
+}

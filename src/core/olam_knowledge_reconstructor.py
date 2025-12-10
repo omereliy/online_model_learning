@@ -523,9 +523,20 @@ class OLAMKnowledgeReconstructor:
                 knowledge.uncertain_del_effects[operator] = set(effects) if effects else set()
 
         # Load useless (ruled out) preconditions
+        # Note: useless_pos_precs is a list of lists (conjunctions), flatten to individual predicates
         if 'useless_pos_precs' in exports:
             for operator, precs in exports['useless_pos_precs'].items():
-                knowledge.useless_precs[operator] = set(precs) if precs else set()
+                if precs:
+                    # Flatten list of lists - each inner list is a conjunction, extract individual literals
+                    flattened = set()
+                    for item in precs:
+                        if isinstance(item, list):
+                            flattened.update(item)
+                        else:
+                            flattened.add(item)
+                    knowledge.useless_precs[operator] = flattened
+                else:
+                    knowledge.useless_precs[operator] = set()
 
         logger.info(f"Reconstructed knowledge for {len(knowledge.certain_precs)} operators from exports")
         return knowledge

@@ -1,0 +1,24 @@
+{
+  "iteration": 100,
+  "algorithm": "information_gain",
+  "description": "Snapshot where pick-up action only succeeded (5 successes, 0 failures)",
+  "actions": {
+    "pick-up": {
+      "parameters": ["?x"],
+      "possible_preconditions": ["clear(?0)", "ontable(?0)", "handempty()"],
+      "certain_preconditions": [],
+      "uncertain_preconditions": ["clear(?0)", "ontable(?0)", "handempty()"],
+      "confirmed_add_effects": ["holding(?0)"],
+      "confirmed_del_effects": ["clear(?0)", "ontable(?0)", "handempty()"],
+      "possible_add_effects": [],
+      "possible_del_effects": [],
+      "constraint_sets": [],
+      "observations": 5
+    }
+  },
+  "metadata": {
+    "domain": "blocksworld",
+    "problem": "p01",
+    "note": "InfoGain refines possible_precs via intersection, no certain_precs without failures"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "iteration": 100,
+  "algorithm": "information_gain",
+  "description": "Snapshot where pick-up action had mixed results (3 successes, 2 failures)",
+  "actions": {
+    "pick-up": {
+      "parameters": ["?x"],
+      "possible_preconditions": ["clear(?0)", "handempty()"],
+      "certain_preconditions": ["handempty()"],
+      "uncertain_preconditions": ["clear(?0)"],
+      "confirmed_add_effects": ["holding(?0)"],
+      "confirmed_del_effects": ["clear(?0)", "handempty()"],
+      "possible_add_effects": [],
+      "possible_del_effects": [],
+      "constraint_sets": [
+        ["handempty()"]
+      ],
+      "observations": 5
+    }
+  },
+  "metadata": {
+    "domain": "blocksworld",
+    "problem": "p01",
+    "note": "InfoGain: certain_precs from failure singletons, possible_precs refined by successes"
+  }
+}

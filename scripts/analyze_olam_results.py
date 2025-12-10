@@ -161,7 +161,8 @@ def reconstruct_models_at_checkpoints(
             json.dump(snapshot, f, indent=2)
 
         # Reconstruct safe and complete models
-        safe = ModelReconstructor.reconstruct_olam_safe(snapshot)
+        # Pass domain_file for fair safe model preconditions (uses La for unexecuted actions)
+        safe = ModelReconstructor.reconstruct_olam_safe(snapshot, domain_file=domain_file)
         complete = ModelReconstructor.reconstruct_olam_complete(snapshot)
 
         models[checkpoint] = {
@@ -177,7 +178,8 @@ def reconstruct_models_at_checkpoints(
 def compute_metrics(
     models: Dict[int, Dict],
     ground_truth_file: Path,
-    problem_file: Path
+    problem_file: Path,
+    min_observations: int = 0
 ) -> pd.DataFrame:
     """
     Compute precision and recall metrics for each checkpoint.
@@ -186,6 +188,7 @@ def compute_metrics(
         models: Dictionary of reconstructed models
         ground_truth_file: Path to ground truth domain
         problem_file: Path to problem file
+        min_observations: Minimum observations to include action in metrics (default 0)
 
     Returns:
         DataFrame with metrics
@@ -203,11 +206,25 @@ def compute_metrics(
         complete_model = model_data['complete']
         knowledge = model_data['knowledge']
 
-        # Compute metrics for safe model
-        safe_metrics = metrics_calculator.compute_metrics(safe_model)
+        # Extract observation counts from knowledge for filtering
+        observation_counts = {
+            action_name: knowledge.observation_count.get(action_name, 0)
+            for action_name in safe_model.actions.keys()
+        }
 
-        # Compute metrics for complete model
-        complete_metrics = metrics_calculator.compute_metrics(complete_model)
+        # Compute metrics for safe model (with optional filtering)
+        safe_metrics = metrics_calculator.compute_metrics(
+            safe_model,
+            observation_counts=observation_counts,
+            min_observations=min_observations
+        )
+
+        # Compute metrics for complete model (with optional filtering)
+        complete_metrics = metrics_calculator.compute_metrics(
+            complete_model,
+            observation_counts=observation_counts,
+            min_observations=min_observations
+        )
 
         # Aggregate statistics
         total_observations = sum(knowledge.observation_count.values())
@@ -735,6 +752,12 @@ def main():
         action="store_true",
         help="Validate against OLAM's native exports"
     )
+    parser.add_argument(
+        "--min-observations",
+        type=int,
+        default=0,
+        help="Minimum observations for action to be included in metrics (default: 0, include all)"
+    )
 
     args = parser.parse_args()
 
@@ -902,7 +925,10 @@ def main():
     # Step 4: Compute metrics (if ground truth available)
     ground_truth = args.ground_truth or args.domain
     if ground_truth.exists():
-        metrics_df = compute_metrics(models, ground_truth, args.problem)
+        metrics_df = compute_metrics(
+            models, ground_truth, args.problem,
+            min_observations=args.min_observations
+        )
 
         # Step 5: Validate (optional)
         validation = {}

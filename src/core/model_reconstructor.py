@@ -38,28 +38,51 @@ class ModelReconstructor:
     """Reconstructs safe and complete models from exported snapshots."""
 
     @staticmethod
-    def reconstruct_information_gain_safe(snapshot: Dict) -> ReconstructedModel:
+    def reconstruct_information_gain_safe(snapshot: Dict, domain_file: Optional[str] = None) -> ReconstructedModel:
         """
         Reconstruct safe model from Information Gain snapshot.
 
-        Safe model:
-        - Preconditions: certain + uncertain (more restrictive)
-        - Effects: Only certain (confirmed)
+        Safe model semantics (guarantees recall=1.0 for preconditions):
+        - Preconditions: La (all type-compatible predicates) - safe has no false negatives
+        - Effects: Only certain (confirmed) - safe has no false positives for effects
+
+        For unobserved actions:
+        - Preconditions: recall=1, precision=low (La)
+        - Effects: recall=0, precision=1 (empty)
 
         Args:
             snapshot: Dictionary containing exported model snapshot
+            domain_file: Path to PDDL domain file (required for La generation)
 
         Returns:
             ReconstructedModel with safe configuration
         """
+        # Generate La (all possible predicates) for safe model preconditions
+        all_possible = {}
+        if domain_file:
+            all_possible = ModelReconstructor._generate_all_possible_predicates(
+                domain_file, snapshot["actions"]
+            )
+            if all_possible:
+                logger.debug(f"Generated La for {len(all_possible)} actions for safe model")
+        else:
+            logger.warning("No domain_file provided for safe model, recall may be < 1.0")
+
         actions = {}
         for action_name, action_data in snapshot["actions"].items():
-            # Safe: all possible preconditions (certain + uncertain)
-            preconditions = set(action_data["possible_preconditions"])
+            # Safe model preconditions: Use La (all type-compatible predicates)
+            # This guarantees recall=1.0 (no false negatives)
+            if action_name in all_possible:
+                preconditions = all_possible[action_name].copy()
+            else:
+                # Fallback if La not available: use possible_preconditions
+                # Filter out negated preconditions (¬pred) - PDDL preconditions are positive
+                preconditions = {p for p in action_data["possible_preconditions"] if not p.startswith('¬')}
 
-            # Safe: only confirmed effects
-            add_effects = set(action_data["confirmed_add_effects"])
-            del_effects = set(action_data["confirmed_del_effects"])
+            # Safe: only confirmed effects (filter negated literals)
+            # This guarantees precision=1.0 for effects (no false positives)
+            add_effects = {e for e in action_data["confirmed_add_effects"] if not e.startswith('¬')}
+            del_effects = {e for e in action_data["confirmed_del_effects"] if not e.startswith('¬')}
 
             actions[action_name] = ReconstructedAction(
                 name=action_name,
@@ -94,17 +117,25 @@ class ModelReconstructor:
         actions = {}
         for action_name, action_data in snapshot["actions"].items():
             # Complete: only certain preconditions
-            preconditions = set(action_data["certain_preconditions"])
+            # Filter out negated preconditions (¬pred) - PDDL preconditions are positive
+            preconditions = {p for p in action_data["certain_preconditions"] if not p.startswith('¬')}
 
-            # Complete: confirmed + possible effects (filter contradictions)
-            add_candidates = (set(action_data["confirmed_add_effects"]) |
-                            set(action_data["possible_add_effects"]))
-            del_candidates = (set(action_data["confirmed_del_effects"]) |
-                            set(action_data["possible_del_effects"]))
+            # Complete: confirmed + possible effects
+            # Filter out negated literals (¬pred) - PDDL effects don't have negations
+            # Add effects make predicates TRUE, delete effects make them FALSE
+            def filter_negated(literals):
+                return {lit for lit in literals if not lit.startswith('¬')}
 
-            # Remove contradictions (same fluent in both add and delete)
-            add_effects, del_effects = ModelReconstructor._remove_contradictions(
-                add_candidates, del_candidates
+            # DON'T remove contradictions - for complete model we want recall=1
+            # Contradictions just mean we don't know yet if a literal is add or delete,
+            # which is fine for complete model (we're being optimistic)
+            add_effects = filter_negated(
+                set(action_data["confirmed_add_effects"]) |
+                set(action_data["possible_add_effects"])
+            )
+            del_effects = filter_negated(
+                set(action_data["confirmed_del_effects"]) |
+                set(action_data["possible_del_effects"])
             )
 
             actions[action_name] = ReconstructedAction(
@@ -127,64 +158,72 @@ class ModelReconstructor:
         """
         Reconstruct safe model from OLAM snapshot.
 
-        Safe model:
-        - Preconditions: ALL possible (type-compatible) - useless
+        Safe model semantics:
+        - Preconditions: certain + uncertain (what OLAM considers possible)
         - Effects: ONLY certain effects (confirmed)
+        - Fallback to La (all possible) when certain+uncertain is empty (unobserved action)
 
-        The safe model should include all preconditions that haven't been ruled out,
-        making it maximally permissive. This ensures safe models never have false negatives
-        for preconditions (they include everything possible, not just what's been observed).
+        The safe model uses OLAM's tracked preconditions. When an action hasn't been
+        observed yet (both certain and uncertain empty), we fall back to La (all
+        type-compatible predicates) to guarantee recall=1.0.
 
         Args:
             snapshot: Dictionary containing exported model snapshot
-            domain_file: Path to PDDL domain file (optional, for generating all possible predicates)
+            domain_file: Path to PDDL domain file (for La fallback on unobserved actions)
 
         Returns:
             ReconstructedModel with safe configuration
         """
         actions = {}
 
-        # If domain file provided, generate all possible predicates for each action
-        all_possible_precs = {}
+        # Generate La (all possible predicates) as fallback for unobserved actions
+        all_possible = {}
         if domain_file:
-            all_possible_precs = ModelReconstructor._generate_all_possible_predicates(
+            all_possible = ModelReconstructor._generate_all_possible_predicates(
                 domain_file, snapshot["actions"]
             )
+            if all_possible:
+                logger.debug(f"Generated La for {len(all_possible)} actions (fallback for unobserved)")
 
         for action_name, action_data in snapshot["actions"].items():
-            # Safe: all possible preconditions - useless
-            # If we don't have all_possible, fall back to certain + uncertain
-            if action_name in all_possible_precs:
-                # Start with all possible predicates
-                preconditions = set(all_possible_precs[action_name])
+            # Primary: certain + uncertain preconditions (OLAM's tracked hypothesis)
+            certain_precs = action_data.get("certain_preconditions", [])
+            uncertain_precs = action_data.get("uncertain_preconditions", [])
 
-                # Remove useless predicates (ruled out)
-                useless = set(action_data.get("useless_preconditions", []))
-                for lit in useless:
-                    normalized = ModelReconstructor._normalize_olam_literal(lit)
-                    if normalized:
-                        preconditions.discard(normalized)
-            else:
-                # Fallback: certain + uncertain (old behavior)
-                preconditions = set()
-                for lit in (action_data.get("certain_preconditions", []) +
-                           action_data.get("uncertain_preconditions", [])):
-                    normalized = ModelReconstructor._normalize_olam_literal(lit)
-                    if normalized:
-                        preconditions.add(normalized)
+            preconditions = set()
+            for lit in (certain_precs + uncertain_precs):
+                normalized = ModelReconstructor._normalize_olam_literal(lit)
+                if normalized:
+                    preconditions.add(normalized)
+
+            # Fallback: If action has no observations (empty preconditions), use La
+            if not preconditions and action_name in all_possible:
+                preconditions = all_possible[action_name].copy()
+                logger.debug(f"Safe model {action_name}: Using La fallback ({len(preconditions)} predicates)")
 
             # Safe: ONLY certain effects - normalized
+            # Filter out negated literals (¬pred) - same as Information Gain
             add_effects = set()
             for lit in action_data.get("certain_add_effects", []):
                 normalized = ModelReconstructor._normalize_olam_literal(lit)
-                if normalized:
+                if normalized and not normalized.startswith('¬'):
                     add_effects.add(normalized)
 
+            # Delete effects: strip negation from literals (OLAM stores delete effects
+            # with (not ...) wrapper which normalizes to ¬prefix, but PDDL effects
+            # are positive predicates - the delete list indicates what becomes FALSE)
+            # Filter out non-negated literals that shouldn't be in del_effects
             del_effects = set()
             for lit in action_data.get("certain_del_effects", []):
                 normalized = ModelReconstructor._normalize_olam_literal(lit)
                 if normalized:
-                    del_effects.add(normalized)
+                    # Strip ¬ prefix if present - delete effects are positive predicates
+                    if normalized.startswith('¬'):
+                        normalized = normalized[1:]
+                        del_effects.add(normalized)
+                    # If not negated, it's already a positive predicate in del list - keep it
+                    else:
+                        del_effects.add(normalized)
 
             actions[action_name] = ReconstructedAction(
                 name=action_name,
@@ -226,29 +265,30 @@ class ModelReconstructor:
                     preconditions.add(normalized)
 
             # Complete: certain + uncertain effects - normalized
-            # First, collect all add and delete literals (before normalization)
+            # DON'T remove contradictions - for complete model we want recall=1
+            # Contradictions just mean we don't know yet if a literal is add or delete
             all_add_literals = (action_data.get("certain_add_effects", []) +
                                action_data.get("uncertain_add_effects", []))
             all_del_literals = (action_data.get("certain_del_effects", []) +
                                action_data.get("uncertain_del_effects", []))
 
-            # Find contradictions (same literal in both add and delete)
-            contradictions = set(all_add_literals) & set(all_del_literals)
-
             # Add effects: include all (certain + uncertain), normalized
+            # Filter out negated literals (¬pred) - same as Information Gain
             add_effects = set()
             for lit in all_add_literals:
                 normalized = ModelReconstructor._normalize_olam_literal(lit)
-                if normalized:
+                if normalized and not normalized.startswith('¬'):
                     add_effects.add(normalized)
 
-            # Delete effects: exclude contradictions (put them in add instead), normalized
+            # Delete effects: include all (certain + uncertain), normalized
+            # Strip ¬ prefix - PDDL delete effects are positive predicates
             del_effects = set()
             for lit in all_del_literals:
-                if lit in contradictions:
-                    continue  # Skip - already in add_effects
                 normalized = ModelReconstructor._normalize_olam_literal(lit)
                 if normalized:
+                    # Strip ¬ prefix if present - delete effects are positive predicates
+                    if normalized.startswith('¬'):
+                        normalized = normalized[1:]
                     del_effects.add(normalized)
 
             actions[action_name] = ReconstructedAction(
