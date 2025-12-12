@@ -1,7 +1,7 @@
 experiment:
   name: "full_benchmark_comparison"
-  description: "Complete OLAM benchmark suite comparison"
-  algorithm: ["olam", "information_gain"]
+  description: "Complete benchmark suite comparison"
+  algorithm: ["information_gain"]
   # Run experiments for all algorithm variants
 
 domain_problem:

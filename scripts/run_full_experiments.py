@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 """
-Run comprehensive experiments with all OLAM benchmarks.
+Run Information Gain experiments on PDDL benchmarks.
 
 This script supports different experiment scales:
 - quick: 5 simple domains, 1 problem each, 100 iterations
 - standard: 10 domains, 3 problems each, 400 iterations
 - full: All 23 domains, 3 problems each, 400 iterations
-- challenging: 10 complex domains, 3 problems each, 1000 iterations
 - custom: Specify domains, problems, and iterations
 
 Usage:
@@ -26,18 +25,16 @@ Usage:
     python scripts/run_full_experiments.py --mode standard --resume-from "rover/p01"
 """
 
-import sys
-import os
-import json
-import yaml
 import argparse
-import time
-import subprocess
-from pathlib import Path
-from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional, Tuple
 import logging
+import sys
+import time
 import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Tuple
+
+import yaml
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
@@ -66,11 +63,12 @@ EXPERIMENT_MODES = {
     },
     "standard": {
         "domains": [
-            "blocksworld", "depots", "hanoi", "ferry",
-            "miconic", "driverlog", "zenotravel", "satellite", "rover"
+            "blocksworld", "depots", "driverlog", "ferry",
+            "hanoi", "miconic", "n-puzzle", "satellite"
         ],
-        "problems": ["p00", "p01", "p02"],
-        "iterations": 400,
+        "problems": ["p00", "p01", "p02", "p03", "p04",
+                     "p05", "p06", "p07", "p08", "p09"],
+        "iterations": 500,
         "description": "Standard benchmark set for papers"
     },
     "full": {
@@ -81,73 +79,46 @@ EXPERIMENT_MODES = {
             "parking", "rover", "satellite", "sokoban", "spanner",
             "tpp", "transport", "zenotravel"
         ],
-        "problems": ["p00", "p01", "p02"],
-        "iterations": 400,
-        "description": "Complete OLAM benchmark suite (excluding gripper)"
-    },
-    "challenging": {
-        "domains": [
-            "rover", "satellite", "elevators", "floortile", "parking",
-            "barman", "transport", "driverlog", "matching-bw", "gold-miner"
-        ],
-        "problems": ["p00", "p01", "p02"],
-        "iterations": 1000,
-        "description": "Complex domains requiring more iterations"
+        "problems": ["p00", "p01", "p02", "p03", "p04",
+                    "p05", "p06", "p07", "p08", "p09"],
+        "iterations": 500,
+        "description": "Complete infogain benchmark suite (excluding gripper)"
     }
 }
-
-# Algorithms to compare
-ALGORITHMS = ["olam", "information_gain"]
 
 def create_experiment_config(algorithm: str, domain: str, problem: str,
                            iterations: int, output_dir: str) -> Dict[str, Any]:
     """Create experiment configuration dynamically."""
-    config = {
-        'experiment': {
-            'name': f"{algorithm}_{domain}_{problem}",
-            'algorithm': algorithm,
-            'seed': 42 + hash(f"{domain}_{problem}") % 100
-        },
-        'domain_problem': {
-            'domain': f"benchmarks/olam-compatible/{domain}/domain.pddl",
-            'problem': f"benchmarks/olam-compatible/{domain}/{problem}.pddl"
-        },
-        'metrics': {
-            'interval': 10,
-            'window_size': 50
-        },
-        'stopping_criteria': {
+    config: Dict[str, Any] = {'experiment': {
+        'name': f"{algorithm}_{domain}_{problem}",
+        'algorithm': algorithm,
+        'seed': 42 + hash(f"{domain}_{problem}") % 100
+    }, 'domain_problem': {
+        'domain': f"benchmarks/olam-compatible/{domain}/domain.pddl",
+        'problem': f"benchmarks/olam-compatible/{domain}/{problem}.pddl"
+    }, 'metrics': {
+        'interval': 5,
+        'window_size': 50
+    }, 'stopping_criteria': {
+        'max_iterations': iterations,
+        'max_runtime_seconds': 3600,  # 1 hour max per experiment
+        'convergence_check_interval': 50
+    }, 'output': {
+        'directory': output_dir,
+        'formats': ['csv', 'json'],
+        'save_learned_model': True
+    }, 'algorithm_params': {
+        'information_gain': {
+            'selection_strategy': 'greedy',
             'max_iterations': iterations,
-            'max_runtime_seconds': 3600,  # 1 hour max per experiment
-            'convergence_check_interval': 50
-        },
-        'output': {
-            'directory': output_dir,
-            'formats': ['csv', 'json'],
-            'save_learned_model': True
+            'model_stability_window': min(50, iterations // 10),
+            'info_gain_epsilon': 0.001,
+            'success_rate_threshold': 0.98,
+            'success_rate_window': min(50, iterations // 10)
         }
-    }
+    }}
 
     # Algorithm-specific parameters
-    if algorithm == "information_gain":
-        config['algorithm_params'] = {
-            'information_gain': {
-                'selection_strategy': 'greedy',
-                'max_iterations': iterations,
-                'model_stability_window': min(50, iterations // 10),
-                'info_gain_epsilon': 0.001,
-                'success_rate_threshold': 0.98,
-                'success_rate_window': min(50, iterations // 10)
-            }
-        }
-    elif algorithm == "olam":
-        config['algorithm_params'] = {
-            'olam': {
-                'selection_strategy': 'greedy',
-                'eval_frequency': 10,
-                'planner_time_limit': 10
-            }
-        }
 
     return config
 
@@ -176,11 +147,11 @@ def check_domain_availability(domain: str) -> Tuple[bool, str]:
 
     return True, f"Domain {domain} OK ({len(problem_files)} problems)"
 
-def run_single_experiment(algorithm: str, domain: str, problem: str,
+def run_single_experiment(domain: str, problem: str,
                          iterations: int, base_output_dir: str,
                          force: bool = False) -> bool:
     """Run a single experiment."""
-    output_dir = f"{base_output_dir}/{algorithm}/{domain}/{problem}"
+    output_dir = f"{base_output_dir}/{domain}/{problem}"
 
     # Check if already completed
     summary_file = Path(output_dir) / "experiment_summary.json"
@@ -195,7 +166,7 @@ def run_single_experiment(algorithm: str, domain: str, problem: str,
         return False
 
     # Create configuration
-    config = create_experiment_config(algorithm, domain, problem, iterations, output_dir)
+    config = create_experiment_config("information_gain", domain, problem, iterations, output_dir)
 
     # Save config
     config_path = Path(output_dir)
@@ -205,7 +176,7 @@ def run_single_experiment(algorithm: str, domain: str, problem: str,
         yaml.dump(config, f)
 
     try:
-        logger.info(f"  Starting: {algorithm}/{domain}/{problem} ({iterations} iterations)")
+        logger.info(f"  Starting: information_gain/{domain}/{problem} ({iterations} iterations)")
         start_time = time.time()
 
         # Run experiment
@@ -264,14 +235,13 @@ Examples:
                        help="Predefined experiment mode")
     parser.add_argument("--domains", nargs='+',
                        help="Custom list of domains")
-    parser.add_argument("--problems", nargs='+', default=["p00", "p01", "p02"],
-                       help="Problems to run (default: p00 p01 p02)")
+    parser.add_argument("--problems", nargs='+',
+                       default=["p00", "p01", "p02", "p03", "p04", "p05", "p06", "p07", "p08", "p09"],
+                       help="Problems to run (default: p00-p09)")
     parser.add_argument("--all-problems", action="store_true",
                        help="Auto-detect and run all problems in each domain")
     parser.add_argument("--iterations", type=int, default=400,
                        help="Number of iterations per experiment")
-    parser.add_argument("--algorithms", nargs='+', default=ALGORITHMS,
-                       help="Algorithms to test")
     parser.add_argument("--output-dir", type=str,
                        help="Output directory (default: results/paper/comparison_TIMESTAMP)")
     parser.add_argument("--resume-from", type=str,
@@ -298,14 +268,12 @@ Examples:
     else:
         parser.error("Either --mode or --domains must be specified")
 
-    algorithms = args.algorithms
-
     # Set output directory
     if args.output_dir:
-        base_output_dir = args.output_dir
+        base_output_dir = Path(args.output_dir) / "information_gain"
     else:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_output_dir = f"results/paper/comparison_{timestamp}"
+        base_output_dir = f"results/comparison_{timestamp}/information_gain"
 
     logger.info(f"Output directory: {base_output_dir}")
 
@@ -317,25 +285,24 @@ Examples:
     skip_until = args.resume_from
     skipping = skip_until is not None
 
-    for algorithm in algorithms:
-        for domain in domains:
-            domain_problems = get_all_problems(domain) if use_all_problems else problems
-            for problem in domain_problems:
-                exp_id = f"{domain}/{problem}"
+    for domain in domains:
+        domain_problems = get_all_problems(domain) if use_all_problems else problems
+        for problem in domain_problems:
+            exp_id = f"{domain}/{problem}"
 
-                if skipping:
-                    if exp_id == skip_until:
-                        skipping = False
-                        logger.info(f"Resuming from {algorithm}/{exp_id}")
-                    else:
-                        continue
+            if skipping:
+                if exp_id == skip_until:
+                    skipping = False
+                    logger.info(f"Resuming from {exp_id}")
+                else:
+                    continue
 
-                experiments.append((algorithm, domain, problem))
+            experiments.append((domain, problem))
 
     # Show experiment plan
     total_experiments = len(experiments)
     logger.info(f"\nExperiment Plan:")
-    logger.info(f"  Algorithms: {', '.join(algorithms)}")
+    logger.info(f"  Algorithm: information_gain")
     logger.info(f"  Domains: {len(domains)} domains")
     if use_all_problems:
         logger.info(f"  Problems: all available per domain")
@@ -371,18 +338,18 @@ Examples:
     successful = 0
     failed = []
 
-    for i, (algorithm, domain, problem) in enumerate(experiments, 1):
-        logger.info(f"\n[{i}/{total_experiments}] {algorithm}/{domain}/{problem}")
+    for i, (domain, problem) in enumerate(experiments, 1):
+        logger.info(f"\n[{i}/{total_experiments}] information_gain/{domain}/{problem}")
 
         success = run_single_experiment(
-            algorithm, domain, problem, iterations,
+            domain, problem, iterations,
             base_output_dir, args.force
         )
 
         if success:
             successful += 1
         else:
-            failed.append(f"{algorithm}/{domain}/{problem}")
+            failed.append(f"information_gain/{domain}/{problem}")
 
     # Summary
     elapsed = time.time() - start_time
@@ -404,17 +371,6 @@ Examples:
     # Post-processing instructions
     if successful > 0:
         logger.info("\n" + "="*60)
-        logger.info("NEXT STEPS")
-        logger.info("="*60)
-        logger.info("1. Calculate metrics from model snapshots:")
-        logger.info(f"   python scripts/recalculate_model_metrics.py {base_output_dir}/")
-        logger.info("\n2. Generate visualizations:")
-        logger.info(f"   python scripts/visualize_checkpoint_metrics.py {base_output_dir}/")
-        logger.info("\n3. Generate standard plots:")
-        logger.info(f"   python scripts/visualize_paper_results.py {base_output_dir}/")
-        logger.info("\n4. View results:")
-        logger.info(f"   ls {base_output_dir}/checkpoint_visualizations/")
-
     return 0 if len(failed) == 0 else 1
 
 if __name__ == "__main__":

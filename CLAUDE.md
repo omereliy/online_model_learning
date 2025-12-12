@@ -47,7 +47,6 @@ See `docs/OLAM_INPUT_OUTPUT.md` for OLAM output format details.
 src/
 ├── algorithms/
 │   ├── information_gain.py      # CNF-based learner (main algorithm)
-│   ├── olam_external_runner.py  # Run OLAM as subprocess
 │   └── base_learner.py          # Abstract interface
 ├── core/
 │   ├── cnf_manager.py           # CNF formulas + SAT solving (PySAT)
@@ -60,8 +59,7 @@ src/
 │   └── olam_knowledge_reconstructor.py  # Replay OLAM learning
 ├── experiments/
 │   ├── runner.py                # Main experiment orchestration
-│   ├── metrics.py               # Metric collection
-│   └── olam_experiment.py       # OLAM-specific handling
+│   └── metrics.py               # Metric collection
 └── environments/
     ├── active_environment.py    # Real environment execution
     └── mock_environment.py      # Testing environment
