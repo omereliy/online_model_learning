@@ -19,8 +19,7 @@ blocksworld \
 
 
 python3  scripts/run_full_experiments.py --algorithms information_gain \
-  --domains satellite blocksworld depots driverlog \
-  ferry hanoi miconic n-puzzle \
+  --domains hanoi ferry miconic driverlog n-puzzle \
   --problems p00 p01 p02 p03 p04 p05 p06 p07 p08 p09 \
   --iterations 500
   --output-dir results/consolidated_results_new
