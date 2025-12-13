@@ -32,7 +32,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.core.model_reconstructor import ModelReconstructor
 from src.core.model_metrics import ModelMetrics
-from src.core.model_validator import ModelValidator
 
 logging.basicConfig(
     level=logging.INFO,

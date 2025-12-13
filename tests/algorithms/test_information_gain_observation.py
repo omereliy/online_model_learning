@@ -74,13 +74,16 @@ class TestInformationGainObservation:
         initial_space = self._calculate_hypothesis_space(learner)
         assert initial_space > 0, "Should have non-zero initial hypothesis space"
 
-        # Run several observations
+        # Run several observations, tracking failures locally
+        had_failure = False
         for _ in range(3):
             state = env.get_state()
             action, objects = learner.select_action(state)
             success, _ = env.execute(action, objects)
             next_state = env.get_state() if success else state
             learner.observe(state, action, objects, success, next_state)
+            if not success:
+                had_failure = True
 
         # Calculate hypothesis space after observations
         final_space = self._calculate_hypothesis_space(learner)
@@ -90,7 +93,7 @@ class TestInformationGainObservation:
             f"Hypothesis space should not increase: {initial_space} -> {final_space}"
 
         # If we had failures, space should strictly reduce
-        if any(not s for s in learner._success_history):
+        if had_failure:
             assert final_space < initial_space, \
                 "Hypothesis space should reduce after failure observations"
 

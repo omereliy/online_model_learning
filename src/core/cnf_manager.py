@@ -29,17 +29,13 @@ class CNFManager:
         self.next_var = 1
         self._solution_cache = None
         self._cache_valid = False
-        # Support for lifted fluents
-        self.lifted_fluents: Dict[str, List[str]] = {}  # predicate -> [param_types]
-        self.lifted_to_grounded: Dict[str, Set[str]] = {}  # lifted -> grounded instances
 
-    def add_fluent(self, fluent_str: str, is_lifted: bool = False) -> int:
+    def add_fluent(self, fluent_str: str) -> int:
         """
         Map fluent string to variable ID.
 
         Args:
-            fluent_str: String representation of fluent (e.g., 'on_a_b' or 'on(?x,?y)')
-            is_lifted: Whether this is a lifted fluent with variables
+            fluent_str: String representation of fluent (e.g., 'on_a_b')
 
         Returns:
             Variable ID for the fluent
@@ -48,65 +44,7 @@ class CNFManager:
             self.fluent_to_var[fluent_str] = self.next_var
             self.var_to_fluent[self.next_var] = fluent_str
             self.next_var += 1
-
-            # Track lifted fluents
-            if is_lifted:
-                self._register_lifted_fluent(fluent_str)
         return self.fluent_to_var[fluent_str]
-
-    def _register_lifted_fluent(self, lifted_str: str):
-        """
-        Register a lifted fluent and parse its structure.
-
-        Args:
-            lifted_str: Lifted fluent string (e.g., 'on(?x,?y)')
-        """
-        import re
-        # Parse lifted fluent: predicate(var1,var2,...)
-        match = re.match(r'([^(]+)\(([^)]*)\)', lifted_str)
-        if match:
-            predicate = match.group(1)
-            params = [p.strip() for p in match.group(2).split(',') if p.strip()]
-            self.lifted_fluents[predicate] = params
-            self.lifted_to_grounded[lifted_str] = set()
-
-    def add_lifted_fluent(self, predicate: str, param_types: List[str]) -> int:
-        """
-        Add a lifted fluent with its parameter types.
-
-        Args:
-            predicate: Predicate name (e.g., 'on')
-            param_types: List of parameter types (e.g., ['?x', '?y'])
-
-        Returns:
-            Variable ID for the lifted fluent
-        """
-        # Create lifted fluent string representation
-        lifted_str = f"{predicate}({','.join(param_types)})"
-        return self.add_fluent(lifted_str, is_lifted=True)
-
-    def ground_lifted_fluent(self, predicate: str, objects: List[str]) -> int:
-        """
-        Create grounded instance of a lifted fluent.
-
-        Args:
-            predicate: Predicate name
-            objects: List of object names to bind
-
-        Returns:
-            Variable ID for the grounded fluent
-        """
-        # Create grounded fluent string
-        grounded_str = f"{predicate}_{'_'.join(objects)}"
-
-        # Track relationship to lifted version
-        lifted_pattern = f"{predicate}("
-        for lifted_str in self.lifted_to_grounded:
-            if lifted_str.startswith(lifted_pattern):
-                self.lifted_to_grounded[lifted_str].add(grounded_str)
-                break
-
-        return self.add_fluent(grounded_str)
 
     def get_variable(self, fluent_str: str) -> Optional[int]:
         """
@@ -120,24 +58,19 @@ class CNFManager:
         """
         return self.fluent_to_var.get(fluent_str)
 
-    def add_clause(self, clause: List[str], lifted: bool = False):
+    def add_clause(self, clause: List[str]):
         """
         Add clause with fluent strings (prefix '-' for negation).
 
         Args:
             clause: List of fluent strings, prefix with '-' for negation
                    e.g., ['clear_b', '-on_a_b'] represents (clear_b OR NOT on_a_b)
-            lifted: Whether clause contains lifted fluents
         """
         var_clause = []
         for lit in clause:
             negated = lit.startswith('-')
             fluent = lit[1:] if negated else lit
-
-            # Check if this is a lifted fluent pattern
-            is_lifted = lifted or '?' in fluent or '(' in fluent
-            var_id = self.add_fluent(fluent, is_lifted=is_lifted)
-
+            var_id = self.add_fluent(fluent)
             var_clause.append(-var_id if negated else var_id)
 
         self.cnf.append(var_clause)
@@ -175,18 +108,21 @@ class CNFManager:
             Number of satisfying assignments
         """
         solver = Minisat22(bootstrap_with=self.cnf)
-        count = 0
+        try:
+            count = 0
 
-        while solver.solve():
-            count += 1
-            if max_solutions and count >= max_solutions:
-                break
+            while solver.solve():
+                count += 1
+                if max_solutions and count >= max_solutions:
+                    break
 
-            # Block current solution to find next one
-            model = solver.get_model()
-            solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
+                # Block current solution to find next one
+                model = solver.get_model()
+                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
 
-        return count
+            return count
+        finally:
+            solver.delete()
 
     def get_all_solutions(self, max_solutions: int = None) -> List[Set[str]]:
         """
@@ -204,20 +140,23 @@ class CNFManager:
         solutions = []
         solver = Minisat22(bootstrap_with=self.cnf)
 
-        while solver.solve():
-            model = solver.get_model()
-            solution = {
-                self.var_to_fluent[abs(lit)]
-                for lit in model
-                if lit > 0 and abs(lit) in self.var_to_fluent
-            }
-            solutions.append(solution)
+        try:
+            while solver.solve():
+                model = solver.get_model()
+                solution = {
+                    self.var_to_fluent[abs(lit)]
+                    for lit in model
+                    if lit > 0 and abs(lit) in self.var_to_fluent
+                }
+                solutions.append(solution)
 
-            if max_solutions and len(solutions) >= max_solutions:
-                break
+                if max_solutions and len(solutions) >= max_solutions:
+                    break
 
-            # Block current solution
-            solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
+                # Block current solution
+                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
+        finally:
+            solver.delete()
 
         if not max_solutions:
             self._solution_cache = solutions
@@ -233,7 +172,10 @@ class CNFManager:
             True if satisfiable, False otherwise
         """
         solver = Minisat22(bootstrap_with=self.cnf)
-        return solver.solve()
+        try:
+            return solver.solve()
+        finally:
+            solver.delete()
 
     def get_model(self) -> Optional[Set[str]]:
         """
@@ -243,14 +185,24 @@ class CNFManager:
             Set of true fluents or None if unsatisfiable
         """
         solver = Minisat22(bootstrap_with=self.cnf)
-        if solver.solve():
-            model = solver.get_model()
-            return {
-                self.var_to_fluent[abs(lit)]
-                for lit in model
-                if lit > 0 and abs(lit) in self.var_to_fluent
-            }
-        return None
+        try:
+            if solver.solve():
+                model = solver.get_model()
+                return {
+                    self.var_to_fluent[abs(lit)]
+                    for lit in model
+                    if lit > 0 and abs(lit) in self.var_to_fluent
+                }
+            return None
+        finally:
+            solver.delete()
+
+    # TODO: CNF Minimization Methods (minimize_qm, _rebuild_from_solutions, minimize_espresso)
+    # These methods are currently unused but could potentially improve model counting performance.
+    # Current limitation: They call get_all_solutions() first (which is expensive), then rebuild.
+    # For proper integration, they would need incremental CNF simplification (subsumption
+    # elimination, resolution) rather than solution-based rebuilding.
+    # Consider connecting to the model counting pipeline if performance becomes an issue.
 
     def minimize_qm(self):
         """
@@ -374,55 +326,6 @@ class CNFManager:
 
         return ' ∧ '.join(clauses) if clauses else "⊥ (false)"
 
-    def get_lifted_groundings(self, predicate: str) -> Set[str]:
-        """
-        Get all grounded instances of a lifted predicate.
-
-        Args:
-            predicate: Predicate name
-
-        Returns:
-            Set of grounded fluent strings
-        """
-        groundings = set()
-        for lifted_str, grounded_set in self.lifted_to_grounded.items():
-            if lifted_str.startswith(f"{predicate}("):
-                groundings.update(grounded_set)
-        return groundings
-
-    def instantiate_lifted_clause(self, lifted_clause: List[str], bindings: Dict[str, str]) -> List[str]:
-        """
-        Instantiate a lifted clause with variable bindings.
-
-        Args:
-            lifted_clause: Clause with variables (e.g., ['on(?x,?y)', '-clear(?y)'])
-            bindings: Variable bindings (e.g., {'?x': 'a', '?y': 'b'})
-
-        Returns:
-            Grounded clause with substitutions
-        """
-        grounded_clause = []
-        for lit in lifted_clause:
-            negated = lit.startswith('-')
-            fluent = lit[1:] if negated else lit
-
-            # Substitute variables in fluent
-            grounded_fluent = fluent
-            for var, obj in bindings.items():
-                grounded_fluent = grounded_fluent.replace(var, obj)
-
-            # Convert to standard grounded format
-            import re
-            match = re.match(r'([^(]+)\(([^)]*)\)', grounded_fluent)
-            if match:
-                pred = match.group(1)
-                args = [a.strip() for a in match.group(2).split(',')]
-                grounded_fluent = f"{pred}_{'_'.join(args)}"
-
-            grounded_clause.append(('-' if negated else '') + grounded_fluent)
-
-        return grounded_clause
-
     def copy(self) -> 'CNFManager':
         """
         Create a deep copy of this CNF manager.
@@ -434,8 +337,6 @@ class CNFManager:
         new_manager.fluent_to_var = self.fluent_to_var.copy()
         new_manager.var_to_fluent = self.var_to_fluent.copy()
         new_manager.next_var = self.next_var
-        new_manager.lifted_fluents = {k: v.copy() for k, v in self.lifted_fluents.items()}
-        new_manager.lifted_to_grounded = {k: v.copy() for k, v in self.lifted_to_grounded.items()}
 
         # Deep copy CNF
         new_manager.cnf = CNF()
@@ -637,22 +538,6 @@ class CNFManager:
         """
         return len(self.cnf.clauses) > 0
 
-    def count_models_with_constraints(self, state_constraints: Dict[str, bool]) -> int:
-        """
-        Count models with additional state constraints applied.
-
-        Does not modify the original formula.
-
-        Args:
-            state_constraints: Dict mapping fluent names to required values
-
-        Returns:
-            Number of satisfying models with constraints
-        """
-        # Create temporary CNF with constraints
-        temp_cnf = self.create_with_state_constraints(state_constraints)
-        return temp_cnf.count_solutions()
-
     def state_constraints_to_assumptions(self, state_constraints: Dict[str, bool]) -> List[int]:
         """
         Convert state constraints dict to PySAT assumptions list (Phase 2 enhancement).
@@ -675,28 +560,83 @@ class CNFManager:
 
         return assumptions
 
-    def count_models_with_assumptions(self, assumptions: List[int]) -> int:
+    def count_models_with_assumptions(self, assumptions: List[int], use_cache: bool = True) -> int:
         """
         Count models with assumptions instead of deep copy (Phase 2 enhancement).
 
         Uses PySAT's solve(assumptions=[...]) feature for 2-3x speedup.
         No deep copy needed - assumptions are temporary constraints.
 
+        If use_cache=True and solutions are cached, uses faster filtering approach
+        (O(|solutions| * |assumptions|) instead of O(SAT_SOLVE)).
+
         Args:
             assumptions: List of variable IDs (negative for must-be-false)
+            use_cache: Whether to use cached solutions filtering (default True)
 
         Returns:
             Number of satisfying models with assumptions applied
         """
+        # Use cache-based filtering if available and enabled
+        if use_cache and self._cache_valid and self._solution_cache is not None:
+            return self.count_models_with_assumptions_via_filter(assumptions)
+
+        # TODO: Consider adding timeout support here if needed for very complex formulas.
+        # PySAT's solve() could theoretically run indefinitely on pathological inputs.
         solver = Minisat22(bootstrap_with=self.cnf)
+        try:
+            count = 0
+
+            while solver.solve(assumptions=assumptions):
+                count += 1
+
+                # Block current solution to find next one
+                model = solver.get_model()
+                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
+
+            return count
+        finally:
+            solver.delete()
+
+    def count_models_with_assumptions_via_filter(self, assumptions: List[int]) -> int:
+        """
+        Count models by filtering cached solutions (faster if solutions already cached).
+
+        Instead of re-solving with assumptions, filters the pre-computed solutions.
+        This transforms O(N * SAT_SOLVE) into O(1 * SAT_SOLVE + N * FILTER).
+
+        Args:
+            assumptions: List of variable IDs (negative for must-be-false)
+
+        Returns:
+            Number of satisfying models matching the assumptions
+        """
+        # Ensure base solutions are cached
+        if not self._cache_valid or self._solution_cache is None:
+            self.get_all_solutions()  # Populates cache
+
+        if not self._solution_cache:
+            return 0
+
+        # Convert assumptions to set-based check
+        must_be_true = set()
+        must_be_false = set()
+        for assumption in assumptions:
+            var = abs(assumption)
+            fluent = self.var_to_fluent.get(var)
+            if fluent:
+                if assumption > 0:
+                    must_be_true.add(fluent)
+                else:
+                    must_be_false.add(fluent)
+
+        # Filter solutions - each solution is a set of true fluents
         count = 0
-
-        while solver.solve(assumptions=assumptions):
-            count += 1
-
-            # Block current solution to find next one
-            model = solver.get_model()
-            solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
+        for solution in self._solution_cache:
+            # Check: all must_be_true fluents are in solution
+            # Check: no must_be_false fluents are in solution
+            if must_be_true.issubset(solution) and must_be_false.isdisjoint(solution):
+                count += 1
 
         return count
 

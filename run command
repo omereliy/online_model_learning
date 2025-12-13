@@ -1,3 +1,6 @@
+IMPORTANT OLAM configuration - TIME_LIMIT_IN_SECONDS is for a single problem. not the whole domain run.
+
+
 Full Pipeline for Single Domain
 
 python scripts/run_full_experiments.py \

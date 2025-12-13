@@ -71,7 +71,8 @@ class ObjectSubsetManager:
     def __init__(self,
                  domain: 'LiftedDomainKnowledge',
                  spare_objects_per_type: int = 1,
-                 random_seed: Optional[int] = None):
+                 random_seed: Optional[int] = None,
+                 defer_initial_selection: bool = False):
         """
         Initialize the subset manager.
 
@@ -79,6 +80,7 @@ class ObjectSubsetManager:
             domain: Domain knowledge with actions, types, and objects
             spare_objects_per_type: Extra objects per type beyond minimum requirement
             random_seed: Optional seed for reproducible subset selection
+            defer_initial_selection: If True, don't select initial subset (wait for state-aware selection)
         """
         self.domain = domain
         self.spare_objects_per_type = spare_objects_per_type
@@ -100,15 +102,41 @@ class ObjectSubsetManager:
         # Rotation tracking
         self.subset_rotation_count = 0
         self._exhausted = False
+        self._initial_selection_deferred = defer_initial_selection
+        self._max_possible_subsets = 0  # Computed after initialization
 
         # Initialize
-        self._initialize()
+        self._initialize(defer_initial_selection)
 
-    def _initialize(self) -> None:
+    def _initialize(self, defer_initial_selection: bool = False) -> None:
         """Initialize type requirements and object pools."""
         self._compute_type_requirements()
         self._group_objects_by_type()
-        self.select_new_subset()
+        self._compute_max_possible_subsets()
+        if not defer_initial_selection:
+            self.select_new_subset()
+
+    def _compute_max_possible_subsets(self) -> None:
+        """
+        Compute maximum number of subsets that can be formed.
+
+        This is the minimum of (total_objects / objects_per_subset) across all types.
+        Used to determine if fallback to all objects is appropriate.
+        """
+        if not self.type_requirements:
+            self._max_possible_subsets = 0
+            return
+
+        max_subsets = float('inf')
+        for type_name, requirement in self.type_requirements.items():
+            total_objects = len(self._get_all_objects_for_type(type_name))
+            objects_per_subset = requirement.total_required
+            if objects_per_subset > 0:
+                type_max_subsets = total_objects // objects_per_subset
+                max_subsets = min(max_subsets, type_max_subsets)
+
+        self._max_possible_subsets = int(max_subsets) if max_subsets != float('inf') else 0
+        logger.info(f"Max possible subsets: {self._max_possible_subsets}")
 
     def _compute_type_requirements(self) -> None:
         """
@@ -316,6 +344,27 @@ class ObjectSubsetManager:
         """
         return self._exhausted
 
+    def should_fallback_to_all_objects(self) -> bool:
+        """
+        Check if fallback to all objects is appropriate when exhausted.
+
+        Fallback is only appropriate when there are fewer than 2 possible subsets,
+        meaning subset selection doesn't provide meaningful benefit.
+
+        Returns:
+            True if fallback to all objects should be used
+        """
+        return self._max_possible_subsets < 2
+
+    def get_max_possible_subsets(self) -> int:
+        """
+        Get the maximum number of subsets that can be formed.
+
+        Returns:
+            Maximum number of non-overlapping subsets
+        """
+        return self._max_possible_subsets
+
     def get_status(self) -> Dict:
         """
         Get current status for logging/debugging.
@@ -335,6 +384,197 @@ class ObjectSubsetManager:
                 for t, r in self.type_requirements.items()
             }
         }
+
+    def _extract_objects_from_state(self, state: Set[str]) -> Set[str]:
+        """
+        Extract object names from grounded fluents in state.
+
+        Parses fluents like 'on_b3_b9' to extract objects ['b3', 'b9'].
+
+        Args:
+            state: Current state as set of grounded fluent strings
+
+        Returns:
+            Set of object names found in state predicates
+        """
+        objects = set()
+        for fluent in state:
+            # Handle negated fluents
+            if fluent.startswith('¬'):
+                fluent = fluent[1:]
+
+            # Parse fluent: "on_b3_b9" -> ["on", "b3", "b9"]
+            parts = fluent.split('_')
+            if len(parts) > 1:
+                # All parts after predicate name could be objects
+                for part in parts[1:]:
+                    if part in self.domain.objects:
+                        objects.add(part)
+
+        return objects
+
+    def _partition_objects_by_type(self, objects: Set[str]) -> Dict[str, List[str]]:
+        """
+        Partition objects by their declared type.
+
+        Args:
+            objects: Set of object names
+
+        Returns:
+            Dict mapping type names to lists of objects
+        """
+        by_type: Dict[str, List[str]] = {}
+        for obj in objects:
+            if obj in self.domain.objects:
+                obj_type = self.domain.objects[obj].type
+                if obj_type not in by_type:
+                    by_type[obj_type] = []
+                by_type[obj_type].append(obj)
+        return by_type
+
+    def select_state_aware_subset(self, state: Set[str]) -> Dict[str, List[str]]:
+        """
+        Select subset prioritizing objects from current state predicates.
+
+        This ensures objects that are "active" in the current state (appearing
+        in true predicates) are included in the subset, making applicable
+        actions more likely to be generated.
+
+        Args:
+            state: Current state as set of grounded fluents (e.g., {'on_b3_b9', 'clear_b3'})
+
+        Returns:
+            Dict mapping type names to selected object lists
+        """
+        # 1. Extract objects from state predicates
+        state_objects = self._extract_objects_from_state(state)
+        logger.debug(f"State-aware selection: Found {len(state_objects)} objects in state: {state_objects}")
+
+        # 2. Partition state objects by type
+        state_objects_by_type = self._partition_objects_by_type(state_objects)
+
+        # 3. Build subset: state objects first, then fill with available
+        new_subset: Dict[str, List[str]] = {}
+
+        for type_name, requirement in self.type_requirements.items():
+            # Start with state objects of this type
+            type_state_objects = state_objects_by_type.get(type_name, [])
+            available = self._get_available_objects_for_type(type_name)
+
+            selected = []
+
+            # Add state objects first (prioritized) - even if they exceed total_required
+            for obj in type_state_objects:
+                if obj in available and obj not in selected:
+                    selected.append(obj)
+
+            # Fill remaining with other available objects (up to total_required)
+            remaining_needed = max(0, requirement.total_required - len(selected))
+            other_available = [o for o in available if o not in selected]
+
+            if remaining_needed > 0 and other_available:
+                additional = random.sample(
+                    other_available,
+                    min(remaining_needed, len(other_available))
+                )
+                selected.extend(additional)
+
+            # Check minimum requirement
+            if len(selected) < requirement.min_objects:
+                if self.subset_rotation_count == 0:
+                    # First subset - use all available with warning
+                    logger.warning(
+                        f"Type {type_name}: Only {len(selected)} objects available "
+                        f"(including {len(type_state_objects)} from state), "
+                        f"but {requirement.min_objects} required."
+                    )
+                else:
+                    # Subsequent subsets - not enough objects
+                    logger.info(
+                        f"Type {type_name} exhausted for state-aware selection "
+                        f"(need {requirement.min_objects}, have {len(selected)})"
+                    )
+                    self._exhausted = True
+                    return self.active_subset
+
+            new_subset[type_name] = selected
+
+            # Mark selected objects as used
+            for obj in selected:
+                obj_type = self.domain.objects[obj].type
+                if obj in self.available_objects_by_type.get(obj_type, []):
+                    self.available_objects_by_type[obj_type].remove(obj)
+                self.used_objects_by_type.setdefault(obj_type, set()).add(obj)
+
+        self.active_subset = new_subset
+        self.subset_rotation_count += 1
+
+        logger.info(
+            f"Selected state-aware subset {self.subset_rotation_count}: "
+            f"{[(t, objs) for t, objs in new_subset.items()]} "
+            f"(prioritized {len(state_objects)} state objects)"
+        )
+        return new_subset
+
+    def augment_with_state_objects(self, state: Set[str]) -> bool:
+        """
+        Augment current subset with objects from current state.
+
+        Ensures objects relevant to current state are always included,
+        without a full rotation. This handles state changes during learning.
+
+        Args:
+            state: Current state as set of grounded fluents
+
+        Returns:
+            True if subset was augmented, False if no changes needed
+        """
+        state_objects = self._extract_objects_from_state(state)
+        current_active = self.get_active_object_names()
+
+        augmented = False
+        for obj in state_objects:
+            if obj not in current_active and obj in self.domain.objects:
+                obj_type = self.domain.objects[obj].type
+                # Add to active subset
+                if obj_type in self.active_subset:
+                    self.active_subset[obj_type].append(obj)
+                else:
+                    self.active_subset[obj_type] = [obj]
+                augmented = True
+                logger.debug(f"Augmented subset with state object: {obj} (type: {obj_type})")
+
+        if augmented:
+            logger.info(f"Augmented subset with state objects. New active: {self.get_active_object_names()}")
+
+        return augmented
+
+    def rotate_state_aware(self, state: Set[str]) -> bool:
+        """
+        Rotate to a new object subset with state awareness.
+
+        Args:
+            state: Current state as set of grounded fluents
+
+        Returns:
+            True if rotation succeeded, False if all objects exhausted
+        """
+        if self._exhausted:
+            return False
+
+        # Check if we can form a new subset
+        for type_name, requirement in self.type_requirements.items():
+            available = self._get_available_objects_for_type(type_name)
+            if len(available) < requirement.min_objects:
+                self._exhausted = True
+                logger.info(
+                    f"All objects exhausted - cannot rotate to new subset "
+                    f"(type {type_name}: need {requirement.min_objects}, have {len(available)})"
+                )
+                return False
+
+        self.select_state_aware_subset(state)
+        return True
 
     def reset(self) -> None:
         """Reset the manager to initial state (all objects available)."""

@@ -38,20 +38,10 @@ class InformationGainLearner(BaseActionModelLearner):
     FLOAT_COMPARISON_EPSILON = 1e-6  # Tolerance for float comparisons
     DEFAULT_MAX_ITERATIONS = 1000
 
-    # Convergence detection parameters (defaults - conservative for statistical validity)
-    DEFAULT_MODEL_STABILITY_WINDOW = 50  # Number of iterations to check for model stability
-    DEFAULT_INFO_GAIN_EPSILON = 0.0  # Threshold for low information gain
-    DEFAULT_SUCCESS_RATE_THRESHOLD = 1 # 98% success rate threshold
-    DEFAULT_SUCCESS_RATE_WINDOW = 50  # Window size for success rate calculation
-
     def __init__(self,
                  domain_file: str,
                  problem_file: str,
                  max_iterations: int = DEFAULT_MAX_ITERATIONS,
-                 model_stability_window: Optional[int] = None,
-                 info_gain_epsilon: Optional[float] = None,
-                 success_rate_threshold: Optional[float] = None,
-                 success_rate_window: Optional[int] = None,
                  use_object_subset: bool = True,
                  spare_objects_per_type: int = 2,
                  max_iterations_per_subset: int = DEFAULT_MAX_ITERATIONS,
@@ -63,12 +53,9 @@ class InformationGainLearner(BaseActionModelLearner):
             domain_file: Path to PDDL domain file
             problem_file: Path to PDDL problem file
             max_iterations: Maximum learning iterations
-            model_stability_window: Iterations to check for model stability (default: 50)
-            info_gain_epsilon: Threshold for low information gain (default: 0.001)
-            success_rate_threshold: Success rate threshold for convergence (default: 0.98)
-            success_rate_window: Window size for success rate calculation (default: 50)
-            use_object_subset: Enable object subset selection for reduced grounding (default: False)
-            spare_objects_per_type: Extra objects per type beyond minimum requirement (default: 1)
+            use_object_subset: Enable object subset selection for reduced grounding (default: True).
+                              Uses state-aware selection to prioritize objects from current state.
+            spare_objects_per_type: Extra objects per type beyond minimum requirement (default: 2)
             max_iterations_per_subset: Max iterations before rotating to new subset (default: 100)
             **kwargs: Additional parameters (selection_strategy, epsilon, temperature)
 
@@ -93,19 +80,6 @@ class InformationGainLearner(BaseActionModelLearner):
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
-
-        # Set convergence parameters (use provided or defaults)
-        self.MODEL_STABILITY_WINDOW = model_stability_window if model_stability_window is not None else self.DEFAULT_MODEL_STABILITY_WINDOW
-        self.INFO_GAIN_EPSILON = info_gain_epsilon if info_gain_epsilon is not None else self.DEFAULT_INFO_GAIN_EPSILON
-        self.SUCCESS_RATE_THRESHOLD = success_rate_threshold if success_rate_threshold is not None else self.DEFAULT_SUCCESS_RATE_THRESHOLD
-        self.SUCCESS_RATE_WINDOW = success_rate_window if success_rate_window is not None else self.DEFAULT_SUCCESS_RATE_WINDOW
-
-        logger.debug(
-            f"Convergence parameters: model_stability_window={self.MODEL_STABILITY_WINDOW}, "
-            f"info_gain_epsilon={self.INFO_GAIN_EPSILON}, "
-            f"success_rate_threshold={self.SUCCESS_RATE_THRESHOLD}, "
-            f"success_rate_window={self.SUCCESS_RATE_WINDOW}"
-        )
 
         # Initialize domain knowledge using new architecture
         logger.debug("Parsing PDDL domain and problem files")
@@ -143,8 +117,6 @@ class InformationGainLearner(BaseActionModelLearner):
         self.temperature = kwargs.get('temperature', 1.0)  # For Boltzmann
 
         # Convergence tracking
-        self._model_snapshot_history: List[Dict[str, Set[str]]] = []  # History of pre(a) snapshots
-        self._success_history: List[bool] = []  # History of action successes/failures
         self._last_max_gain: float = float('inf')  # Track maximum information gain
 
         # Object subset selection (for reduced grounding space)
@@ -160,9 +132,10 @@ class InformationGainLearner(BaseActionModelLearner):
             self.subset_manager = ObjectSubsetManager(
                 domain=self.domain,
                 spare_objects_per_type=self.spare_objects_per_type,
-                random_seed=kwargs.get('seed')
+                random_seed=kwargs.get('seed'),
+                defer_initial_selection=True  # Wait for state to select subset
             )
-            logger.info(f"Object subset selection enabled: {self.subset_manager.get_status()}")
+            logger.info(f"Object subset selection enabled (deferred until first state): {self.subset_manager.get_status()}")
 
         # Initialize action models
         logger.debug("Initializing action models")
@@ -313,43 +286,6 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug(f"Applicability probability for {action}: {state_models}/{total_models} = {probability:.3f}")
         return probability
 
-    def _calculate_entropy(self, action: str) -> float:
-        """
-        Calculate entropy of action model to measure uncertainty.
-
-        Entropy is measured as the log2 of the number of satisfying models in the
-        CNF hypothesis space. This directly measures our uncertainty about which
-        precondition model is correct.
-
-        H = log2(|SAT(cnf_pre?(a))|)
-
-        Higher entropy means more uncertainty (more possible models).
-
-        Args:
-            action: Action name
-
-        Returns:
-            Entropy value (non-negative, in bits)
-        """
-        # Build CNF formula if needed
-        if not self.cnf_managers[action].has_clauses():
-            self._build_cnf_formula(action)
-
-        cnf = self.cnf_managers[action]
-
-        # Get model count (cached)
-        num_models = self._get_base_model_count(action)
-
-        # No uncertainty if 0 or 1 model
-        if num_models <= 1:
-            entropy = 0.0
-        else:
-            # Entropy is log2 of model count
-            entropy = math.log2(num_models)
-
-        logger.debug(f"Entropy for {action}: {entropy:.3f} ({num_models} models)")
-        return entropy
-
     def _calculate_potential_gain_success(self, action: str, objects: List[str], state: Set[str]) -> float:
         r"""
         Calculate potential information gain from successful execution.
@@ -443,15 +379,18 @@ class InformationGainLearner(BaseActionModelLearner):
         new_models = cnf.count_models_with_temporary_clause(unsatisfied)
 
         # Calculate information gain
+        # La contains both p and ¬p for each fluent, so num_fluents = |La| / 2
+        # Each fluent has 3 possible states: positive precondition, negative precondition, or not a precondition
         la_size = len(self._get_parameter_bound_literals(action))
-        max_models = 2 ** la_size if la_size > 0 else 1
+        num_fluents = la_size // 2  # La contains both p and ¬p for each fluent
+        total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
 
         model_reduction = current_models - new_models
-        normalized_gain = 1.0 - (model_reduction / max_models)
+        normalized_gain = model_reduction / total_hypotheses
 
         logger.debug(f"Failure potential for {action}: {normalized_gain:.3f} "
-                    f"(models: {current_models} → {new_models})")
-        return max(0.0, normalized_gain)  # Ensure non-negative
+                    f"(models: {current_models} → {new_models}, reduction: {model_reduction})")
+        return max(0.0, min(1.0, normalized_gain))  # Clamp to [0, 1]
 
     def _calculate_expected_information_gain(self, action: str, objects: List[str], state: Set[str]) -> float:
         """
@@ -499,13 +438,30 @@ class InformationGainLearner(BaseActionModelLearner):
         # Ensure state is in set format
         state = self._ensure_state_is_set(state)
 
-        # Check for subset rotation BEFORE calculating gains (if using object subsets)
-        if self.use_object_subset and self._should_rotate_subset():
-            if not self._rotate_to_new_subset():
-                # All objects exhausted - switch to using ALL objects for final learning phase
-                logger.info("All subsets exhausted - switching to full object set for final learning")
-                self.use_object_subset = False
-                self._subset_iteration_count = 0
+        # Handle object subset selection with state awareness
+        if self.use_object_subset and self.subset_manager:
+            # First iteration: select initial subset using state information
+            if self.subset_manager.subset_rotation_count == 0:
+                logger.info(f"Selecting initial state-aware subset (max possible subsets: {self.subset_manager.get_max_possible_subsets()})")
+                self.subset_manager.select_state_aware_subset(state)
+            # Check for subset rotation
+            elif self._should_rotate_subset():
+                if not self.subset_manager.rotate_state_aware(state):
+                    # All objects exhausted
+                    if self.subset_manager.should_fallback_to_all_objects():
+                        # Only fallback if there were fewer than 2 possible subsets
+                        logger.info("All subsets exhausted (< 2 possible) - switching to full object set")
+                        self.use_object_subset = False
+                        self._subset_iteration_count = 0
+                    else:
+                        # Multiple subsets were possible - learning through subsets is complete
+                        logger.info(f"All {self.subset_manager.get_max_possible_subsets()} subsets exhausted - subset learning complete")
+                        # Keep use_object_subset=True but exhausted, will return no_action
+                else:
+                    self._subset_iteration_count = 0  # Reset counter after rotation
+            else:
+                # Augment current subset with any new state objects
+                self.subset_manager.augment_with_state_objects(state)
 
         # Log current state (detailed logging for debugging)
         logger.debug(f"\n{'='*80}")
@@ -524,22 +480,40 @@ class InformationGainLearner(BaseActionModelLearner):
         # Track maximum information gain for convergence detection
         self._last_max_gain = action_gains[0][2] if action_gains else 0.0
 
-        # If maximum gain is zero or less, try to select an applicable action randomly
-        # instead of stopping early - this avoids premature convergence
+        # If maximum gain is zero or less, check lifted-level learning potential
+        # Grounded info gain can be zero even when there's still uncertainty at lifted level
         if self._last_max_gain <= 0:
-            logger.info(f"\nNo information gain available (max_gain={self._last_max_gain:.6f})")
+            logger.info(f"\nNo grounded information gain (max_gain={self._last_max_gain:.6f})")
 
-            # Find actions that are likely applicable based on learned preconditions
-            applicable_actions = self._filter_applicable_actions(action_gains, state)
+            # Check if there's still learning potential at the lifted level
+            if self._has_lifted_learning_potential():
+                logger.info("Lifted-level uncertainty exists - continuing exploration")
+                uncertainty = self._get_lifted_uncertainty_summary()
+                total_uncertain = sum(
+                    u['uncertain_pre'] + u['uncertain_add'] + u['uncertain_del']
+                    for u in uncertainty.values()
+                )
+                logger.debug(f"Total lifted uncertainty: {total_uncertain} literals across {len(uncertainty)} actions")
 
-            if applicable_actions:
-                # Select random applicable action to continue exploring
-                selected_action, selected_objects = random.choice(applicable_actions)
-                logger.info(f"Selecting random applicable action to continue exploring: "
-                           f"{selected_action}({','.join(selected_objects)})")
+                # Find applicable actions to continue exploring
+                applicable_actions = self._filter_applicable_actions(action_gains, state)
+
+                if applicable_actions:
+                    # Select random applicable action to continue exploring
+                    selected_action, selected_objects = random.choice(applicable_actions)
+                    logger.info(f"Selecting random applicable action to continue exploring: "
+                               f"{selected_action}({','.join(selected_objects)})")
+                else:
+                    # No applicable actions in current state - need state change
+                    # Select any action (even if likely to fail) to potentially learn from failure
+                    selected_action, selected_objects = random.choice(
+                        [(a, o) for a, o, _ in action_gains]
+                    )
+                    logger.info(f"No applicable actions - selecting random action for failure learning: "
+                               f"{selected_action}({','.join(selected_objects)})")
             else:
-                # No applicable actions found, truly converged
-                logger.info("No applicable actions found - stopping")
+                # No lifted-level uncertainty - truly converged
+                logger.info("No lifted-level learning potential - model fully learned")
                 return "no_action", []
         else:
             # Select action based on strategy (normal information gain-based selection)
@@ -832,9 +806,6 @@ class InformationGainLearner(BaseActionModelLearner):
             'next_state': next_state
         }
         self.observation_history[action].append(observation)
-
-        # Track success/failure for convergence detection
-        self._success_history.append(success)
 
         logger.debug(f"Total observations for '{action}': {len(self.observation_history[action])}")
 
@@ -1189,6 +1160,62 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug(f"Cached base model count for {action}: {count}")
         return count
 
+    def _has_lifted_learning_potential(self) -> bool:
+        """
+        Check if there's learning potential at the lifted level.
+
+        Returns True if ANY action has:
+        - Uncertain preconditions (possible but not certain)
+        - Uncertain add effects (maybe_add that aren't confirmed)
+        - Uncertain delete effects (maybe_del that aren't confirmed)
+
+        This is independent of the current state/grounding and provides
+        a true measure of whether the model is fully learned.
+
+        Returns:
+            True if there's still uncertainty to resolve
+        """
+        for action_name in self.pre.keys():
+            # Check uncertain preconditions
+            # Certain preconditions are singleton constraint sets
+            certain_pre = self._get_certain_preconditions(action_name)
+            uncertain_pre = self.pre[action_name] - certain_pre
+            if uncertain_pre:
+                logger.debug(f"Action {action_name} has {len(uncertain_pre)} uncertain preconditions")
+                return True
+
+            # Check uncertain add effects (maybe_add that aren't in confirmed add)
+            uncertain_add = self.eff_maybe_add[action_name] - self.eff_add[action_name]
+            if uncertain_add:
+                logger.debug(f"Action {action_name} has {len(uncertain_add)} uncertain add effects")
+                return True
+
+            # Check uncertain delete effects (maybe_del that aren't in confirmed del)
+            uncertain_del = self.eff_maybe_del[action_name] - self.eff_del[action_name]
+            if uncertain_del:
+                logger.debug(f"Action {action_name} has {len(uncertain_del)} uncertain delete effects")
+                return True
+
+        logger.info("No lifted-level learning potential - all actions fully learned")
+        return False
+
+    def _get_lifted_uncertainty_summary(self) -> Dict[str, Dict[str, int]]:
+        """
+        Get summary of uncertainty at lifted level for all actions.
+
+        Returns:
+            Dict mapping action names to uncertainty counts
+        """
+        summary = {}
+        for action_name in self.pre.keys():
+            certain_pre = self._get_certain_preconditions(action_name)
+            summary[action_name] = {
+                'uncertain_pre': len(self.pre[action_name] - certain_pre),
+                'uncertain_add': len(self.eff_maybe_add[action_name] - self.eff_add[action_name]),
+                'uncertain_del': len(self.eff_maybe_del[action_name] - self.eff_del[action_name]),
+            }
+        return summary
+
     def get_action_model_metrics(self) -> Dict[str, Dict[str, Any]]:
         """
         Get detailed learning metrics for each action showing what has been learned.
@@ -1442,10 +1469,13 @@ class InformationGainLearner(BaseActionModelLearner):
 
         Convergence occurs when:
         1. Max iterations reached (forced convergence), OR
-        2. All actions have zero expected information gain (max gain < epsilon)
+        2. No lifted-level learning potential (all actions fully learned)
+
+        Note: Zero grounded information gain alone does NOT cause convergence.
+        We check lifted-level uncertainty to avoid premature convergence.
 
         With object subset selection enabled:
-        - Converge only when ALL objects exhausted AND zero information gain
+        - Converge only when ALL objects exhausted AND no lifted-level potential
         - Subset rotation is handled separately in select_action()
 
         Returns:
@@ -1457,43 +1487,33 @@ class InformationGainLearner(BaseActionModelLearner):
             self._converged = True
             return True
 
-        # Need at least one observation to check information gain
+        # Need at least one observation to check convergence
         if self.observation_count == 0:
             return False
 
-        # With object subset selection: only converge when exhausted AND zero gain
+        # With object subset selection: check exhaustion first
         if self.use_object_subset and self.subset_manager:
-            if self.subset_manager.all_objects_exhausted():
-                zero_gain = self._last_max_gain < self.FLOAT_COMPARISON_EPSILON
-                if zero_gain:
-                    logger.info(
-                        f"Convergence: All objects exhausted and zero information gain "
-                        f"(max_gain={self._last_max_gain:.6f})"
-                    )
-                    self._converged = True
-                    return True
-            # Can still rotate or gain information - not converged
+            if not self.subset_manager.all_objects_exhausted():
+                # Can still rotate - not converged
+                return False
+
+        # Check lifted-level learning potential (the true convergence criterion)
+        if self._has_lifted_learning_potential():
+            # Still have uncertainty to resolve
+            logger.debug(
+                f"Not converged: lifted-level uncertainty exists, "
+                f"iterations={self.iteration_count}/{self.max_iterations}"
+            )
             return False
 
-        # Original convergence logic for non-subset mode
-        zero_gain = self._last_max_gain < self.FLOAT_COMPARISON_EPSILON
-
-        if zero_gain:
-            if not self._converged:
-                logger.info(
-                    f"Convergence: Zero information gain across all actions "
-                    f"(max_gain={self._last_max_gain:.6f} < ε={self.FLOAT_COMPARISON_EPSILON})"
-                )
-            self._converged = True
-            return True
-
-        # Log current status for debugging
-        logger.debug(
-            f"Not converged: max_gain={self._last_max_gain:.6f}, "
-            f"iterations={self.iteration_count}/{self.max_iterations}"
-        )
-
-        return False
+        # No lifted-level uncertainty - truly converged
+        if not self._converged:
+            logger.info(
+                f"Convergence: No lifted-level learning potential "
+                f"(all actions fully learned at iteration {self.iteration_count})"
+            )
+        self._converged = True
+        return True
 
     def _should_rotate_subset(self) -> bool:
         """
@@ -1547,97 +1567,6 @@ class InformationGainLearner(BaseActionModelLearner):
         else:
             logger.info("Cannot rotate - all objects exhausted")
             return False
-
-    def _check_model_stability(self) -> bool:
-        """
-        Check if model has been stable (no precondition changes) for N iterations.
-
-        Returns:
-            True if model is stable, False otherwise
-        """
-        # Take snapshot of current preconditions
-        current_snapshot = {action: pre_set.copy() for action, pre_set in self.pre.items()}
-
-        # Add to history
-        self._model_snapshot_history.append(current_snapshot)
-
-        # Keep only last MODEL_STABILITY_WINDOW snapshots
-        if len(self._model_snapshot_history) > self.MODEL_STABILITY_WINDOW:
-            self._model_snapshot_history.pop(0)
-
-        # Need full window to check stability
-        if len(self._model_snapshot_history) < self.MODEL_STABILITY_WINDOW:
-            return False
-
-        # Check if all snapshots in window are identical
-        first_snapshot = self._model_snapshot_history[0]
-        stable = all(
-            snapshot == first_snapshot
-            for snapshot in self._model_snapshot_history[1:]
-        )
-
-        if stable:
-            logger.debug(
-                f"Model stability: STABLE (no changes for {self.MODEL_STABILITY_WINDOW} iterations)"
-            )
-        else:
-            logger.debug("Model stability: UNSTABLE (recent changes detected)")
-
-        return stable
-
-    def _check_low_information_gain(self) -> bool:
-        """
-        Check if maximum expected information gain is below epsilon threshold.
-
-        Returns:
-            True if information gain is low, False otherwise
-        """
-        # If no observations yet, gain is high
-        if self.observation_count == 0:
-            return False
-
-        # Maximum gain is tracked during action selection
-        # Check if it's below threshold
-        low_gain = self._last_max_gain < self.INFO_GAIN_EPSILON
-
-        if low_gain:
-            logger.debug(
-                f"Information gain: LOW (max_gain={self._last_max_gain:.4f} < ε={self.INFO_GAIN_EPSILON})"
-            )
-        else:
-            logger.debug(
-                f"Information gain: HIGH (max_gain={self._last_max_gain:.4f} >= ε={self.INFO_GAIN_EPSILON})"
-            )
-
-        return low_gain
-
-    def _check_high_success_rate(self) -> bool:
-        """
-        Check if success rate in recent window is above threshold.
-
-        Returns:
-            True if success rate is high, False otherwise
-        """
-        # Need minimum history
-        if len(self._success_history) < self.SUCCESS_RATE_WINDOW:
-            return False
-
-        # Calculate success rate over recent window
-        recent_successes = self._success_history[-self.SUCCESS_RATE_WINDOW:]
-        success_rate = sum(recent_successes) / len(recent_successes)
-
-        high_rate = success_rate >= self.SUCCESS_RATE_THRESHOLD
-
-        if high_rate:
-            logger.debug(
-                f"Success rate: HIGH ({success_rate:.2%} >= {self.SUCCESS_RATE_THRESHOLD:.0%})"
-            )
-        else:
-            logger.debug(
-                f"Success rate: LOW ({success_rate:.2%} < {self.SUCCESS_RATE_THRESHOLD:.0%})"
-            )
-
-        return high_rate
 
     def export_model_snapshot(self, iteration: int, output_dir: Path) -> None:
         """
@@ -1752,8 +1681,6 @@ class InformationGainLearner(BaseActionModelLearner):
         self.cnf_managers.clear()
 
         # Clear convergence tracking
-        self._model_snapshot_history.clear()
-        self._success_history.clear()
         self._last_max_gain = float('inf')
 
         # Reset object subset selection to original setting

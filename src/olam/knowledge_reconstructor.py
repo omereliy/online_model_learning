@@ -17,7 +17,7 @@ import json
 import logging
 import re
 
-from .olam_trace_parser import OLAMTraceStep
+from .trace_parser import OLAMTraceStep
 
 logger = logging.getLogger(__name__)
 

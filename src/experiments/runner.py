@@ -558,16 +558,3 @@ class ExperimentRunner:
                 except Exception as e:
                     logger.warning(f"Failed to remove old test file {old_file}: {e}")
 
-    def _compile_results(self) -> Dict[str, Any]:
-        """
-        Compile final experiment results.
-
-        Returns:
-            Dictionary with complete results
-        """
-        return {
-            'experiment_config': self.config,
-            'metrics_summary': self.metrics.get_summary_statistics(),
-            'snapshots': self.metrics.snapshots,
-            'learner_statistics': self.learner.get_statistics()
-        }

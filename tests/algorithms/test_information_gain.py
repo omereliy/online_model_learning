@@ -863,25 +863,6 @@ class TestApplicabilityProbability:
 class TestInformationGain:
     """Test entropy and information gain calculations."""
 
-    def test_entropy_calculation(self, learner):
-        """Test entropy calculation for action models."""
-        action_name = 'drive'
-
-        # Initial entropy should be high (maximum uncertainty)
-        initial_entropy = learner._calculate_entropy(action_name)
-        assert initial_entropy > 0, "Initial entropy should be positive"
-
-        # After observations, entropy should decrease
-        state = {'at_truck1_depot0'}
-        next_state = {'at_truck1_distributor0'}
-        objects = ['truck1', 'depot0', 'distributor0']
-
-        learner.observe(state, action_name, objects, success=True, next_state=next_state)
-        learner.update_model()
-
-        reduced_entropy = learner._calculate_entropy(action_name)
-        assert reduced_entropy <= initial_entropy, "Entropy should decrease with observations"
-
     def test_potential_gain_success(self, learner):
         """Test potential information gain from successful execution."""
         action_name = 'lift'

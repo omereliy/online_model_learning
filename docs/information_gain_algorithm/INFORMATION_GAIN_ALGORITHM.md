@@ -220,9 +220,11 @@ preAppPotential(a, O, s) = |pre(a) \ bindP(s, O)|
 When action fails from state s:
 ```python
 # Information gain from learning a precondition constraint
-preFailPotential(a, O, s) = 1 - (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 2^|La|
+preFailPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
+# Where |fluents| = |La| / 2 (La contains both p and ¬p for each fluent)
+# Each fluent has 3 possible states: positive precondition, negative precondition, or not a precondition
 # cnf'_pre?(a) is the updated CNF after adding the failure constraint
-# Measures reduction in uncertainty
+# Measures fraction of hypothesis space eliminated (information gained)
 ```
 
 ### Effects Knowledge Gain

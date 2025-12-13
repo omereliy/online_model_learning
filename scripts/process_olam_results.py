@@ -35,8 +35,8 @@ import sys
 
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.core.olam_trace_parser import OLAMTraceParser
-from src.core.olam_knowledge_reconstructor import OLAMKnowledgeReconstructor
+from src.olam.trace_parser import OLAMTraceParser
+from src.olam.knowledge_reconstructor import OLAMKnowledgeReconstructor
 from src.core.model_metrics import ModelMetrics
 from src.core.model_reconstructor import ModelReconstructor
 

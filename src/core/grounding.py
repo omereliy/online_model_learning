@@ -85,21 +85,26 @@ def ground_action(lifted_action: LiftedAction, objects: List[str]) -> GroundedAc
             f"got {len(objects)}"
         )
 
+    # Build parameter name to index mapping from the action's actual parameters
+    # Ensure parameter names have the '?' prefix for matching against literals
+    param_names = [p.name if p.name.startswith('?') else f'?{p.name}'
+                   for p in lifted_action.parameters]
+
     # Ground preconditions
     grounded_preconds = {
-        ground_parameter_bound_literal(lit, objects)
+        ground_parameter_bound_literal(lit, objects, param_names)
         for lit in lifted_action.preconditions
     }
 
     # Ground add effects
     grounded_adds = {
-        ground_parameter_bound_literal(lit, objects)
+        ground_parameter_bound_literal(lit, objects, param_names)
         for lit in lifted_action.add_effects
     }
 
     # Ground delete effects
     grounded_dels = {
-        ground_parameter_bound_literal(lit, objects)
+        ground_parameter_bound_literal(lit, objects, param_names)
         for lit in lifted_action.del_effects
     }
 
@@ -264,7 +269,8 @@ def _get_parameter_bindings_with_subset(
     return bindings
 
 
-def ground_parameter_bound_literal(literal: str, objects: List[str]) -> str:
+def ground_parameter_bound_literal(literal: str, objects: List[str],
+                                    param_names: Optional[List[str]] = None) -> str:
     """
     Ground a parameter-bound literal with concrete objects.
 
@@ -273,6 +279,9 @@ def ground_parameter_bound_literal(literal: str, objects: List[str]) -> str:
     Args:
         literal: Parameter-bound literal (e.g., 'on(?x,?y)' or '¬clear(?x)')
         objects: Ordered list of objects (e.g., ['a', 'b'])
+        param_names: Optional list of parameter names in order (e.g., ['?x', '?y', '?z', '?p']).
+                    If provided, parameter indices are looked up from this list.
+                    If not provided, falls back to letter-based index mapping.
 
     Returns:
         Grounded literal (e.g., 'on_a_b' or '¬clear_a')
@@ -305,8 +314,14 @@ def ground_parameter_bound_literal(literal: str, objects: List[str]) -> str:
             grounded_params = []
             for param in params:
                 if param.startswith('?'):
-                    # Extract parameter index from name (?x→0, ?y→1, ...)
-                    param_idx = _parameter_index_from_name(param)
+                    # Look up parameter index
+                    if param_names is not None and param in param_names:
+                        # Use actual parameter list for index lookup
+                        param_idx = param_names.index(param)
+                    else:
+                        # Fallback to letter-based index mapping
+                        param_idx = _parameter_index_from_name(param)
+
                     if param_idx < len(objects):
                         grounded_params.append(objects[param_idx])
                     else:
@@ -446,13 +461,15 @@ def parse_grounded_action_string(action_str: str,
 
 # ========== Batch Operations ==========
 
-def ground_literal_set(literals: Set[str], objects: List[str]) -> Set[str]:
+def ground_literal_set(literals: Set[str], objects: List[str],
+                        param_names: Optional[List[str]] = None) -> Set[str]:
     """
     Ground a set of parameter-bound literals.
 
     Args:
         literals: Set of parameter-bound literals
         objects: Object binding
+        param_names: Optional list of parameter names for correct index lookup
 
     Returns:
         Set of grounded literals
@@ -462,7 +479,7 @@ def ground_literal_set(literals: Set[str], objects: List[str]) -> Set[str]:
         grounded = ground_literal_set(literals, ['a', 'b'])
         # → {'on_a_b', '¬clear_a'}
     """
-    return {ground_parameter_bound_literal(lit, objects) for lit in literals}
+    return {ground_parameter_bound_literal(lit, objects, param_names) for lit in literals}
 
 
 def lift_fluent_set(fluents: Set[str], objects: List[str], domain: LiftedDomainKnowledge) -> Set[str]:
