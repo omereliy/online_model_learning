@@ -29,6 +29,9 @@ class CNFManager:
         self.next_var = 1
         self._solution_cache = None
         self._cache_valid = False
+        # Solver reuse (Session 2 optimization)
+        self._solver: Optional[Minisat22] = None
+        self._solver_valid: bool = False
 
     def add_fluent(self, fluent_str: str) -> int:
         """
@@ -85,6 +88,159 @@ class CNFManager:
         """
         self.cnf.append(var_clause)
         self._invalidate_cache()
+
+    def add_clause_with_subsumption(self, clause: List[str]) -> bool:
+        """
+        Add clause with subsumption checking to keep CNF minimal.
+
+        Subsumption rules:
+        - If new clause is subsumed by existing shorter clause, don't add
+        - If new clause subsumes existing longer clauses, remove them
+
+        This reduces CNF size and SAT solving time by eliminating redundant clauses.
+
+        Args:
+            clause: List of fluent strings, prefix with '-' for negation
+
+        Returns:
+            True if clause was added, False if subsumed by existing clause
+        """
+        # Convert to variable IDs
+        var_clause = []
+        for lit in clause:
+            negated = lit.startswith('-')
+            fluent = lit[1:] if negated else lit
+            var_id = self.add_fluent(fluent)
+            var_clause.append(-var_id if negated else var_id)
+
+        new_clause_set = frozenset(var_clause)
+
+        # Check if new clause is subsumed by any existing shorter clause
+        # A clause C1 subsumes C2 if C1 ⊆ C2 (C1 is shorter and implies C2)
+        for existing in self.cnf.clauses:
+            existing_set = frozenset(existing)
+            if existing_set.issubset(new_clause_set):
+                # Existing clause subsumes new clause - don't add
+                logger.debug(f"Clause subsumed by existing: {clause}")
+                return False
+
+        # Remove existing clauses that are subsumed by new clause
+        original_count = len(self.cnf.clauses)
+        self.cnf.clauses = [
+            c for c in self.cnf.clauses
+            if not new_clause_set.issubset(frozenset(c))
+        ]
+        removed_count = original_count - len(self.cnf.clauses)
+
+        if removed_count > 0:
+            logger.debug(f"Removed {removed_count} subsumed clauses")
+
+        # Add new clause
+        self.cnf.append(var_clause)
+        self._invalidate_cache()
+        return True
+
+    def refine_clauses_by_intersection(self, satisfied_literals: Set[str]) -> int:
+        """
+        Refine existing clauses by removing unsatisfied literals (Session 2 optimization).
+
+        Used when action succeeds - unsatisfied literals can't be preconditions,
+        so they're removed from each clause. This implements the algorithm's
+        constraint refinement: pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+
+        This is more efficient than rebuilding the entire CNF from constraint sets.
+
+        Args:
+            satisfied_literals: Lifted literals that were satisfied in the state.
+                               Format: {'on(?x,?y)', '¬clear(?x)', ...}
+
+        Returns:
+            Number of clauses that were modified
+        """
+        if not self.cnf.clauses:
+            return 0
+
+        modified = 0
+        new_clauses = []
+
+        for clause in self.cnf.clauses:
+            # Convert clause to literal strings
+            clause_literals = set()
+            for lit in clause:
+                var = abs(lit)
+                fluent = self.var_to_fluent.get(var)
+                if fluent is None:
+                    continue  # Skip unknown variables
+                if lit < 0:
+                    clause_literals.add(f"¬{fluent}")
+                else:
+                    clause_literals.add(fluent)
+
+            # Keep only literals that were satisfied (intersection)
+            refined = clause_literals.intersection(satisfied_literals)
+
+            if len(refined) < len(clause_literals):
+                modified += 1
+
+            if refined:  # Non-empty after refinement
+                # Convert back to var clause
+                new_clause = []
+                for lit_str in refined:
+                    if lit_str.startswith('¬'):
+                        fluent = lit_str[1:]
+                        var_id = self.fluent_to_var.get(fluent)
+                        if var_id:
+                            new_clause.append(-var_id)
+                    else:
+                        var_id = self.fluent_to_var.get(lit_str)
+                        if var_id:
+                            new_clause.append(var_id)
+                if new_clause:
+                    new_clauses.append(new_clause)
+            # Empty clauses are dropped - they become tautologies after
+            # a successful action rules out all their literals
+
+        self.cnf.clauses = new_clauses
+
+        if modified > 0:
+            self._invalidate_cache()
+            logger.debug(f"Refined {modified} clauses, {len(new_clauses)} remain")
+
+        return modified
+
+    def _get_or_create_solver(self) -> Minisat22:
+        """
+        Get persistent solver instance, creating if needed (Session 2 optimization).
+
+        Reuses existing solver if valid, otherwise creates new one.
+        This avoids the overhead of creating a new solver for each query.
+
+        Returns:
+            Minisat22 solver instance bootstrapped with current CNF
+        """
+        if self._solver is None or not self._solver_valid:
+            if self._solver is not None:
+                try:
+                    self._solver.delete()
+                except Exception:
+                    pass
+            self._solver = Minisat22(bootstrap_with=self.cnf)
+            self._solver_valid = True
+        return self._solver
+
+    def _cleanup_solver(self):
+        """Clean up solver instance if it exists."""
+        if self._solver is not None:
+            try:
+                self._solver.delete()
+            except Exception:
+                pass
+            self._solver = None
+        self._solver_valid = False
+
+    def __del__(self):
+        """Clean up solver on object destruction."""
+        self._cleanup_solver()
 
     def remove_clause(self, clause_index: int):
         """
@@ -168,34 +324,32 @@ class CNFManager:
         """
         Check if the CNF formula is satisfiable.
 
+        Uses persistent solver for efficiency (Session 2 optimization).
+
         Returns:
             True if satisfiable, False otherwise
         """
-        solver = Minisat22(bootstrap_with=self.cnf)
-        try:
-            return solver.solve()
-        finally:
-            solver.delete()
+        solver = self._get_or_create_solver()
+        return solver.solve()
 
     def get_model(self) -> Optional[Set[str]]:
         """
         Get a single satisfying model if one exists.
 
+        Uses persistent solver for efficiency (Session 2 optimization).
+
         Returns:
             Set of true fluents or None if unsatisfiable
         """
-        solver = Minisat22(bootstrap_with=self.cnf)
-        try:
-            if solver.solve():
-                model = solver.get_model()
-                return {
-                    self.var_to_fluent[abs(lit)]
-                    for lit in model
-                    if lit > 0 and abs(lit) in self.var_to_fluent
-                }
-            return None
-        finally:
-            solver.delete()
+        solver = self._get_or_create_solver()
+        if solver.solve():
+            model = solver.get_model()
+            return {
+                self.var_to_fluent[abs(lit)]
+                for lit in model
+                if lit > 0 and abs(lit) in self.var_to_fluent
+            }
+        return None
 
     # TODO: CNF Minimization Methods (minimize_qm, _rebuild_from_solutions, minimize_espresso)
     # These methods are currently unused but could potentially improve model counting performance.
@@ -295,9 +449,11 @@ class CNFManager:
             self.minimize_qm()
 
     def _invalidate_cache(self):
-        """Invalidate solution cache when formula changes."""
+        """Invalidate solution cache and solver when formula changes."""
         self._cache_valid = False
         self._solution_cache = None
+        # Clean up and invalidate solver (Session 2)
+        self._cleanup_solver()
 
     def to_string(self) -> str:
         """

@@ -49,6 +49,8 @@ python scripts/run_full_experiments.py --mode standard --dry-run
 - `--resume-from` - Resume from domain/problem (e.g., "rover/p01")
 - `--force` - Force re-run even if results exist
 - `--dry-run` - Show what would run without executing
+- `--use-object-subset` - Enable object subset selection (default: enabled)
+- `--no-object-subset` - Disable object subset selection for full grounding
 
 ### 2. Post-Process Information Gain Results
 Extract precision/recall metrics from experiment checkpoints.

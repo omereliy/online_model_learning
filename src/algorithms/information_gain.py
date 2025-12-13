@@ -565,35 +565,60 @@ class InformationGainLearner(BaseActionModelLearner):
         if not grounded_actions:
             return []
 
+        # Performance optimization: Pre-populate solution cache for all actions with constraints
+        # This ensures count_models_with_assumptions() uses O(solutions * assumptions) filtering
+        # instead of O(SAT_SOLVE) for each grounded action query
+        for action_name in self.pre_constraints.keys():
+            if self.pre_constraints[action_name]:
+                cnf = self.cnf_managers[action_name]
+                if not cnf._cache_valid or cnf._solution_cache is None:
+                    if cnf.has_clauses():
+                        cnf.get_all_solutions()  # Force cache population
+
         # Log detailed action selection breakdown (debug level)
         logger.debug("\nAction Selection (sorted by expected gain):")
 
         action_gains = []
         for i, grounded_action in enumerate(grounded_actions):
             try:
-                # Calculate all components for logging
-                prob_success = self._calculate_applicability_probability(
-                    grounded_action.action_name,
-                    grounded_action.objects,
-                    state
-                )
-                gain_success = self._calculate_potential_gain_success(
-                    grounded_action.action_name,
-                    grounded_action.objects,
-                    state
-                )
-                gain_failure = self._calculate_potential_gain_failure(
-                    grounded_action.action_name,
-                    grounded_action.objects,
-                    state
-                )
+                action_name = grounded_action.action_name
+                objects = grounded_action.objects
+
+                # Early termination: Check if action is fully learned (no uncertainty remains)
+                # This avoids expensive SAT queries for converged actions
+                has_constraints = bool(self.pre_constraints[action_name])
+                has_pre_uncertainty = len(self.pre[action_name]) > len(self._get_certain_preconditions(action_name))
+                has_add_uncertainty = bool(self.eff_maybe_add[action_name] - self.eff_add[action_name])
+                has_del_uncertainty = bool(self.eff_maybe_del[action_name] - self.eff_del[action_name])
+
+                if not has_constraints and not has_pre_uncertainty and not has_add_uncertainty and not has_del_uncertainty:
+                    # Action is fully learned - no information gain possible
+                    action_gains.append((action_name, objects, 0.0))
+                    continue
+
+                # Calculate applicability probability and success gain
+                prob_success = self._calculate_applicability_probability(action_name, objects, state)
+                gain_success = self._calculate_potential_gain_success(action_name, objects, state)
+
+                # Early termination for failure gain: Check if constraint already exists
+                # If so, failure would add no new information
+                state_internal = self._state_to_internal(state)
+                satisfied = self._get_satisfied_literals(action_name, state_internal, objects)
+                unsatisfied = frozenset(self.pre[action_name] - satisfied)
+
+                if not unsatisfied or unsatisfied in self.pre_constraints[action_name]:
+                    # Failure constraint already exists or all preconditions satisfied
+                    gain_failure = 0.0
+                else:
+                    gain_failure = self._calculate_potential_gain_failure(action_name, objects, state)
+
                 expected_gain = prob_success * gain_success + (1.0 - prob_success) * gain_failure
 
-                action_gains.append((grounded_action.action_name, grounded_action.objects, expected_gain))
+                action_gains.append((action_name, objects, expected_gain))
 
                 # Log detailed breakdown for first 10 and last action
                 if i < 10 or i == len(grounded_actions) - 1:
-                    action_str = f"{grounded_action.action_name}({','.join(grounded_action.objects)})"
+                    action_str = f"{action_name}({','.join(objects)})"
                     logger.debug(f"  {action_str:30s} E[gain]={expected_gain:.6f} "
                                f"[P(success)={prob_success:.3f}, gain_success={gain_success:.3f}, gain_failure={gain_failure:.3f}]")
                 elif i == 10:
@@ -852,17 +877,17 @@ class InformationGainLearner(BaseActionModelLearner):
         else:
             self._update_failure(action, objects, state)
 
-        # Rebuild CNF formula after updates
-        logger.debug(f"Rebuilding CNF formula for '{action}'")
-        cnf_before_clauses = len(self.cnf_managers[action].cnf.clauses) if self.cnf_managers[action].has_clauses() else 0
-        self._build_cnf_formula(action)
-        cnf_after_clauses = len(self.cnf_managers[action].cnf.clauses) if self.cnf_managers[action].has_clauses() else 0
+        # Session 2: Use incremental CNF updates instead of full rebuild
+        # The updates are now done directly in _update_success() and _update_failure()
+        # Only do full rebuild if CNF is empty but we have constraints (initial build case)
+        cnf = self.cnf_managers[action]
+        if not cnf.has_clauses() and self.pre_constraints[action]:
+            logger.debug(f"Building initial CNF formula for '{action}'")
+            self._build_cnf_formula(action)
+            logger.debug(f"  CNF built: {len(cnf.cnf.clauses)} clauses")
 
         # Invalidate base CNF count cache after formula changes (Phase 1 enhancement)
         self._base_cnf_count_cache.pop(action, None)
-
-        if cnf_before_clauses != cnf_after_clauses:
-            logger.debug(f"  CNF clauses: {cnf_before_clauses} → {cnf_after_clauses}")
 
         logger.info(f"Model update complete for '{action}'")
 
@@ -950,6 +975,12 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug(
             f"  Constraints updated: {constraints_before} → {len(self.pre_constraints[action])}")
 
+        # Session 2: Incremental CNF update - refine clauses in-place instead of full rebuild
+        if self.cnf_managers[action].has_clauses():
+            modified = self.cnf_managers[action].refine_clauses_by_intersection(satisfied_in_state)
+            if modified > 0:
+                logger.debug(f"  Refined {modified} CNF clauses directly (incremental update)")
+
         logger.info(f"Success update complete for {action}: |pre|={len(self.pre[action])}, "
                     f"|eff+|={len(self.eff_add[action])}, |eff-|={len(self.eff_del[action])}")
 
@@ -994,6 +1025,19 @@ class InformationGainLearner(BaseActionModelLearner):
                 logger.info(
                     f"Failure update for {action}: Added constraint with {len(unsatisfied)} unsatisfied literals "
                     f"(total constraints: {constraints_before} → {new_count})")
+
+                # Session 2: Incremental CNF update - add clause directly instead of full rebuild
+                # Convert unsatisfied literals to clause format for CNF manager
+                clause = []
+                for literal in unsatisfied:
+                    if literal.startswith('¬'):
+                        # Negative literal ¬p becomes -p in clause
+                        clause.append('-' + literal[1:])
+                    else:
+                        clause.append(literal)
+                if clause:
+                    self.cnf_managers[action].add_clause_with_subsumption(clause)
+                    logger.debug(f"  Added clause to CNF directly (incremental update)")
             else:
                 logger.debug(
                     f"Failure update for {action}: Constraint already exists (no new information gained)")

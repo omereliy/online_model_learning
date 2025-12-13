@@ -87,7 +87,8 @@ EXPERIMENT_MODES = {
 }
 
 def create_experiment_config(algorithm: str, domain: str, problem: str,
-                           iterations: int, output_dir: str) -> Dict[str, Any]:
+                           iterations: int, output_dir: str,
+                           use_object_subset: bool = True) -> Dict[str, Any]:
     """Create experiment configuration dynamically."""
     config: Dict[str, Any] = {'experiment': {
         'name': f"{algorithm}_{domain}_{problem}",
@@ -114,7 +115,8 @@ def create_experiment_config(algorithm: str, domain: str, problem: str,
             'model_stability_window': min(50, iterations // 10),
             'info_gain_epsilon': 0.001,
             'success_rate_threshold': 0.98,
-            'success_rate_window': min(50, iterations // 10)
+            'success_rate_window': min(50, iterations // 10),
+            'use_object_subset': use_object_subset
         }
     }}
 
@@ -149,7 +151,8 @@ def check_domain_availability(domain: str) -> Tuple[bool, str]:
 
 def run_single_experiment(domain: str, problem: str,
                          iterations: int, base_output_dir: str,
-                         force: bool = False) -> bool:
+                         force: bool = False,
+                         use_object_subset: bool = True) -> bool:
     """Run a single experiment."""
     output_dir = f"{base_output_dir}/{domain}/{problem}"
 
@@ -166,7 +169,7 @@ def run_single_experiment(domain: str, problem: str,
         return False
 
     # Create configuration
-    config = create_experiment_config("information_gain", domain, problem, iterations, output_dir)
+    config = create_experiment_config("information_gain", domain, problem, iterations, output_dir, use_object_subset)
 
     # Save config
     config_path = Path(output_dir)
@@ -250,6 +253,12 @@ Examples:
                        help="Force re-run even if results exist")
     parser.add_argument("--dry-run", action="store_true",
                        help="Show what would be run without executing")
+    parser.add_argument("--use-object-subset", action="store_true", default=True,
+                       dest="use_object_subset",
+                       help="Enable object subset selection (default: True)")
+    parser.add_argument("--no-object-subset", action="store_false",
+                       dest="use_object_subset",
+                       help="Disable object subset selection")
 
     args = parser.parse_args()
 
@@ -309,6 +318,7 @@ Examples:
     else:
         logger.info(f"  Problems: {len(problems)} per domain")
     logger.info(f"  Iterations: {iterations} per experiment")
+    logger.info(f"  Use object subset: {args.use_object_subset}")
     logger.info(f"  Total experiments: {total_experiments}")
     logger.info(f"  Estimated runtime: {estimate_runtime(total_experiments, iterations)}")
 
@@ -343,7 +353,7 @@ Examples:
 
         success = run_single_experiment(
             domain, problem, iterations,
-            base_output_dir, args.force
+            base_output_dir, args.force, args.use_object_subset
         )
 
         if success:
