@@ -253,7 +253,7 @@ Examples:
                        help="Force re-run even if results exist")
     parser.add_argument("--dry-run", action="store_true",
                        help="Show what would be run without executing")
-    parser.add_argument("--use-object-subset", action="store_true", default=True,
+    parser.add_argument("--use-object-subset", action="store_true", default=False,
                        dest="use_object_subset",
                        help="Enable object subset selection (default: True)")
     parser.add_argument("--no-object-subset", action="store_false",

@@ -8,13 +8,16 @@ using expected information gain for action selection.
 import json
 import logging
 import math
+import os
 import random
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional, Any, Set
 
 from src.core import grounding
+from src.core.grounding import is_injective_binding
 from src.core.cnf_manager import CNFManager
 from src.core.pddl_io import PDDLReader
 from .base_learner import BaseActionModelLearner
@@ -45,6 +48,8 @@ class InformationGainLearner(BaseActionModelLearner):
                  use_object_subset: bool = True,
                  spare_objects_per_type: int = 2,
                  max_iterations_per_subset: int = DEFAULT_MAX_ITERATIONS,
+                 num_workers: Optional[int] = None,
+                 parallel_threshold: int = 3000,
                  **kwargs):
         """
         Initialize Information Gain learner.
@@ -57,6 +62,12 @@ class InformationGainLearner(BaseActionModelLearner):
                               Uses state-aware selection to prioritize objects from current state.
             spare_objects_per_type: Extra objects per type beyond minimum requirement (default: 2)
             max_iterations_per_subset: Max iterations before rotating to new subset (default: 100)
+            num_workers: Number of worker processes for parallel gain computation.
+                        None = auto (cpu_count), 0 = disabled (sequential only)
+            parallel_threshold: Minimum number of grounded actions to enable parallel computation.
+                        Default is 5000 because process creation overhead is significant.
+                        Parallelization is only beneficial for very large action spaces (>5000 actions)
+                        or single long-running computations. For typical domains, sequential is faster.
             **kwargs: Additional parameters (selection_strategy, epsilon, temperature)
 
         Raises:
@@ -136,6 +147,14 @@ class InformationGainLearner(BaseActionModelLearner):
                 defer_initial_selection=True  # Wait for state to select subset
             )
             logger.info(f"Object subset selection enabled (deferred until first state): {self.subset_manager.get_status()}")
+
+        # Parallel computation settings (Phase C optimization)
+        self.num_workers = num_workers
+        self.parallel_threshold = parallel_threshold
+
+        # Persistent process pool for parallel computation (avoids per-iteration spawn overhead)
+        self._pool: Optional['ProcessPoolExecutor'] = None
+        self._pool_workers: int = 0
 
         # Initialize action models
         logger.debug("Initializing action models")
@@ -460,8 +479,10 @@ class InformationGainLearner(BaseActionModelLearner):
                 else:
                     self._subset_iteration_count = 0  # Reset counter after rotation
             else:
-                # Augment current subset with any new state objects
-                self.subset_manager.augment_with_state_objects(state)
+                # Note: augment_with_state_objects removed - it was adding ALL objects
+                # from state fluents, defeating subset selection. Initial state-aware
+                # selection already prioritizes objects from the current state.
+                pass
 
         # Log current state (detailed logging for debugging)
         logger.debug(f"\n{'='*80}")
@@ -575,6 +596,26 @@ class InformationGainLearner(BaseActionModelLearner):
                     if cnf.has_clauses():
                         cnf.get_all_solutions()  # Force cache population
 
+        # Determine whether to use parallel computation
+        num_actions = len(grounded_actions)
+        use_parallel = self._should_use_parallel(num_actions)
+
+        if use_parallel:
+            return self._calculate_all_action_gains_parallel(grounded_actions, state)
+        else:
+            return self._calculate_all_action_gains_sequential(grounded_actions, state)
+
+    def _calculate_all_action_gains_sequential(self, grounded_actions: List, state: Set[str]) -> List[Tuple[str, List[str], float]]:
+        """
+        Sequential implementation of action gain computation.
+
+        Args:
+            grounded_actions: List of GroundedAction objects
+            state: Current state as set of fluent strings
+
+        Returns:
+            List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
+        """
         # Log detailed action selection breakdown (debug level)
         logger.debug("\nAction Selection (sorted by expected gain):")
 
@@ -632,12 +673,269 @@ class InformationGainLearner(BaseActionModelLearner):
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
 
+        # Filter/prioritize injective bindings based on action execution history
+        # Actions without successful observations: filter out non-injective (strict)
+        # Actions with successful observations: prioritize injective (lenient)
+        filtered_gains = []
+        for action_name, objects, gain in action_gains:
+            is_injective = is_injective_binding(objects)
+            has_success = self._has_successful_observation(action_name)
+
+            if has_success:
+                # Action already executed successfully - prioritize injective but allow non-injective
+                filtered_gains.append((action_name, objects, gain, is_injective))
+            else:
+                # Action not yet executed - filter out non-injective (unless no alternative)
+                if is_injective:
+                    filtered_gains.append((action_name, objects, gain, is_injective))
+                # Non-injective for unexecuted action: defer (handled in fallback below)
+
+        # Separate by injectivity, preserving gain ordering within each group
+        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
+        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
+
+        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
+        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
+        for action_name, objects, gain in action_gains:
+            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
+                # Check if this action type has any injective options
+                if action_name not in actions_with_injective:
+                    non_injective_actions.append((action_name, objects, gain))
+                    # TODO: use ESAM effects logic on non-injective bindings
+
+        if non_injective_actions:
+            logger.debug(f"Injective binding filter: {len(injective_actions)} injective, "
+                         f"{len(non_injective_actions)} non-injective actions")
+
+        action_gains = injective_actions + non_injective_actions
+
         # Log top action after sorting
         if action_gains:
             top_action, top_objects, top_gain = action_gains[0]
             logger.debug(f"\nTop action after sorting: {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
 
         return action_gains
+
+    def _should_use_parallel(self, num_actions: int) -> bool:
+        """
+        Determine whether parallel computation should be used.
+
+        Always uses parallel unless explicitly disabled (num_workers=0)
+        or only 1 worker is available.
+
+        Args:
+            num_actions: Number of grounded actions (unused, kept for API compatibility)
+
+        Returns:
+            True if parallel computation should be used
+        """
+        # Explicitly disabled
+        if self.num_workers == 0:
+            return False
+
+        # Must have more than 1 worker to benefit from parallelism
+        actual_workers = self.num_workers
+        if actual_workers is None:
+            actual_workers = os.cpu_count() or 4
+        if actual_workers <= 1:
+            return False
+
+        return True
+
+    def _get_or_create_pool(self, num_workers: int) -> ProcessPoolExecutor:
+        """
+        Get existing pool or create new one if worker count changed.
+
+        Maintains a persistent pool across iterations to avoid per-iteration
+        spawn overhead (~50-100ms per pool creation).
+
+        Args:
+            num_workers: Desired number of worker processes
+
+        Returns:
+            ProcessPoolExecutor ready for task submission
+        """
+        if self._pool is None or self._pool_workers != num_workers:
+            self._cleanup_pool()
+            self._pool = ProcessPoolExecutor(max_workers=num_workers)
+            self._pool_workers = num_workers
+            logger.debug(f"Created new process pool with {num_workers} workers")
+        return self._pool
+
+    def _cleanup_pool(self):
+        """
+        Shutdown existing pool if any.
+
+        Called when worker count changes or when learner is done.
+        Uses wait=False for faster shutdown since we don't need results.
+        """
+        if self._pool is not None:
+            try:
+                self._pool.shutdown(wait=False)
+                logger.debug(f"Shut down process pool ({self._pool_workers} workers)")
+            except Exception as e:
+                logger.warning(f"Error shutting down pool: {e}")
+            self._pool = None
+            self._pool_workers = 0
+
+    def _calculate_all_action_gains_parallel(self, grounded_actions: List, state: Set[str]) -> List[Tuple[str, List[str], float]]:
+        """
+        Parallel implementation of action gain computation.
+
+        Uses persistent ProcessPoolExecutor to distribute gain computation across
+        multiple workers. Each worker reconstructs its own CNFManagers from serialized state.
+
+        Args:
+            grounded_actions: List of GroundedAction objects
+            state: Current state as set of fluent strings
+
+        Returns:
+            List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
+        """
+        from src.algorithms.parallel_gain import (
+            ActionGainTask, _compute_action_gains_chunk_with_context
+        )
+
+        # Determine worker count
+        num_workers = self.num_workers
+        if num_workers is None:
+            num_workers = min(os.cpu_count() or 4, len(grounded_actions))
+        num_workers = max(1, min(num_workers, len(grounded_actions)))
+
+        logger.info(f"Parallel action gain computation: {len(grounded_actions)} actions, {num_workers} workers")
+
+        # Create context for workers
+        context = self._create_parallel_context(state)
+
+        # Create and chunk tasks (sort by action_name for better CNF cache reuse in workers)
+        tasks = [ActionGainTask(ga.action_name, list(ga.objects)) for ga in grounded_actions]
+        tasks.sort(key=lambda t: t.action_name)
+        chunk_size = max(1, (len(tasks) + num_workers - 1) // num_workers)
+        chunks = [tasks[i:i + chunk_size] for i in range(0, len(tasks), chunk_size)]
+
+        # Execute parallel computation using persistent pool
+        action_gains = []
+        try:
+            executor = self._get_or_create_pool(num_workers)
+            # Submit all chunks with context (context passed per-submission for persistence)
+            futures = [
+                executor.submit(_compute_action_gains_chunk_with_context, chunk, context)
+                for chunk in chunks
+            ]
+            for future in futures:
+                try:
+                    results = future.result(timeout=120)  # 2 min timeout per chunk
+                    for r in results:
+                        if r.error:
+                            logger.debug(f"Worker error for {r.action_name}: {r.error}")
+                        action_gains.append((r.action_name, r.objects, r.expected_gain))
+                except Exception as e:
+                    logger.error(f"Parallel chunk failed: {e}")
+        except Exception as e:
+            logger.error(f"Parallel execution failed, falling back to sequential: {e}")
+            self._cleanup_pool()  # Clean up on error
+            return self._calculate_all_action_gains_sequential(grounded_actions, state)
+
+        # Sort by gain (highest first)
+        action_gains.sort(key=lambda x: x[2], reverse=True)
+
+        # Filter/prioritize injective bindings based on action execution history
+        # Actions without successful observations: filter out non-injective (strict)
+        # Actions with successful observations: prioritize injective (lenient)
+        filtered_gains = []
+        for action_name, objects, gain in action_gains:
+            is_injective = is_injective_binding(objects)
+            has_success = self._has_successful_observation(action_name)
+
+            if has_success:
+                # Action already executed successfully - prioritize injective but allow non-injective
+                filtered_gains.append((action_name, objects, gain, is_injective))
+            else:
+                # Action not yet executed - filter out non-injective (unless no alternative)
+                if is_injective:
+                    filtered_gains.append((action_name, objects, gain, is_injective))
+                # Non-injective for unexecuted action: defer (handled in fallback below)
+
+        # Separate by injectivity, preserving gain ordering within each group
+        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
+        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
+
+        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
+        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
+        for action_name, objects, gain in action_gains:
+            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
+                # Check if this action type has any injective options
+                if action_name not in actions_with_injective:
+                    non_injective_actions.append((action_name, objects, gain))
+                    # TODO: use ESAM effects logic on non-injective bindings
+
+        if non_injective_actions:
+            logger.debug(f"Injective binding filter (parallel): {len(injective_actions)} injective, "
+                         f"{len(non_injective_actions)} non-injective actions")
+
+        action_gains = injective_actions + non_injective_actions
+
+        # Log top action after sorting
+        if action_gains:
+            top_action, top_objects, top_gain = action_gains[0]
+            logger.debug(f"\nTop action after sorting (parallel): {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
+
+        return action_gains
+
+    def _create_parallel_context(self, state: Set[str]) -> 'ActionGainContext':
+        """
+        Create serializable context for parallel workers.
+
+        Packages all necessary state for workers to compute gains independently.
+
+        Args:
+            state: Current state as set of fluent strings
+
+        Returns:
+            ActionGainContext with all necessary state for workers
+        """
+        from src.algorithms.parallel_gain import ActionGainContext
+
+        cnf_clauses = {}
+        cnf_fluent_to_var = {}
+        cnf_var_to_fluent = {}
+        cnf_next_var = {}
+        cnf_solution_cache = {}
+        parameter_bound_literals = {}
+        base_model_counts = {}
+
+        for action_name in self.pre.keys():
+            cnf = self.cnf_managers[action_name]
+            cnf_clauses[action_name] = [list(c) for c in cnf.cnf.clauses]
+            cnf_fluent_to_var[action_name] = dict(cnf.fluent_to_var)
+            # Convert int keys to str for JSON-safe serialization
+            cnf_var_to_fluent[action_name] = {k: v for k, v in cnf.var_to_fluent.items()}
+            cnf_next_var[action_name] = cnf.next_var
+            # Copy solution cache if available
+            if cnf._solution_cache is not None:
+                cnf_solution_cache[action_name] = [set(s) for s in cnf._solution_cache]
+            else:
+                cnf_solution_cache[action_name] = None
+            parameter_bound_literals[action_name] = set(self._get_parameter_bound_literals(action_name))
+            # Pre-compute base model count (avoids recalculation in workers)
+            base_model_counts[action_name] = self._get_base_model_count(action_name)
+
+        return ActionGainContext(
+            pre={k: set(v) for k, v in self.pre.items()},
+            pre_constraints={k: set(v) for k, v in self.pre_constraints.items()},
+            eff_add={k: set(v) for k, v in self.eff_add.items()},
+            eff_del={k: set(v) for k, v in self.eff_del.items()},
+            eff_maybe_add={k: set(v) for k, v in self.eff_maybe_add.items()},
+            eff_maybe_del={k: set(v) for k, v in self.eff_maybe_del.items()},
+            cnf_clauses=cnf_clauses,
+            cnf_fluent_to_var=cnf_fluent_to_var,
+            cnf_var_to_fluent=cnf_var_to_fluent,
+            cnf_next_var=cnf_next_var,
+            cnf_solution_cache=cnf_solution_cache,
+            parameter_bound_literals=parameter_bound_literals,
+            state=set(state),
+            base_model_counts=base_model_counts
+        )
 
     def _filter_applicable_actions(self, action_gains: List[Tuple[str, List[str], float]],
                                    state: Set[str]) -> List[Tuple[str, List[str]]]:
@@ -1558,6 +1856,22 @@ class InformationGainLearner(BaseActionModelLearner):
             )
         self._converged = True
         return True
+
+    def _has_successful_observation(self, action_name: str) -> bool:
+        """
+        Check if action has been successfully executed at least once.
+
+        Used to determine injective binding filtering strategy:
+        - Actions without successful observations: filter non-injective (strict)
+        - Actions with successful observations: prioritize injective (lenient)
+
+        Args:
+            action_name: Name of the lifted action
+
+        Returns:
+            True if at least one successful execution recorded
+        """
+        return any(obs['success'] for obs in self.observation_history.get(action_name, []))
 
     def _should_rotate_subset(self) -> bool:
         """

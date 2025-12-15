@@ -57,6 +57,28 @@ class GroundedAction:
         return self.to_string()
 
 
+def is_injective_binding(objects: List[str]) -> bool:
+    """
+    Check if all objects in a binding are distinct (injective mapping).
+
+    An injective binding maps each parameter to a unique object.
+    Non-injective bindings (e.g., drive(truck0, loc1, loc1)) create
+    ambiguity in effect learning.
+
+    Args:
+        objects: List of bound object names
+
+    Returns:
+        True if all objects are distinct, False otherwise
+
+    Examples:
+        is_injective_binding(['a', 'b', 'c']) -> True
+        is_injective_binding(['a', 'b', 'a']) -> False
+        is_injective_binding([]) -> True (trivially injective)
+    """
+    return len(set(objects)) == len(objects)
+
+
 # ========== Grounding Functions ==========
 
 def ground_action(lifted_action: LiftedAction, objects: List[str]) -> GroundedAction:
