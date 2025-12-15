@@ -466,16 +466,15 @@ class InformationGainLearner(BaseActionModelLearner):
             # Check for subset rotation
             elif self._should_rotate_subset():
                 if not self.subset_manager.rotate_state_aware(state):
-                    # All objects exhausted
-                    if self.subset_manager.should_fallback_to_all_objects():
-                        # Only fallback if there were fewer than 2 possible subsets
-                        logger.info("All subsets exhausted (< 2 possible) - switching to full object set")
-                        self.use_object_subset = False
-                        self._subset_iteration_count = 0
-                    else:
-                        # Multiple subsets were possible - learning through subsets is complete
-                        logger.info(f"All {self.subset_manager.get_max_possible_subsets()} subsets exhausted - subset learning complete")
-                        # Keep use_object_subset=True but exhausted, will return no_action
+                    # All subsets exhausted - switch to full object set for final validation
+                    # This ensures we don't get stuck with limited grounding space
+                    # and can validate/refine the learned model on all objects
+                    logger.info(
+                        f"All {self.subset_manager.get_max_possible_subsets()} subsets exhausted "
+                        f"- switching to full object set for final validation"
+                    )
+                    self.use_object_subset = False
+                    self._subset_iteration_count = 0
                 else:
                     self._subset_iteration_count = 0  # Reset counter after rotation
             else:
