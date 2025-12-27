@@ -77,3 +77,8 @@ algorithm_configs:
     model_stability_window: 50
     info_gain_epsilon: 0
     success_rate_threshold: 1
+    # Approximate counting settings
+    use_approximate_counting: true
+    approximate_threshold_vars: 15
+    approximate_epsilon: 0.3
+    approximate_delta: 0.05

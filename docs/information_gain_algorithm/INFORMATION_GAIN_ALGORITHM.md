@@ -109,6 +109,13 @@ eff?-(a) = La        # Possible delete effects (not yet confirmed or ruled out)
 **What happens**: Action execution succeeded, so we learn from the state transition.
 
 ```python
+
+# Update constraint sets
+pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)} ∪  {⋀{¬xl} | l ∈ (pre(a) \ bindP⁻¹(s, O))}
+# Keep only satisfied literals in each constraint
+# add unit clauses specifying that the literal 'l' cannot be true.
+# this constraint will reduce the enumeration count.
+
 # Keep only satisfied preconditions
 pre(a) = pre(a) ∩ bindP⁻¹(s, O)
 # Example with positive: If 'clear(?x)' is in pre(a) and clear(a) is true in s, keep it
@@ -123,9 +130,6 @@ eff-(a) = eff-(a) ∪ bindP(s \ s', O)     # Fluents that became false (delete e
 # Narrow down possible effects
 eff?+(a) = eff?+(a) ∩ bindP(s ∩ s', O)   # Fluents unchanged (still possible add effects)
 eff?-(a) = eff?-(a) \ bindP(s ∪ s', O)   # Remove fluents that were true or became true
-
-# Update constraint sets
-pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}  # Keep only satisfied literals in each constraint
 ```
 
 #### When Action Fails (a not applicable in state s)
@@ -151,7 +155,7 @@ CNF (Conjunctive Normal Form) allows us to:
 
 The algorithm builds a CNF formula to represent precondition uncertainty:
 
-```python
+```
 # Build CNF from constraint sets
 cnf_pre?(a) = ⋀(⋁xl) for B ∈ pre?(a), l ∈ B
 # Each constraint set B becomes a clause (disjunction)
@@ -175,7 +179,7 @@ This captures that either holding(x) is true OR on(x,y) is false (or both)
 ```
 
 For action applicability in state s with grounding O:
-```python
+```
 # Add constraints for unsatisfied literals
 cnf_pre?(a,O,s) = cnf_pre?(a) ⋀ (¬xl) for l ∈ (⋃pre?(a)) \ bindP(s, O)
 # For each literal NOT satisfied in s, add a unit clause asserting it's false
@@ -185,7 +189,7 @@ cnf_pre?(a,O,s) = cnf_pre?(a) ⋀ (¬xl) for l ∈ (⋃pre?(a)) \ bindP(s, O)
 
 The probability that action (a, O) is applicable in state s:
 
-```python
+```
 pr(app(a, O, s) = 1) = {
     1,                                             if pre?(a) = ∅
     |SAT(cnf_pre?(a,O,s))| / |SAT(cnf_pre?(a))|,  otherwise
@@ -212,13 +216,13 @@ The algorithm measures information gain in three areas:
 
 #### Success Case
 When action succeeds from state s:
-```python
-preAppPotential(a, O, s) = |pre(a) \ bindP(s, O)|
+```
+    preAppPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
 ```
 
 #### Failure Case
 When action fails from state s:
-```python
+```
 # Information gain from learning a precondition constraint
 preFailPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
 # Where |fluents| = |La| / 2 (La contains both p and ¬p for each fluent)
@@ -230,7 +234,7 @@ preFailPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|flue
 ### Effects Knowledge Gain
 
 For successful execution:
-```python
+```
 # Information gain from learning effects
 eff+Potential(a, O, s) = |eff?+(a) \ bindP(s, O)| / |La|  # Add effects we can rule out
 eff-Potential(a, O, s) = |eff?-(a) ∩ bindP(s, O)| / |La|  # Delete effects we can confirm
@@ -239,7 +243,7 @@ effPotential(a, O, s) = eff+Potential(a, O, s) + eff-Potential(a, O, s)
 
 ### Total Knowledge Gain
 
-```python
+```
 sucPotential(a, O, s) = effPotential(a, O, s) + preAppPotential(a, O, s)
 ```
 
@@ -249,7 +253,7 @@ sucPotential(a, O, s) = effPotential(a, O, s) + preAppPotential(a, O, s)
 
 For each grounded action (a, O) in state s:
 
-```python
+```
 E[X(a,O,s)] = pr(app(a,O,s)=1) * sucPotential(a,O,s) +
               pr(app(a,O,s)=0) * preFailPotential(a,O,s)
 ```
@@ -258,13 +262,13 @@ E[X(a,O,s)] = pr(app(a,O,s)=1) * sucPotential(a,O,s) +
 
 #### Option 1: Greedy Selection (Recommended)
 Select action that maximizes expected information gain:
-```python
+```
 argmax_{(a,O)} E[X(a,O,s)]
 ```
 
 #### Option 2: Probabilistic Selection (Exploration-friendly)
 Select actions with probability proportional to expected gain:
-```python
+```
 P_s(choose(a,O)) = w(a,O,s) / Σ_{all (a',O')} w(a',O',s)
 where w(a,O,s) = E[X(a,O,s)]
 ```
@@ -275,12 +279,12 @@ where w(a,O,s) = E[X(a,O,s)]
 
 1. **Variable Mapping**: Map fluents to CNF variable IDs
 2. **CNF Builder**: Construct CNF formulas from observations
-3. **SAT Solver**: Use PySAT (minisat) for model counting
+3. **SAT Solver**: Use PySAT (Glucose4) for model counting
 4. **Formula Minimizer**: Optimize large CNF formulas
 
 ### Core Algorithm Flow
 
-```python
+```
 # Main learning loop
 while not fully_learned:
     1. Calculate expected information gain for all actions
@@ -341,7 +345,7 @@ class InformationGainLearner:
         self.actions = extract_actions(domain)
         self.variable_mapper = VariableMapper()
         self.cnf_builder = CNFBuilder(self.variable_mapper)
-        self.sat_solver = SATSolver('minisat')
+        self.sat_solver = SATSolver('glucose4')
         self.initialize_action_models()
 
     def initialize_action_models(self):

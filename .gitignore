@@ -190,3 +190,5 @@ slurm_*.log
 /results/tests/*
 /results/full_suite/*
 /results/paper/*
+/docs/information_gain_algorithm/cnf/cnf_fix_strategy.md
+/docs/information_gain_algorithm/cnf/cnf_issues_analysis.md

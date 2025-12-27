@@ -18,6 +18,7 @@ from ..algorithms.information_gain import InformationGainLearner
 from ..environments.active_environment import ActiveEnvironment
 from ..environments.mock_environment import MockEnvironment
 from .metrics import MetricsCollector
+from ..core.colored_logging import create_file_handler
 
 # OLAM has been refactored to external post-processing approach
 # Import only if needed for backward compatibility
@@ -77,6 +78,9 @@ class ExperimentRunner:
         # Tracking
         self.start_time = None
         self.end_time = None
+
+        # Setup per-problem file logging
+        self._experiment_log_handler = self._setup_file_logging()
 
         logger.info(f"Initialized ExperimentRunner for {self.config['experiment']['name']}")
 
@@ -155,6 +159,37 @@ class ExperimentRunner:
             for key, value in section_defaults.items():
                 if key not in self.config[section]:
                     self.config[section][key] = value
+
+    def _setup_file_logging(self) -> Optional[logging.FileHandler]:
+        """
+        Setup file handler for experiment.log in output directory.
+
+        Returns:
+            FileHandler if created, None otherwise
+        """
+        try:
+            output_dir = Path(self.config['output']['directory'])
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            log_path = output_dir / 'experiment.log'
+            handler = create_file_handler(str(log_path))
+
+            # Add to root logger to capture all module logs
+            logging.getLogger().addHandler(handler)
+            return handler
+        except Exception as e:
+            logger.warning(f"Failed to setup file logging: {e}")
+            return None
+
+    def _cleanup_file_logging(self) -> None:
+        """Remove and close the experiment file handler."""
+        if self._experiment_log_handler:
+            try:
+                logging.getLogger().removeHandler(self._experiment_log_handler)
+                self._experiment_log_handler.close()
+                self._experiment_log_handler = None
+            except Exception as e:
+                logger.warning(f"Failed to cleanup file logging: {e}")
 
     def _init_learner(self) -> BaseActionModelLearner:
         """
@@ -538,6 +573,9 @@ class ExperimentRunner:
                 logger.error(f"Failed to save learned model: {e}")
 
         logger.info(f"Exported results to {output_dir}")
+
+        # Cleanup file logging after export
+        self._cleanup_file_logging()
 
     def _cleanup_old_test_results(self, test_dir: Path) -> None:
         """

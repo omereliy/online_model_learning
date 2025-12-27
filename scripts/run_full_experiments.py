@@ -42,12 +42,9 @@ sys.path.insert(0, str(project_root))
 
 from src.experiments.runner import ExperimentRunner
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%H:%M:%S'
-)
+# Setup colored logging
+from src.core.colored_logging import setup_colored_logging
+setup_colored_logging(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Experiment modes

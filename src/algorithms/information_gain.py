@@ -146,7 +146,7 @@ class InformationGainLearner(BaseActionModelLearner):
                 random_seed=kwargs.get('seed'),
                 defer_initial_selection=True  # Wait for state to select subset
             )
-            logger.info(f"Object subset selection enabled (deferred until first state): {self.subset_manager.get_status()}")
+            logger.info(f"[SUBSET] Object subset selection enabled (deferred until first state): {self.subset_manager.get_status()}")
 
         # Parallel computation settings (Phase C optimization)
         self.num_workers = num_workers
@@ -155,6 +155,14 @@ class InformationGainLearner(BaseActionModelLearner):
         # Persistent process pool for parallel computation (avoids per-iteration spawn overhead)
         self._pool: Optional['ProcessPoolExecutor'] = None
         self._pool_workers: int = 0
+
+        # Approximate counting configuration (for large formulas)
+        # Note: Threshold lowered from 15 to 8 to avoid exponential enumeration
+        # when model count is large despite few variables (e.g., blocksworld with weak constraints)
+        self.use_approximate_counting = kwargs.get('use_approximate_counting', True)
+        self.approximate_threshold_vars = kwargs.get('approximate_threshold_vars', 8)
+        self.approximate_epsilon = kwargs.get('approximate_epsilon', 0.3)
+        self.approximate_delta = kwargs.get('approximate_delta', 0.05)
 
         # Initialize action models
         logger.debug("Initializing action models")
@@ -216,7 +224,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             Set of grounded literals (e.g., {'on_a_b', '¬clear_a'})
         """
-        logger.debug(f"bindP_inverse: Grounding {len(literals)} literals")
+        # logger.debug(f"bindP_inverse: Grounding {len(literals)} literals")
         return grounding.ground_literal_set(literals, objects)
 
     def bindP(self, fluents: Set[str], objects: List[str]) -> Set[str]:
@@ -287,15 +295,12 @@ class InformationGainLearner(BaseActionModelLearner):
         unsatisfied = all_constraint_literals - satisfied_literals
 
         # Build state constraints dict for CNF manager
+        # For action to be applicable, unsatisfied literals must NOT be preconditions
+        # (If an unsatisfied literal IS a precondition, action is inapplicable)
+        # Literals are variable names (¬ is part of name, not CNF negation)
         state_constraints = {}
         for literal in unsatisfied:
-            if literal.startswith('¬'):
-                # Negative literal is unsatisfied, so positive must be true
-                positive = literal[1:]
-                state_constraints[positive] = True
-            else:
-                # Positive literal is unsatisfied, so it must be false
-                state_constraints[literal] = False
+            state_constraints[literal] = False  # var_literal = FALSE (not a precondition)
 
         # Count models with state constraints using assumptions (Phase 2 enhancement - no deep copy!)
         assumptions = cnf.state_constraints_to_assumptions(state_constraints)
@@ -310,7 +315,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Calculate potential information gain from successful execution.
 
         According to algorithm:
-        - preAppPotential(a, O, s) = |pre(a) \ bindP(s, O)|
+        - preAppPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
         - effPotential(a, O, s) = eff+Potential + eff-Potential
         - sucPotential(a, O, s) = effPotential + preAppPotential
 
@@ -325,8 +330,44 @@ class InformationGainLearner(BaseActionModelLearner):
         state_internal = self._state_to_internal(state)
         satisfied_literals = self._get_satisfied_literals(action, state_internal, objects)
 
-        # Precondition knowledge gain: literals that would be ruled out
-        pre_gain = len(self.pre[action] - satisfied_literals)
+        # Calculate normalization factor: 3^|fluents| where |fluents| = |La| / 2
+        la_size = len(self._get_parameter_bound_literals(action))
+        num_fluents = la_size // 2  # La contains both p and ¬p for each fluent
+        total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
+
+        # Calculate precondition knowledge gain using SAT count difference
+        # preAppPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
+        if not self.pre_constraints[action]:
+            # No CNF constraints yet - no precondition gain from success
+            pre_gain = 0
+        else:
+            # Build CNF formula if needed
+            if not self.cnf_managers[action].has_clauses():
+                self._build_cnf_formula(action)
+
+            cnf = self.cnf_managers[action]
+
+            # Get current SAT count
+            current_models = self._get_base_model_count(action)
+
+            # Simulate adding unit clauses for satisfied literals
+            # Each satisfied literal l was satisfied in state, so l is NOT required as a precondition
+            # Use get_variable() to avoid creating new variables as side effect
+            unit_clause_assumptions = []
+            for literal in satisfied_literals:
+                if literal in self.pre[action]:
+                    var_id = cnf.get_variable(literal)
+                    if var_id is not None:
+                        unit_clause_assumptions.append(-var_id)  # literal is NOT a precondition
+
+            # Count models after adding unit clause assumptions
+            if unit_clause_assumptions and cnf.has_clauses():
+                new_models = cnf.count_models_with_assumptions(unit_clause_assumptions)
+            else:
+                new_models = current_models
+
+            # Calculate precondition gain as model reduction
+            pre_gain = current_models - new_models
 
         # Effect knowledge gain
         # eff+Potential(a, O, s) = |eff?+(a) \ bindP(s, O)| / |La|
@@ -341,12 +382,10 @@ class InformationGainLearner(BaseActionModelLearner):
         # Delete effects we can confirm (are in current state)
         eff_del_gain = len(self.eff_maybe_del[action].intersection(lifted_state))
 
-        # Normalize by La size
-        la_size = len(self._get_parameter_bound_literals(action))
-        if la_size == 0:
+        if total_hypotheses == 0:
             return 0.0
 
-        normalized_gain = (pre_gain + eff_add_gain + eff_del_gain) / la_size
+        normalized_gain = (pre_gain + eff_add_gain + eff_del_gain) / total_hypotheses
         logger.debug(f"Success potential for {action}: {normalized_gain:.3f} "
                     f"(pre: {pre_gain}, eff+: {eff_add_gain}, eff-: {eff_del_gain})")
         return normalized_gain
@@ -461,7 +500,7 @@ class InformationGainLearner(BaseActionModelLearner):
         if self.use_object_subset and self.subset_manager:
             # First iteration: select initial subset using state information
             if self.subset_manager.subset_rotation_count == 0:
-                logger.info(f"Selecting initial state-aware subset (max possible subsets: {self.subset_manager.get_max_possible_subsets()})")
+                logger.info(f"[SUBSET] Selecting initial state-aware subset (max possible subsets: {self.subset_manager.get_max_possible_subsets()})")
                 self.subset_manager.select_state_aware_subset(state)
             # Check for subset rotation
             elif self._should_rotate_subset():
@@ -470,7 +509,7 @@ class InformationGainLearner(BaseActionModelLearner):
                     # This ensures we don't get stuck with limited grounding space
                     # and can validate/refine the learned model on all objects
                     logger.info(
-                        f"All {self.subset_manager.get_max_possible_subsets()} subsets exhausted "
+                        f"[SUBSET] All {self.subset_manager.get_max_possible_subsets()} subsets exhausted "
                         f"- switching to full object set for final validation"
                     )
                     self.use_object_subset = False
@@ -578,22 +617,17 @@ class InformationGainLearner(BaseActionModelLearner):
             grounded_actions = ground_all_actions_with_subset(
                 self.domain, active_objects, require_injective=False
             )
-            logger.debug(f"Using object subset with {len(active_objects)} objects")
+            logger.debug(f"[SUBSET] Using object subset with {len(active_objects)} objects")
         else:
             grounded_actions = grounding.ground_all_actions(self.domain, require_injective=False)
 
         if not grounded_actions:
             return []
 
-        # Performance optimization: Pre-populate solution cache for all actions with constraints
-        # This ensures count_models_with_assumptions() uses O(solutions * assumptions) filtering
-        # instead of O(SAT_SOLVE) for each grounded action query
-        for action_name in self.pre_constraints.keys():
-            if self.pre_constraints[action_name]:
-                cnf = self.cnf_managers[action_name]
-                if not cnf._cache_valid or cnf._solution_cache is None:
-                    if cnf.has_clauses():
-                        cnf.get_all_solutions()  # Force cache population
+        # NOTE: Removed cache pre-population loop that caused exponential enumeration hang
+        # The loop called get_all_solutions() which enumerates ALL models - extremely slow
+        # when model count is large (e.g., 2000+ in blocksworld) even with few variables.
+        # Model counting is now done on-demand with count_solutions() which is more efficient.
 
         # Determine whether to use parallel computation
         num_actions = len(grounded_actions)
@@ -758,7 +792,7 @@ class InformationGainLearner(BaseActionModelLearner):
             self._cleanup_pool()
             self._pool = ProcessPoolExecutor(max_workers=num_workers)
             self._pool_workers = num_workers
-            logger.debug(f"Created new process pool with {num_workers} workers")
+            logger.debug(f"[PARALLEL] Created new process pool with {num_workers} workers")
         return self._pool
 
     def _cleanup_pool(self):
@@ -771,11 +805,15 @@ class InformationGainLearner(BaseActionModelLearner):
         if self._pool is not None:
             try:
                 self._pool.shutdown(wait=False)
-                logger.debug(f"Shut down process pool ({self._pool_workers} workers)")
+                logger.debug(f"[PARALLEL] Shut down process pool ({self._pool_workers} workers)")
             except Exception as e:
-                logger.warning(f"Error shutting down pool: {e}")
+                logger.warning(f"[PARALLEL] Error shutting down pool: {e}")
             self._pool = None
             self._pool_workers = 0
+
+    def __del__(self):
+        """Destructor to ensure process pool cleanup on object destruction."""
+        self._cleanup_pool()
 
     def _calculate_all_action_gains_parallel(self, grounded_actions: List, state: Set[str]) -> List[Tuple[str, List[str], float]]:
         """
@@ -801,7 +839,7 @@ class InformationGainLearner(BaseActionModelLearner):
             num_workers = min(os.cpu_count() or 4, len(grounded_actions))
         num_workers = max(1, min(num_workers, len(grounded_actions)))
 
-        logger.info(f"Parallel action gain computation: {len(grounded_actions)} actions, {num_workers} workers")
+        logger.info(f"[PARALLEL] Action gain computation: {len(grounded_actions)} actions, {num_workers} workers")
 
         # Create context for workers
         context = self._create_parallel_context(state)
@@ -826,12 +864,12 @@ class InformationGainLearner(BaseActionModelLearner):
                     results = future.result(timeout=120)  # 2 min timeout per chunk
                     for r in results:
                         if r.error:
-                            logger.debug(f"Worker error for {r.action_name}: {r.error}")
+                            logger.debug(f"[PARALLEL] Worker error for {r.action_name}: {r.error}")
                         action_gains.append((r.action_name, r.objects, r.expected_gain))
                 except Exception as e:
-                    logger.error(f"Parallel chunk failed: {e}")
+                    logger.error(f"[PARALLEL] Chunk failed: {e}")
         except Exception as e:
-            logger.error(f"Parallel execution failed, falling back to sequential: {e}")
+            logger.error(f"[PARALLEL] Execution failed, falling back to sequential: {e}")
             self._cleanup_pool()  # Clean up on error
             return self._calculate_all_action_gains_sequential(grounded_actions, state)
 
@@ -869,7 +907,7 @@ class InformationGainLearner(BaseActionModelLearner):
                     # TODO: use ESAM effects logic on non-injective bindings
 
         if non_injective_actions:
-            logger.debug(f"Injective binding filter (parallel): {len(injective_actions)} injective, "
+            logger.debug(f"[PARALLEL] Injective binding filter: {len(injective_actions)} injective, "
                          f"{len(non_injective_actions)} non-injective actions")
 
         action_gains = injective_actions + non_injective_actions
@@ -877,7 +915,7 @@ class InformationGainLearner(BaseActionModelLearner):
         # Log top action after sorting
         if action_gains:
             top_action, top_objects, top_gain = action_gains[0]
-            logger.debug(f"\nTop action after sorting (parallel): {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
+            logger.debug(f"[PARALLEL] Top action after sorting: {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
 
         return action_gains
 
@@ -910,8 +948,8 @@ class InformationGainLearner(BaseActionModelLearner):
             # Convert int keys to str for JSON-safe serialization
             cnf_var_to_fluent[action_name] = {k: v for k, v in cnf.var_to_fluent.items()}
             cnf_next_var[action_name] = cnf.next_var
-            # Copy solution cache if available
-            if cnf._solution_cache is not None:
+            # Copy solution cache ONLY if it's valid (invalidated by clause additions)
+            if cnf._cache_valid and cnf._solution_cache is not None:
                 cnf_solution_cache[action_name] = [set(s) for s in cnf._solution_cache]
             else:
                 cnf_solution_cache[action_name] = None
@@ -933,7 +971,11 @@ class InformationGainLearner(BaseActionModelLearner):
             cnf_solution_cache=cnf_solution_cache,
             parameter_bound_literals=parameter_bound_literals,
             state=set(state),
-            base_model_counts=base_model_counts
+            base_model_counts=base_model_counts,
+            use_approximate_counting=self.use_approximate_counting,
+            approximate_threshold_vars=self.approximate_threshold_vars,
+            approximate_epsilon=self.approximate_epsilon,
+            approximate_delta=self.approximate_delta
         )
 
     def _filter_applicable_actions(self, action_gains: List[Tuple[str, List[str], float]],
@@ -1213,6 +1255,10 @@ class InformationGainLearner(BaseActionModelLearner):
         satisfied_in_state = self._get_satisfied_literals(action, state_internal, objects)
         logger.debug(f"  Satisfied literals: {len(satisfied_in_state)}/{len(self.pre[action])}")
 
+        # Capture unsatisfied literals BEFORE intersection (for unit clause constraints)
+        # These literals cannot be preconditions since action succeeded without them
+        unsatisfied_literals = self.pre[action] - satisfied_in_state
+
         # Update preconditions: keep only satisfied literals
         # pre(a) = pre(a) ∩ bindP⁻¹(s, O)
         pre_before = len(self.pre[action])
@@ -1258,7 +1304,7 @@ class InformationGainLearner(BaseActionModelLearner):
         self._remove_contradictions(action, self.eff_add[action], self.eff_del[action])
 
         # Update constraint sets
-        # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
+        # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)} ∪ {⋀{¬xl} | l ∈ (pre(a) ∩ bindP⁻¹(s, O))}
         constraints_before = len(self.pre_constraints[action])
         updated_constraints = set()
         for constraint in self.pre_constraints[action]:
@@ -1266,6 +1312,21 @@ class InformationGainLearner(BaseActionModelLearner):
             updated = constraint.intersection(satisfied_in_state)
             if updated:  # Don't add empty constraints
                 updated_constraints.add(frozenset(updated))
+
+        # Add unit clauses for UNSATISFIED literals to exclude them from being preconditions
+        # {⋀{¬xl} | l ∈ (pre(a) \ bindP⁻¹(s, O))}
+        # Each unsatisfied literal gets a unit clause saying it cannot be a precondition
+        # (action succeeded without them being satisfied, so they can't be required)
+        for literal in unsatisfied_literals:
+            # Add negated unit clause - if literal is "p(?x)", add "¬p(?x)"
+            # If literal is "¬p(?x)", add "p(?x)" (double negation)
+            if literal.startswith('¬'):
+                negated = literal[1:]  # Remove negation
+            else:
+                negated = '¬' + literal  # Add negation
+            unit_clause = frozenset({negated})
+            updated_constraints.add(unit_clause)
+
         self.pre_constraints[action] = updated_constraints
         # Invalidate cache after modifying constraints
         self._invalidate_constraint_cache(action)
@@ -1277,6 +1338,16 @@ class InformationGainLearner(BaseActionModelLearner):
             modified = self.cnf_managers[action].refine_clauses_by_intersection(satisfied_in_state)
             if modified > 0:
                 logger.debug(f"  Refined {modified} CNF clauses directly (incremental update)")
+
+        # Add unit clauses to CNF for UNSATISFIED literals (reduces model count)
+        # These correspond to the {⋀{¬xl} | l ∈ (pre(a) \ bindP⁻¹(s, O))} constraint
+        # Unsatisfied literals cannot be preconditions since action succeeded without them
+        for literal in unsatisfied_literals:
+            # Always prefix with '-' to say "literal is NOT a precondition"
+            # CNF Manager treats 'p(?x)' and '¬p(?x)' as different variables
+            # So '-p(?x)' means "p(?x) var = FALSE" and '-¬p(?x)' means "¬p(?x) var = FALSE"
+            clause = ['-' + literal]
+            self.cnf_managers[action].add_clause_with_subsumption(clause)
 
         logger.info(f"Success update complete for {action}: |pre|={len(self.pre[action])}, "
                     f"|eff+|={len(self.eff_add[action])}, |eff-|={len(self.eff_del[action])}")
@@ -1324,14 +1395,9 @@ class InformationGainLearner(BaseActionModelLearner):
                     f"(total constraints: {constraints_before} → {new_count})")
 
                 # Session 2: Incremental CNF update - add clause directly instead of full rebuild
-                # Convert unsatisfied literals to clause format for CNF manager
-                clause = []
-                for literal in unsatisfied:
-                    if literal.startswith('¬'):
-                        # Negative literal ¬p becomes -p in clause
-                        clause.append('-' + literal[1:])
-                    else:
-                        clause.append(literal)
+                # Failure constraint: "at least one of these IS a precondition"
+                # Literals are variable names (¬ is part of the name, not CNF negation)
+                clause = list(unsatisfied)
                 if clause:
                     self.cnf_managers[action].add_clause_with_subsumption(clause)
                     logger.debug(f"  Added clause to CNF directly (incremental update)")
@@ -1449,6 +1515,9 @@ class InformationGainLearner(BaseActionModelLearner):
 
         Each constraint set becomes a clause (disjunction).
 
+        Also adds mutual exclusion constraints: p and ¬p can't both be preconditions.
+        This reduces model space from 4 to 3 states per fluent pair.
+
         Args:
             action: Action name
 
@@ -1461,9 +1530,51 @@ class InformationGainLearner(BaseActionModelLearner):
         # Use CNF manager method to build from constraint sets
         cnf.build_from_constraint_sets(self.pre_constraints[action])
 
+        # Add mutual exclusion constraints: ¬(p ∧ ¬p) for each fluent pair
+        # This means p and ¬p can't both be preconditions (contradiction)
+        # CNF form: (¬X_p ∨ ¬X_¬p) = [-var_p, -var_¬p]
+        self._add_mutual_exclusion_constraints(action, cnf)
+
         logger.info(f"CNF formula built for '{action}': {len(cnf.cnf.clauses)} clauses, "
                     f"{len(cnf.fluent_to_var)} unique variables")
         return cnf
+
+    def _add_mutual_exclusion_constraints(self, action: str, cnf: 'CNFManager') -> None:
+        """
+        Add mutual exclusion constraints: p and ¬p can't both be preconditions.
+
+        For each fluent f in the action's parameter-bound literals:
+        - If both f and ¬f exist as variables, add clause [-var_f, -var_¬f]
+        - This reduces model space from 4 to 3 states per fluent pair
+
+        Args:
+            action: Action name
+            cnf: CNF manager to add constraints to
+        """
+        # Get all positive fluents (without ¬ prefix)
+        positive_fluents = set()
+        for fluent in cnf.fluent_to_var.keys():
+            if fluent.startswith('¬'):
+                positive_fluents.add(fluent[1:])
+            else:
+                positive_fluents.add(fluent)
+
+        # For each positive fluent, check if both p and ¬p have variables
+        mutex_count = 0
+        for fluent in positive_fluents:
+            neg_fluent = '¬' + fluent
+
+            var_p = cnf.fluent_to_var.get(fluent)
+            var_neg_p = cnf.fluent_to_var.get(neg_fluent)
+
+            if var_p is not None and var_neg_p is not None:
+                # Add mutual exclusion: ¬(p ∧ ¬p) = (¬p ∨ ¬¬p) in hypothesis space
+                # CNF: [-var_p, -var_neg_p]
+                cnf.add_var_clause([-var_p, -var_neg_p])
+                mutex_count += 1
+
+        if mutex_count > 0:
+            logger.debug(f"Added {mutex_count} mutual exclusion constraints for {action}")
 
     def _get_base_model_count(self, action: str) -> int:
         """
@@ -1493,8 +1604,13 @@ class InformationGainLearner(BaseActionModelLearner):
             la_size = len(self._get_parameter_bound_literals(action))
             count = 2 ** la_size if la_size > 0 else 1
         else:
-            # Perform expensive count and cache it
-            count = cnf.count_solutions()
+            # Perform count using adaptive method (exact for small, approximate for large)
+            count = cnf.count_solutions_adaptive(
+                threshold=self.approximate_threshold_vars,
+                use_approximate=self.use_approximate_counting,
+                epsilon=self.approximate_epsilon,
+                delta=self.approximate_delta
+            )
 
         # Cache the result
         self._base_cnf_count_cache[action] = count
@@ -1919,10 +2035,10 @@ class InformationGainLearner(BaseActionModelLearner):
 
         if self.subset_manager.rotate_subset():
             self._subset_iteration_count = 0  # Reset subset iteration counter
-            logger.info(f"Rotated to new subset: {self.subset_manager.get_status()}")
+            logger.info(f"[SUBSET] Rotated to new subset: {self.subset_manager.get_status()}")
             return True
         else:
-            logger.info("Cannot rotate - all objects exhausted")
+            logger.info("[SUBSET] Cannot rotate - all objects exhausted")
             return False
 
     def export_model_snapshot(self, iteration: int, output_dir: Path) -> None:
@@ -2021,6 +2137,9 @@ class InformationGainLearner(BaseActionModelLearner):
     def reset(self) -> None:
         """Reset the learner to initial state."""
         logger.info("Resetting learner to initial state")
+
+        # Clean up process pool to prevent orphaned workers
+        self._cleanup_pool()
 
         super().reset()
 

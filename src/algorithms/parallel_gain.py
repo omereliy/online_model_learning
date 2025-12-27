@@ -48,6 +48,12 @@ class ActionGainContext:
     # Pre-computed base model counts (avoids recalculation in workers)
     base_model_counts: Dict[str, int] = field(default_factory=dict)
 
+    # Approximate counting configuration
+    use_approximate_counting: bool = True
+    approximate_threshold_vars: int = 15
+    approximate_epsilon: float = 0.3
+    approximate_delta: float = 0.05
+
     # Cached constraint literals (computed on access)
     _constraint_literals_cache: Dict[str, Set[str]] = field(default_factory=dict)
 
@@ -131,11 +137,15 @@ class WorkerCNFCache:
         for clause in self.context.cnf_clauses.get(action_name, []):
             mgr.cnf.append(list(clause))
 
-        # Restore solution cache for fast filtering
+        # Restore solution cache for fast filtering (only if explicitly provided and valid)
         cached_solutions = self.context.cnf_solution_cache.get(action_name)
         if cached_solutions is not None:
             mgr._solution_cache = [set(s) for s in cached_solutions]
             mgr._cache_valid = True
+        else:
+            # Explicitly set invalid cache when no valid cache provided
+            mgr._solution_cache = None
+            mgr._cache_valid = False
 
         return mgr
 
@@ -187,7 +197,7 @@ def _compute_action_gains_chunk(tasks: List[ActionGainTask]) -> List[ActionGainR
                 expected_gain=gain
             ))
         except Exception as e:
-            logger.debug(f"Error computing gain for {task.action_name}({task.objects}): {e}")
+            logger.debug(f"[PARALLEL] Error computing gain for {task.action_name}({task.objects}): {e}")
             results.append(ActionGainResult(
                 action_name=task.action_name,
                 objects=task.objects,
@@ -237,7 +247,7 @@ def _compute_action_gains_chunk_with_context(
                 expected_gain=gain
             ))
         except Exception as e:
-            logger.debug(f"Error computing gain for {task.action_name}({task.objects}): {e}")
+            logger.debug(f"[PARALLEL] Error computing gain for {task.action_name}({task.objects}): {e}")
             results.append(ActionGainResult(
                 action_name=task.action_name,
                 objects=task.objects,
@@ -275,7 +285,7 @@ def _compute_single_action_gain(
 
     # Calculate probability of success and gain components
     prob_success = _calculate_applicability_probability(action_name, objects, ctx, cnf)
-    gain_success = _calculate_potential_gain_success(action_name, objects, ctx)
+    gain_success = _calculate_potential_gain_success(action_name, objects, ctx, cnf)
 
     # Check for early termination on failure gain
     state_internal = ctx.state.copy()
@@ -376,14 +386,13 @@ def _calculate_applicability_probability(
     all_constraint_literals = _get_all_constraint_literals(action_name, ctx)
     unsatisfied = all_constraint_literals - satisfied
 
-    # Build state constraints dict
+    # Build state constraints dict for CNF manager
+    # For action to be applicable, unsatisfied literals must NOT be preconditions
+    # (If an unsatisfied literal IS a precondition, action is inapplicable)
+    # Literals are variable names (¬ is part of name, not CNF negation)
     state_constraints = {}
     for literal in unsatisfied:
-        if literal.startswith('¬'):
-            positive = literal[1:]
-            state_constraints[positive] = True
-        else:
-            state_constraints[literal] = False
+        state_constraints[literal] = False  # var_literal = FALSE (not a precondition)
 
     # Count models with assumptions
     assumptions = cnf.state_constraints_to_assumptions(state_constraints)
@@ -394,10 +403,10 @@ def _calculate_applicability_probability(
 
 def _get_base_model_count(action_name: str, ctx: ActionGainContext, cnf: 'CNFManager') -> int:
     """
-    Get base model count for action.
+    Get base model count for action, using adaptive counting for complex formulas.
 
     Uses pre-computed base model counts from context if available,
-    otherwise falls back to calculation (for backwards compatibility).
+    otherwise falls back to adaptive counting.
     """
     # Use pre-computed count if available (avoids expensive recalculation)
     if ctx.base_model_counts and action_name in ctx.base_model_counts:
@@ -408,17 +417,29 @@ def _get_base_model_count(action_name: str, ctx: ActionGainContext, cnf: 'CNFMan
         la_size = len(ctx.parameter_bound_literals.get(action_name, set()))
         return 2 ** la_size if la_size > 0 else 1
 
+    # Use adaptive counting based on configuration
+    num_vars = len(cnf.fluent_to_var)
+    if num_vars > ctx.approximate_threshold_vars and ctx.use_approximate_counting:
+        try:
+            return cnf.count_solutions_approximate(ctx.approximate_epsilon, ctx.approximate_delta)
+        except ImportError:
+            # pyapproxmc not available - use upper bound estimate
+            logger.warning(f"[APPROX] pyapproxmc not available, using upper bound 2^{num_vars}")
+            return 2 ** num_vars
+
     return cnf.count_solutions()
 
 
 def _calculate_potential_gain_success(
     action_name: str,
     objects: List[str],
-    ctx: ActionGainContext
+    ctx: ActionGainContext,
+    cnf: 'CNFManager' = None
 ) -> float:
     """
     Calculate potential information gain from successful execution.
 
+    preAppPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
     sucPotential = preAppPotential + effPotential
     """
     from src.core.grounding import ground_literal_set
@@ -426,8 +447,41 @@ def _calculate_potential_gain_success(
     state_internal = ctx.state.copy()
     satisfied = _get_satisfied_literals(action_name, state_internal, objects, ctx)
 
-    # Precondition gain: literals that would be ruled out
-    pre_gain = len(ctx.pre.get(action_name, set()) - satisfied)
+    # Calculate normalization factor: 3^|fluents| where |fluents| = |La| / 2
+    la_size = len(ctx.parameter_bound_literals.get(action_name, set()))
+    num_fluents = la_size // 2  # La contains both p and ¬p for each fluent
+    total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
+
+    # Calculate precondition knowledge gain using SAT count difference
+    # preAppPotential(a, O, s) = (|SAT(cnf_pre?(a))| - |SAT(cnf'_pre?(a))|) / 3^|fluents|
+    if not ctx.pre_constraints.get(action_name):
+        # No CNF constraints yet - no precondition gain from success
+        pre_gain = 0
+    else:
+        # Get current SAT count
+        current_models = _get_base_model_count(action_name, ctx, cnf)
+
+        # Simulate adding unit clauses for satisfied literals
+        # Each satisfied literal l was satisfied in state, so l is NOT required as a precondition
+        # Assumption: var_l = FALSE for each satisfied literal
+        # Literals are variable names (¬ is part of name, not CNF negation)
+        unit_clause_assumptions = []
+        pre_literals = ctx.pre.get(action_name, set())
+        for literal in satisfied:
+            if literal in pre_literals:
+                # Use get_variable() to avoid creating new variables as side effect
+                var_id = cnf.get_variable(literal) if cnf else None
+                if var_id is not None:
+                    unit_clause_assumptions.append(-var_id)  # literal is NOT a precondition
+
+        # Count models after adding unit clause assumptions
+        if unit_clause_assumptions and cnf and cnf.has_clauses():
+            new_models = cnf.count_models_with_assumptions(unit_clause_assumptions)
+        else:
+            new_models = current_models
+
+        # Calculate precondition gain as model reduction
+        pre_gain = current_models - new_models
 
     # Get lifted versions of state fluents
     # We need bindP (lift_fluent_set), but we don't have domain in workers
@@ -450,12 +504,10 @@ def _calculate_potential_gain_success(
     # Count grounded maybe_del fluents that are in state
     eff_del_gain = sum(1 for g in grounded_maybe_del if g in state_internal)
 
-    # Normalize by La size
-    la_size = len(ctx.parameter_bound_literals.get(action_name, set()))
-    if la_size == 0:
+    if total_hypotheses == 0:
         return 0.0
 
-    return (pre_gain + eff_add_gain + eff_del_gain) / la_size
+    return (pre_gain + eff_add_gain + eff_del_gain) / total_hypotheses
 
 
 def _calculate_potential_gain_failure(

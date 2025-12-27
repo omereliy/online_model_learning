@@ -17,3 +17,6 @@ typing-extensions>=4.0.0
 
 # Optional: For formula minimization
 pyeda>=0.28.0
+
+# Approximate model counting (required for large formulas)
+pyapproxmc>=4.0.0

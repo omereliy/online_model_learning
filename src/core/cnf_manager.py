@@ -3,13 +3,8 @@ CNF Manager for Online Action Model Learning
 Manages CNF formulas for precondition/effect uncertainty using PySAT.
 """
 
-try:
-    from pysat.solvers import Minisat22
-    from pysat.formula import CNF
-except ImportError:
-    # python-sat package uses different import path
-    from pysat.solvers import Minisat22
-    from pysat.formula import CNF
+from pysat.solvers import Glucose4
+from pysat.formula import CNF
 
 import itertools
 import logging
@@ -30,7 +25,7 @@ class CNFManager:
         self._solution_cache = None
         self._cache_valid = False
         # Solver reuse (Session 2 optimization)
-        self._solver: Optional[Minisat22] = None
+        self._solver: Optional[Glucose4] = None
         self._solver_valid: bool = False
 
     def add_fluent(self, fluent_str: str) -> int:
@@ -61,9 +56,55 @@ class CNFManager:
         """
         return self.fluent_to_var.get(fluent_str)
 
+    def _literal_to_var(self, literal: str) -> tuple:
+        """
+        Convert a literal string to (variable_id, is_negated) tuple.
+
+        Handles negation:
+        - '-' (ASCII): CNF negation prefix meaning "variable = FALSE"
+        - '¬' (Unicode): Part of fluent name, treated as DISTINCT variable
+
+        IMPORTANT: p(?x) and ¬p(?x) are treated as TWO SEPARATE VARIABLES.
+        This is required by the information gain algorithm which models:
+        - "is p(?x) a precondition?" (yes/no)
+        - "is ¬p(?x) a precondition?" (yes/no)
+        as independent questions in the hypothesis space.
+
+        Args:
+            literal: Literal string, possibly with '-' prefix for CNF negation
+                    The '¬' prefix is kept as part of the fluent name.
+
+        Returns:
+            Tuple of (variable_id, is_negated) where is_negated indicates
+            whether the variable should be negated in the CNF clause
+        """
+        cnf_negated = False
+        fluent = literal
+
+        # Check for CNF negation prefix '-'
+        if fluent.startswith('-'):
+            cnf_negated = True
+            fluent = fluent[1:]
+
+        # IMPORTANT: Keep '¬' as part of the fluent name!
+        # '¬clear(?x)' is a distinct fluent from 'clear(?x)'
+        # Do NOT strip '¬' - it represents a negative precondition literal
+
+        # Register the fluent (including any ¬ prefix) as a variable
+        var_id = self.add_fluent(fluent)
+
+        return var_id, cnf_negated
+
     def add_clause(self, clause: List[str]):
         """
-        Add clause with fluent strings (prefix '-' for negation).
+        Add clause with fluent strings (prefix '-' for CNF negation).
+
+        - '-' (ASCII): CNF negation prefix meaning "variable = FALSE"
+        - '¬' (Unicode): Part of fluent name (distinct variable from positive form)
+
+        IMPORTANT: p(?x) and ¬p(?x) are treated as separate variables.
+        - '-clear(?x)' means "clear(?x) variable = FALSE"
+        - '-¬clear(?x)' means "¬clear(?x) variable = FALSE" (different variable!)
 
         Args:
             clause: List of fluent strings, prefix with '-' for negation
@@ -71,10 +112,8 @@ class CNFManager:
         """
         var_clause = []
         for lit in clause:
-            negated = lit.startswith('-')
-            fluent = lit[1:] if negated else lit
-            var_id = self.add_fluent(fluent)
-            var_clause.append(-var_id if negated else var_id)
+            var_id, is_negated = self._literal_to_var(lit)
+            var_clause.append(-var_id if is_negated else var_id)
 
         self.cnf.append(var_clause)
         self._invalidate_cache()
@@ -99,19 +138,21 @@ class CNFManager:
 
         This reduces CNF size and SAT solving time by eliminating redundant clauses.
 
+        Negation handling via _literal_to_var():
+        - '-' (ASCII): CNF negation prefix meaning "variable = FALSE"
+        - '¬' (Unicode): Part of fluent name (distinct variable from positive form)
+
         Args:
             clause: List of fluent strings, prefix with '-' for negation
 
         Returns:
             True if clause was added, False if subsumed by existing clause
         """
-        # Convert to variable IDs
+        # Convert to variable IDs using unified negation handling
         var_clause = []
         for lit in clause:
-            negated = lit.startswith('-')
-            fluent = lit[1:] if negated else lit
-            var_id = self.add_fluent(fluent)
-            var_clause.append(-var_id if negated else var_id)
+            var_id, is_negated = self._literal_to_var(lit)
+            var_clause.append(-var_id if is_negated else var_id)
 
         new_clause_set = frozenset(var_clause)
 
@@ -164,17 +205,24 @@ class CNFManager:
         new_clauses = []
 
         for clause in self.cnf.clauses:
+            # Skip unit negative clauses - these are "NOT a precondition" constraints
+            # from successful actions that should not be refined. They represent
+            # permanent exclusions, and refining them causes double negation issues
+            # when the fluent name already contains ¬ (e.g., '¬clear(?x)').
+            if len(clause) == 1 and clause[0] < 0:
+                new_clauses.append(clause)
+                continue
+
             # Convert clause to literal strings
+            # Only include POSITIVE CNF literals - these represent "fluent IS a precondition"
+            # Negative CNF literals mean "fluent is NOT a precondition" and should be skipped
+            # because refining by intersection only applies to the disjunction of possible preconditions
             clause_literals = set()
             for lit in clause:
-                var = abs(lit)
-                fluent = self.var_to_fluent.get(var)
-                if fluent is None:
-                    continue  # Skip unknown variables
-                if lit < 0:
-                    clause_literals.add(f"¬{fluent}")
-                else:
-                    clause_literals.add(fluent)
+                if lit > 0:  # Only positive CNF literals
+                    fluent = self.var_to_fluent.get(lit)
+                    if fluent is not None:
+                        clause_literals.add(fluent)
 
             # Keep only literals that were satisfied (intersection)
             refined = clause_literals.intersection(satisfied_literals)
@@ -184,21 +232,22 @@ class CNFManager:
 
             if refined:  # Non-empty after refinement
                 # Convert back to var clause
+                # IMPORTANT: ¬p(?x) is a DIFFERENT variable from p(?x)
+                # Use literal as-is (including any ¬ prefix)
                 new_clause = []
                 for lit_str in refined:
-                    if lit_str.startswith('¬'):
-                        fluent = lit_str[1:]
-                        var_id = self.fluent_to_var.get(fluent)
-                        if var_id:
-                            new_clause.append(-var_id)
-                    else:
-                        var_id = self.fluent_to_var.get(lit_str)
-                        if var_id:
-                            new_clause.append(var_id)
+                    var_id = self.fluent_to_var.get(lit_str)
+                    if var_id:
+                        new_clause.append(var_id)
                 if new_clause:
                     new_clauses.append(new_clause)
-            # Empty clauses are dropped - they become tautologies after
-            # a successful action rules out all their literals
+            else:
+                # Empty clause after refinement - all literals were unsatisfied
+                # This could indicate model inconsistency (constraint that can't be satisfied)
+                logger.warning(
+                    f"Empty clause after refinement - original had {len(clause_literals)} literals, "
+                    f"none were satisfied. This may indicate model inconsistency."
+                )
 
         self.cnf.clauses = new_clauses
 
@@ -208,7 +257,7 @@ class CNFManager:
 
         return modified
 
-    def _get_or_create_solver(self) -> Minisat22:
+    def _get_or_create_solver(self) -> Glucose4:
         """
         Get persistent solver instance, creating if needed (Session 2 optimization).
 
@@ -216,7 +265,7 @@ class CNFManager:
         This avoids the overhead of creating a new solver for each query.
 
         Returns:
-            Minisat22 solver instance bootstrapped with current CNF
+            Glucose4 solver instance bootstrapped with current CNF
         """
         if self._solver is None or not self._solver_valid:
             if self._solver is not None:
@@ -224,7 +273,7 @@ class CNFManager:
                     self._solver.delete()
                 except Exception:
                     pass
-            self._solver = Minisat22(bootstrap_with=self.cnf)
+            self._solver = Glucose4(bootstrap_with=self.cnf)
             self._solver_valid = True
         return self._solver
 
@@ -263,7 +312,7 @@ class CNFManager:
         Returns:
             Number of satisfying assignments
         """
-        solver = Minisat22(bootstrap_with=self.cnf)
+        solver = Glucose4(bootstrap_with=self.cnf)
         try:
             count = 0
 
@@ -294,7 +343,7 @@ class CNFManager:
             return self._solution_cache[:max_solutions] if max_solutions else self._solution_cache
 
         solutions = []
-        solver = Minisat22(bootstrap_with=self.cnf)
+        solver = Glucose4(bootstrap_with=self.cnf)
 
         try:
             while solver.solve():
@@ -441,11 +490,11 @@ class CNFManager:
 
             # Build truth table and minimize
             # This is a placeholder - full implementation would be more complex
-            logger.info("Espresso minimization not fully implemented")
+            logger.info("[APPROX] Espresso minimization not fully implemented")
             self.minimize_qm()  # Fall back to QM
 
         except ImportError:
-            logger.warning("pyeda not installed, using QM minimization instead")
+            logger.warning("[APPROX] pyeda not installed, using QM minimization instead")
             self.minimize_qm()
 
     def _invalidate_cache(self):
@@ -571,6 +620,70 @@ class CNFManager:
         # Entropy is log2 of model count
         return math.log2(num_models)
 
+    def count_solutions_approximate(self, epsilon: float = 0.3, delta: float = 0.05) -> int:
+        """
+        Approximate model count using pyapproxmc with PAC guarantees.
+
+        Args:
+            epsilon: Tolerance (0.3 = within 1.3x of true count)
+            delta: Confidence (0.05 = 95% confident)
+
+        Returns:
+            Approximate number of satisfying models
+
+        Raises:
+            ImportError: If pyapproxmc is not installed (REQUIRED dependency)
+        """
+        import pyapproxmc  # REQUIRED - fail if not installed
+
+        if not self.cnf.clauses:
+            num_vars = len(self.fluent_to_var)
+            return 2 ** num_vars if num_vars > 0 else 1
+
+        if not self.is_satisfiable():
+            return 0
+
+        counter = pyapproxmc.Counter(epsilon=epsilon, delta=delta)
+        for clause in self.cnf.clauses:
+            counter.add_clause(clause)
+
+        cells, hashes = counter.count()
+        return max(1, cells * (2 ** hashes))
+
+    def count_solutions_adaptive(
+        self,
+        threshold: int = 15,
+        use_approximate: bool = True,
+        epsilon: float = 0.3,
+        delta: float = 0.05
+    ) -> int:
+        """
+        Adaptive counting: exact for simple formulas, approximate for complex.
+
+        Args:
+            threshold: Variable count above which to use approximate
+            use_approximate: Whether approximate counting is enabled
+            epsilon: Tolerance for approximate counting
+            delta: Confidence for approximate counting
+
+        Returns:
+            Model count (exact or approximate)
+        """
+        num_vars = len(self.fluent_to_var)
+
+        if num_vars <= threshold or not use_approximate:
+            return self.count_solutions()
+
+        # Try approximate counting, fall back to upper bound if not available
+        try:
+            logger.info(f"[APPROX] Using approximate counting: {num_vars} vars > {threshold} threshold")
+            return self.count_solutions_approximate(epsilon, delta)
+        except ImportError:
+            # pyapproxmc not installed - use upper bound estimate
+            # This is conservative but avoids exponential enumeration
+            logger.warning(f"[APPROX] pyapproxmc not available, using upper bound 2^{num_vars}")
+            return 2 ** num_vars
+
     def __str__(self) -> str:
         """String representation."""
         return f"CNFManager({len(self.fluent_to_var)} vars, {len(self.cnf.clauses)} clauses)"
@@ -624,6 +737,9 @@ class CNFManager:
         Used by information gain algorithm when action fails to add
         constraint that at least one unsatisfied literal must be a precondition.
 
+        IMPORTANT: p(?x) and ¬p(?x) are separate variables.
+        Each literal is added as a positive occurrence in the disjunction.
+
         Args:
             unsatisfied_literals: Set of literals not satisfied in state
                                  (can include negated literals like '¬clear_a')
@@ -632,15 +748,8 @@ class CNFManager:
             return
 
         # Build clause from unsatisfied literals
-        clause = []
-        for literal in unsatisfied_literals:
-            if literal.startswith('¬'):
-                # Negative literal ¬p becomes -p in clause
-                positive = literal[1:]
-                clause.append('-' + positive)
-            else:
-                # Positive literal stays positive
-                clause.append(literal)
+        # Each literal is treated as a distinct variable (including any ¬ prefix)
+        clause = list(unsatisfied_literals)
 
         if clause:
             self.add_clause(clause)
@@ -659,20 +768,14 @@ class CNFManager:
         self.clear_formula()
 
         # Add each constraint set as a clause
+        # Each constraint: "at least one of these literals IS a precondition"
+        # Literals are variable names (¬ is part of the name, not CNF negation)
         for constraint_set in constraint_sets:
             if not constraint_set:
                 continue
 
-            clause = []
-            for literal in constraint_set:
-                if literal.startswith('¬'):
-                    # Negative literal
-                    positive = literal[1:]
-                    clause.append('-' + positive)
-                else:
-                    # Positive literal
-                    clause.append(literal)
-
+            # Keep literals as-is - they are variable names
+            clause = list(constraint_set)
             if clause:
                 self.add_clause(clause)
 
@@ -700,19 +803,23 @@ class CNFManager:
 
         Assumptions allow temporary constraints without copying the CNF formula.
 
+        IMPORTANT: p(?x) and ¬p(?x) are separate variables (consistent with _literal_to_var).
+        The fluent name is used as-is, including any '¬' prefix.
+
         Args:
             state_constraints: Dict mapping fluent names to their required values
-                              e.g., {'clear_a': False, 'on_a_b': True}
+                              e.g., {'clear_a': False, 'on_a_b': True, '¬holding_a': True}
 
         Returns:
             List of variable IDs (negative for False, positive for True)
         """
         assumptions = []
         for fluent, must_be_true in state_constraints.items():
-            # Get or create variable ID for this fluent
-            var_id = self.add_fluent(fluent)
-            # Positive literal if must be true, negative if must be false
-            assumptions.append(var_id if must_be_true else -var_id)
+            # Use get_variable() to avoid creating new variables as side effect
+            var_id = self.get_variable(fluent)
+            if var_id is not None:
+                assumptions.append(var_id if must_be_true else -var_id)
+            # Skip unknown fluents - they're not in the hypothesis space
 
         return assumptions
 
@@ -720,11 +827,10 @@ class CNFManager:
         """
         Count models with assumptions instead of deep copy (Phase 2 enhancement).
 
-        Uses PySAT's solve(assumptions=[...]) feature for 2-3x speedup.
-        No deep copy needed - assumptions are temporary constraints.
+        Uses adaptive counting: for formulas with many variables, uses approximate
+        counting to avoid exponential enumeration.
 
-        If use_cache=True and solutions are cached, uses faster filtering approach
-        (O(|solutions| * |assumptions|) instead of O(SAT_SOLVE)).
+        If use_cache=True and solutions are cached, uses faster filtering approach.
 
         Args:
             assumptions: List of variable IDs (negative for must-be-false)
@@ -737,22 +843,21 @@ class CNFManager:
         if use_cache and self._cache_valid and self._solution_cache is not None:
             return self.count_models_with_assumptions_via_filter(assumptions)
 
-        # TODO: Consider adding timeout support here if needed for very complex formulas.
-        # PySAT's solve() could theoretically run indefinitely on pathological inputs.
-        solver = Minisat22(bootstrap_with=self.cnf)
+        # Add assumptions as temporary unit clauses for adaptive counting
+        # Each assumption becomes a unit clause: [assumption]
+        num_added = 0
+        for assumption in assumptions:
+            self.cnf.clauses.append([assumption])
+            num_added += 1
+
         try:
-            count = 0
-
-            while solver.solve(assumptions=assumptions):
-                count += 1
-
-                # Block current solution to find next one
-                model = solver.get_model()
-                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
-
+            # Use adaptive counting to avoid exponential enumeration
+            count = self.count_solutions_adaptive()
             return count
         finally:
-            solver.delete()
+            # Remove temporary unit clauses
+            for _ in range(num_added):
+                self.cnf.clauses.pop()
 
     def count_models_with_assumptions_via_filter(self, assumptions: List[int]) -> int:
         """
@@ -761,15 +866,20 @@ class CNFManager:
         Instead of re-solving with assumptions, filters the pre-computed solutions.
         This transforms O(N * SAT_SOLVE) into O(1 * SAT_SOLVE + N * FILTER).
 
+        IMPORTANT: Only call this when cache is already valid! Does NOT populate cache
+        automatically to avoid exponential enumeration.
+
         Args:
             assumptions: List of variable IDs (negative for must-be-false)
 
         Returns:
             Number of satisfying models matching the assumptions
         """
-        # Ensure base solutions are cached
+        # SAFETY: Do NOT populate cache here - that could trigger exponential enumeration
+        # Caller must ensure cache is valid before calling this method
         if not self._cache_valid or self._solution_cache is None:
-            self.get_all_solutions()  # Populates cache
+            logger.warning("count_models_with_assumptions_via_filter called without valid cache, returning 0")
+            return 0
 
         if not self._solution_cache:
             return 0
@@ -803,6 +913,9 @@ class CNFManager:
         Adds clause, counts models, removes clause - no deep copy needed!
         Much faster than cnf.copy() for temporary constraints.
 
+        IMPORTANT: p(?x) and ¬p(?x) are separate variables (consistent with _literal_to_var).
+        The fluent name is used as-is, including any '¬' prefix.
+
         Args:
             clause_literals: Set of literal strings for the clause
                            (e.g., frozenset({'on(?x,?y)', '¬clear(?x)'}))
@@ -814,24 +927,22 @@ class CNFManager:
             return self.count_solutions()
 
         # Convert literals to variable IDs for PySAT clause
+        # Each literal is added as a positive occurrence in the disjunction
+        # IMPORTANT: Use get_variable() to avoid creating new variables as side effect
         clause = []
         for literal in clause_literals:
-            if literal.startswith('¬'):
-                # Negative literal
-                positive = literal[1:]
-                var_id = self.add_fluent(positive)
-                clause.append(-var_id)
-            else:
-                # Positive literal
-                var_id = self.add_fluent(literal)
+            var_id = self.get_variable(literal)
+            if var_id is not None:
                 clause.append(var_id)
+            # Skip unknown literals - they're not in the hypothesis space
 
         # Add clause temporarily
         self.cnf.clauses.append(clause)
 
         try:
             # Count models with new clause (creates fresh solver from self.cnf)
-            count = self.count_solutions()
+            # Use adaptive counting to avoid exponential enumeration for large formulas
+            count = self.count_solutions_adaptive()
             return count
         finally:
             # Remove temporary clause (restore original state)
