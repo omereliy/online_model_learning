@@ -190,3 +190,4 @@ slurm_*.log
 /results/tests/*
 /results/full_suite/*
 /results/paper/*
+/results/
