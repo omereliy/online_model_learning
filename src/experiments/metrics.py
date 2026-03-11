@@ -246,7 +246,7 @@ class MetricsCollector:
         This shows what's learned at the schema level (lifted representation).
 
         Args:
-            learner: Learner instance (OLAMAdapter or InformationGainLearner)
+            learner: Learner instance (InformationGainLearner)
 
         Returns:
             Dictionary with parameter-bound learning evidence
@@ -274,29 +274,6 @@ class MetricsCollector:
 
                     # Observations
                     'num_observations': len(learner.observation_history[action_name])
-                }
-
-        # OLAM: Access operator-level storage (already parameter-bound)
-        elif hasattr(learner, 'learner') and hasattr(learner.learner, 'operator_certain_predicates'):
-            # Get unique operator names (not grounded actions)
-            operators_seen = set()
-            for action_label in learner.action_list:
-                operator_name = action_label.split("(")[0]
-                if operator_name in operators_seen:
-                    continue
-                operators_seen.add(operator_name)
-
-                evidence['actions'][operator_name] = {
-                    # Preconditions (parameter-bound form)
-                    'preconditions_certain': learner.learner.operator_certain_predicates.get(operator_name, []),
-                    'preconditions_uncertain': learner.learner.operator_uncertain_predicates.get(operator_name, []),
-                    'preconditions_negative': learner.learner.operator_negative_preconditions.get(operator_name, []),
-
-                    # Effects (parameter-bound form)
-                    'effects_positive': learner.learner.operator_positive_effects.get(operator_name, [])
-                        if hasattr(learner.learner, 'operator_positive_effects') else [],
-                    'effects_negative': learner.learner.operator_negative_effects.get(operator_name, [])
-                        if hasattr(learner.learner, 'operator_negative_effects') else [],
                 }
 
         return evidence

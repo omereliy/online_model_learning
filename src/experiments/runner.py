@@ -19,14 +19,6 @@ from ..environments.active_environment import ActiveEnvironment
 from ..environments.mock_environment import MockEnvironment
 from .metrics import MetricsCollector
 
-# OLAM has been refactored to external post-processing approach
-# Import only if needed for backward compatibility
-try:
-    from ..algorithms.olam_adapter import OLAMAdapter
-    OLAM_AVAILABLE = True
-except ImportError:
-    OLAM_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
 
 # Model snapshot checkpoints for post-processing analysis
@@ -173,20 +165,7 @@ class ExperimentRunner:
         # Get algorithm-specific parameters
         algo_params = self.config.get('algorithm_params', {}).get(algorithm, {})
 
-        if algorithm == 'olam':
-            if not OLAM_AVAILABLE:
-                raise RuntimeError(
-                    "OLAM has been refactored to post-processing approach. "
-                    "Use scripts/analyze_olam_results.py for OLAM experiments."
-                )
-            learner = OLAMAdapter(
-                domain_file=domain_file,
-                problem_file=problem_file,
-                **algo_params
-            )
-            logger.info("Initialized OLAM adapter")
-
-        elif algorithm == 'information_gain':
+        if algorithm == 'information_gain':
             # Set max_iterations if not in algo_params
             if 'max_iterations' not in algo_params:
                 algo_params['max_iterations'] = self.config['stopping_criteria']['max_iterations']
@@ -450,18 +429,11 @@ class ExperimentRunner:
         with_uncertain = sum(1 for a in actions.values() if a['preconditions'].get('uncertain', []))
         unexplored = sum(1 for a in actions.values() if not a['preconditions'].get('certain', []) and not a['preconditions'].get('uncertain', []))
 
-        # For OLAM, check how many actions are filtered
-        filtered = 0
-        if hasattr(self.learner, 'learner') and hasattr(self.learner.learner, 'compute_not_executable_actionsJAVA'):
-            filtered = len(self.learner.learner.compute_not_executable_actionsJAVA())
-
         logger.info(f"\n--- HYPOTHESIS SPACE (Iteration {iteration}) ---")
         logger.info(f"Total actions: {total_actions}")
-        logger.info(f"Actions filtered as non-executable: {filtered}")
         logger.info(f"Actions with certain preconditions: {with_certain}")
         logger.info(f"Actions with uncertain preconditions: {with_uncertain}")
         logger.info(f"Unexplored actions: {unexplored}")
-        logger.info(f"Hypothesis space reduction: {filtered}/{total_actions} = {(filtered/total_actions*100):.1f}% filtered")
 
         # Sample a learned action for detail
         for action_name, data in list(actions.items())[:1]:

@@ -169,36 +169,6 @@ class TestModelReconstruction:
         assert "on(?x,?y)" in filtered_add
         assert "clear(?y)" in filtered_del
 
-    def test_olam_reconstruction(self, tmp_path):
-        """Test OLAM model reconstruction."""
-        snapshot = {
-            "iteration": 30,
-            "algorithm": "olam",
-            "actions": {
-                "pick-up": {
-                    "parameters": ["?x"],
-                    "certain_preconditions": ["clear(?x)", "handempty"],
-                    "uncertain_preconditions": ["ontable(?x)"],
-                    "add_effects": [],  # OLAM doesn't easily expose effects
-                    "del_effects": []
-                }
-            }
-        }
-
-        snapshot_file = tmp_path / "olam_snapshot.json"
-        with open(snapshot_file, 'w') as f:
-            json.dump(snapshot, f)
-
-        models = ModelReconstructor.load_and_reconstruct(snapshot_file)
-
-        # Check safe model
-        safe_model = models[0]
-        assert safe_model.actions["pick-up"].preconditions == {"clear(?x)", "handempty", "ontable(?x)"}
-
-        # Check complete model
-        complete_model = models[1]
-        assert complete_model.actions["pick-up"].preconditions == {"clear(?x)", "handempty"}
-
 
 class TestMetricsCalculation:
     """Test precision/recall calculation from reconstructed models."""
@@ -316,33 +286,6 @@ class TestErrorHandling:
 
         with pytest.raises(ValueError, match="Unknown algorithm"):
             ModelReconstructor.load_and_reconstruct(snapshot_file)
-
-    def test_missing_fields_graceful_handling(self, tmp_path):
-        """Test graceful handling of missing fields in snapshots."""
-        # OLAM snapshot with missing effects (expected)
-        snapshot = {
-            "iteration": 10,
-            "algorithm": "olam",
-            "actions": {
-                "pick-up": {
-                    "parameters": ["?x"],
-                    "certain_preconditions": ["clear(?x)"],
-                    "uncertain_preconditions": []
-                    # Missing add_effects and del_effects
-                }
-            }
-        }
-
-        snapshot_file = tmp_path / "partial.json"
-        with open(snapshot_file, 'w') as f:
-            json.dump(snapshot, f)
-
-        # Should handle gracefully with empty sets
-        models = ModelReconstructor.load_and_reconstruct(snapshot_file)
-        assert len(models) == 2
-        assert models[0].actions["pick-up"].add_effects == set()
-        assert models[0].actions["pick-up"].del_effects == set()
-
 
 @pytest.fixture
 def cleanup_test_files():

@@ -19,13 +19,12 @@ def normalize_predicate_parameters(predicate: str) -> str:
     """
     Normalize predicate parameters to positional format for comparison.
 
-    This enables comparison between predicates with different parameter naming schemes
-    and different formats (OLAM vs Information Gain). Produces canonical format that
-    matches Information Gain's ExpressionConverter.to_parameter_bound_string().
+    This enables comparison between predicates with different parameter naming schemes.
+    Produces canonical format that matches Information Gain's
+    ExpressionConverter.to_parameter_bound_string().
 
-    OLAM format: "(at ?param_1 ?param_2)" - outer parens, spaces, no commas
-    Info Gain format: "at(?x,?y)" - no outer parens, commas between params
-    Both normalize to: "at(?0,?1)"
+    Input format: "at(?x,?y)" - no outer parens, commas between params
+    Normalized to: "at(?0,?1)"
 
     Args:
         predicate: Predicate string in any format
@@ -34,13 +33,9 @@ def normalize_predicate_parameters(predicate: str) -> str:
         Normalized predicate: "predicate_name(?0,?1,...)" or "predicate_name()" for 0-arity
 
     Examples:
-        >>> normalize_predicate_parameters("(at ?param_1 ?param_2)")
-        'at(?0,?1)'
         >>> normalize_predicate_parameters("at(?x,?y)")
         'at(?0,?1)'
         >>> normalize_predicate_parameters("clear(?x)")
-        'clear(?0)'
-        >>> normalize_predicate_parameters("(clear ?param_1)")
         'clear(?0)'
         >>> normalize_predicate_parameters("handempty()")
         'handempty()'
@@ -354,7 +349,7 @@ class ModelValidator:
         """Calculate precision, recall, F1 for set comparison.
 
         Normalizes predicate parameters before comparison to handle different
-        parameter naming schemes (e.g., OLAM's ?param_N vs ground truth's ?x, ?y).
+        parameter naming schemes.
 
         Args:
             learned: Set of learned items
