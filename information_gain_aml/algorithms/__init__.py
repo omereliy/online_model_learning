@@ -2,6 +2,6 @@
 Algorithm implementations for online action model learning.
 """
 
-from .base_learner import BaseActionModelLearner
+from .information_gain import InformationGainLearner
 
-__all__ = ['BaseActionModelLearner']
+__all__ = ['InformationGainLearner']
