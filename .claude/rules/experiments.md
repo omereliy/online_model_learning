@@ -36,6 +36,8 @@ python3 scripts/run_amlgym_experiment.py --domain blocksworld --max-steps 300 --
 Options:
 - `--max-steps` (default 500): learning iterations
 - `--model-mode` (`safe`|`complete`): safe = all possible preconditions + confirmed effects; complete = certain preconditions + all possible effects
+- `--no-object-subset`: disable object subset selection (use all objects)
+- `--spare-objects N` (default 2): extra objects per type for subset selection
 - `--seed` (default 42): random seed
 - `--output-dir` (default `results/amlgym`): where to save learned models
 - `--evaluate`: run AMLGym evaluation metrics after learning

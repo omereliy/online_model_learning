@@ -42,6 +42,8 @@ def run_experiment(
     domain: str,
     max_steps: int = 500,
     model_mode: str = "safe",
+    use_object_subset: bool = True,
+    spare_objects_per_type: int = 2,
     seed: int = 42,
     output_dir: Path = Path("results/amlgym"),
     evaluate: bool = False,
@@ -70,6 +72,8 @@ def run_experiment(
         "InformationGainAgent",
         max_steps=max_steps,
         model_mode=model_mode,
+        use_object_subset=use_object_subset,
+        spare_objects_per_type=spare_objects_per_type,
     )
 
     start = time.perf_counter()
@@ -149,6 +153,10 @@ def main():
     parser.add_argument("--all-domains", action="store_true", help="Run on all domains")
     parser.add_argument("--max-steps", type=int, default=500)
     parser.add_argument("--model-mode", choices=["safe", "complete"], default="safe")
+    parser.add_argument("--no-object-subset", action="store_true",
+                        help="Disable object subset selection (use all objects)")
+    parser.add_argument("--spare-objects", type=int, default=2,
+                        help="Extra objects per type for subset selection (default: 2)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", type=str, default="results/amlgym")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation metrics")
@@ -177,6 +185,8 @@ def main():
                 domain=domain,
                 max_steps=args.max_steps,
                 model_mode=args.model_mode,
+                use_object_subset=not args.no_object_subset,
+                spare_objects_per_type=args.spare_objects,
                 seed=args.seed,
                 output_dir=output_dir,
                 evaluate=args.evaluate,
