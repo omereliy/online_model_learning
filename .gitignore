@@ -145,14 +145,6 @@ results/experiments/*.json
 results/experiments/*.csv
 results/detailed/*/
 
-# OLAM-generated directories (anywhere in project)
-**/PDDL/
-**/Info/
-
-# Test-specific OLAM directories
-tests/PDDL/
-tests/Info/
-
 # Temporary files
 tmp/
 temp/
