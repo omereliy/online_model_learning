@@ -1,27 +1,38 @@
-# Scripts Directory
+# Scripts
 
-## Quick Start: Run Information Gain Experiments
+## AMLGym Experiments (preferred)
+
+Run the Information Gain algorithm via AMLGym benchmarks.
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
+# Single domain
+python3 scripts/run_amlgym_experiment.py --domain blocksworld
 
-# Run quick test (5 domains, 100 iterations)
-python3 scripts/run_full_experiments.py --mode quick
+# Multiple domains
+python3 scripts/run_amlgym_experiment.py --domain blocksworld gripper hanoi
 
-# Run standard benchmarks (8 domains, 500 iterations)
-python3 scripts/run_full_experiments.py --mode standard
+# All AMLGym benchmark domains
+python3 scripts/run_amlgym_experiment.py --all-domains
 
-# Run custom domains
-python3 scripts/run_full_experiments.py --domains blocksworld depots --iterations 400
+# With evaluation metrics
+python3 scripts/run_amlgym_experiment.py --domain blocksworld --evaluate
+
+# Custom settings
+python3 scripts/run_amlgym_experiment.py --domain blocksworld --max-steps 300 --model-mode complete --seed 123
 ```
 
----
+**Options:**
+- `--domain` / `--all-domains` - Domain(s) to run
+- `--max-steps` - Learning iterations (default: 500)
+- `--model-mode {safe,complete}` - Model reconstruction mode (default: safe)
+- `--seed` - Random seed (default: 42)
+- `--output-dir` - Output directory (default: results/amlgym)
+- `--evaluate` - Run AMLGym evaluation metrics after learning
+- `--verbose` - Enable verbose logging
 
-## Core Scripts
+## Local Framework Experiments
 
-### 1. Run Information Gain Experiments
-Run the Information Gain algorithm on PDDL benchmark domains.
+Run the Information Gain algorithm on local PDDL benchmark domains.
 
 ```bash
 # Predefined modes
@@ -35,25 +46,25 @@ python3 scripts/run_full_experiments.py --domains blocksworld hanoi --iterations
 # Resume from failure
 python3 scripts/run_full_experiments.py --mode standard --resume-from "rover/p01"
 
-# Dry run (show what would run)
+# Dry run
 python3 scripts/run_full_experiments.py --mode standard --dry-run
 ```
 
 **Options:**
 - `--mode {quick,standard,full}` - Predefined experiment configuration
-- `--domains` - Custom list of domains to run
+- `--domains` - Custom list of domains
 - `--problems` - Problems to run (default: p00-p09)
-- `--all-problems` - Auto-detect all problems in each domain
-- `--iterations` - Number of iterations per experiment (default: 400)
-- `--output-dir` - Output directory (default: results/paper/comparison_TIMESTAMP)
-- `--resume-from` - Resume from domain/problem (e.g., "rover/p01")
-- `--force` - Force re-run even if results exist
-- `--dry-run` - Show what would run without executing
-- `--use-object-subset` - Enable object subset selection (default: enabled)
-- `--no-object-subset` - Disable object subset selection for full grounding
+- `--all-problems` - Auto-detect all problems per domain
+- `--iterations` - Iterations per experiment (default: 400)
+- `--output-dir` - Output directory
+- `--resume-from` - Resume from domain/problem
+- `--force` - Re-run even if results exist
+- `--dry-run` - Preview without executing
+- `--use-object-subset` / `--no-object-subset` - Object subset selection toggle
 
-### 2. Post-Process Information Gain Results
-Extract precision/recall metrics from experiment checkpoints.
+## Post-Processing: Metrics Extraction
+
+Extract precision/recall metrics from local experiment checkpoints.
 
 ```bash
 python3 scripts/analyze_information_gain_metrics.py \
@@ -64,74 +75,13 @@ python3 scripts/analyze_information_gain_metrics.py \
 ```
 
 **Options:**
-- `--min-observations N` - Exclude actions with fewer than N observations from metrics (default: 0)
+- `--consolidated-dir` - Parent directory of experiment results
+- `--benchmarks-dir` - Ground truth PDDL domains (default: benchmarks/olam-compatible)
+- `--output-dir` - Where to write metrics (default: results/information_gain_metrics)
+- `--domain` / `--problem` - Process single domain or problem
+- `--min-observations N` - Exclude actions with fewer than N observations (default: 0)
 
 **Output:**
 - `{output-dir}/{domain}/p*/metrics_per_iteration.json` - Per-problem metrics
 - `{output-dir}/{domain}/domain_metrics.json` - Aggregated domain metrics
 - `{output-dir}/checkpoint_metrics.csv` - Flat CSV for analysis
-
----
-
-## Visualization Scripts
-
-### 3. Generate Publication-Ready Visualizations
-Create charts and tables for paper analysis.
-
-```bash
-python3 scripts/visualize_paper_results.py
-```
-
-### 4. Generate Results Tables
-Create LaTeX/CSV tables from experiment results.
-
-```bash
-python3 scripts/generate_results_tables.py
-```
-
-### 5. Success/Metric Correlation Analysis
-Analyze correlation between execution success and model precision/recall.
-
-```bash
-python3 scripts/analyze_success_metric_correlation.py
-```
-
----
-
-## Pipeline Script
-
-### run_domain_pipeline.py
-Orchestrates the complete post-processing workflow for a single domain:
-1. Extract Information Gain metrics
-2. Generate plots
-
-```bash
-python3 scripts/run_domain_pipeline.py <domain> [options]
-
-Options:
-    --consolidated-dir DIR     Parent directory for all results
-    --infogain-results DIR     InfoGain experiment results directory
-    --benchmarks-dir DIR       Ground truth PDDL domains (default: benchmarks/olam-compatible)
-    --skip-metrics             Skip InfoGain metrics extraction
-    --skip-plots               Skip plot generation
-```
-
----
-
-## Output Directory Structure
-
-```
-results/
-├── paper/
-│   └── comparison_YYYYMMDD_HHMMSS/
-│       └── information_gain/
-│           └── blocksworld/
-│               └── p00/
-│                   ├── config.yaml
-│                   ├── experiment_summary.json
-│                   └── models/
-└── information_gain_metrics/
-    └── blocksworld/
-        ├── domain_metrics.json
-        └── p00/metrics_per_iteration.json
-```
