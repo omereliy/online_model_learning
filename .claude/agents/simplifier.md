@@ -25,28 +25,28 @@ This project is being simplified from ~18 source files toward a ~4-file target s
 ## Module classification
 
 ### CORE (keep and simplify):
-- `src/algorithms/information_gain.py` — Core algorithm
-- `src/core/cnf_manager.py` — SAT knowledge base
+- `information_gain_aml/algorithms/information_gain.py` — Core algorithm
+- `information_gain_aml/core/cnf_manager.py` — SAT knowledge base
 
 ### BRIDGE (keep until aml-gym migration, then replace):
-- `src/core/grounding.py` — Will be replaced by PDDLGym binding
-- `src/core/lifted_domain.py` — Will be replaced by PDDLGym operators
-- `src/core/pddl_io.py` — Will be replaced by PDDLGym env
-- `src/core/up_adapter.py` — Will be replaced by PDDLGym structs
-- `src/core/expression_converter.py` — Will be replaced by PDDLGym literals
-- `src/core/pddl_types.py` — Will be replaced by PDDLGym types
-- `src/environments/active_environment.py` — Will be replaced by AMLGym env
-- `src/environments/mock_environment.py` — Will be replaced by AMLGym test env
-- `src/experiments/runner.py` — Will be replaced by AMLGym runner
-- `src/experiments/metrics.py` — Will be replaced by AMLGym metrics
+- `information_gain_aml/core/grounding.py` — Will be replaced by PDDLGym binding
+- `information_gain_aml/core/lifted_domain.py` — Will be replaced by PDDLGym operators
+- `information_gain_aml/core/pddl_io.py` — Will be replaced by PDDLGym env
+- `information_gain_aml/core/up_adapter.py` — Will be replaced by PDDLGym structs
+- `information_gain_aml/core/expression_converter.py` — Will be replaced by PDDLGym literals
+- `information_gain_aml/core/pddl_types.py` — Will be replaced by PDDLGym types
+- `information_gain_aml/environments/active_environment.py` — Will be replaced by AMLGym env
+- `information_gain_aml/environments/mock_environment.py` — Will be replaced by AMLGym test env
+- `information_gain_aml/experiments/runner.py` — Will be replaced by AMLGym runner
+- `information_gain_aml/experiments/metrics.py` — Will be replaced by AMLGym metrics
 
 ### REMOVABLE (flag for deletion):
-- `src/algorithms/base_learner.py` — Abstract class with one consumer
-- `src/algorithms/parallel_gain.py` — Optimization, not core algorithm
-- `src/core/object_subset_manager.py` — Optimization, not core
-- `src/core/model_reconstructor.py` — Post-processing only
-- `src/core/model_metrics.py` — Post-processing only
-- `src/core/model_validator.py` — Post-processing only
+- `information_gain_aml/algorithms/base_learner.py` — Abstract class with one consumer
+- `information_gain_aml/algorithms/parallel_gain.py` — Optimization, not core algorithm
+- `information_gain_aml/core/object_subset_manager.py` — Optimization, not core
+- `information_gain_aml/core/model_reconstructor.py` — Post-processing only
+- `information_gain_aml/core/model_metrics.py` — Post-processing only
+- `information_gain_aml/core/model_validator.py` — Post-processing only
 
 ## Review process
 

@@ -16,10 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional, Any, Set
 
-from src.core import grounding
-from src.core.grounding import is_injective_binding
-from src.core.cnf_manager import CNFManager
-from src.core.pddl_io import PDDLReader
+from information_gain_aml.core import grounding
+from information_gain_aml.core.grounding import is_injective_binding
+from information_gain_aml.core.cnf_manager import CNFManager
+from information_gain_aml.core.pddl_io import PDDLReader
 from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
@@ -139,7 +139,7 @@ class InformationGainLearner(BaseActionModelLearner):
         self._subset_iteration_count = 0
 
         if self.use_object_subset:
-            from src.core.object_subset_manager import ObjectSubsetManager
+            from information_gain_aml.core.object_subset_manager import ObjectSubsetManager
             self.subset_manager = ObjectSubsetManager(
                 domain=self.domain,
                 spare_objects_per_type=self.spare_objects_per_type,
@@ -573,7 +573,7 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         # Use subset-aware grounding if enabled, otherwise use full grounding
         if self.use_object_subset and self.subset_manager:
-            from src.core.grounding import ground_all_actions_with_subset
+            from information_gain_aml.core.grounding import ground_all_actions_with_subset
             active_objects = self.subset_manager.get_active_object_names()
             grounded_actions = ground_all_actions_with_subset(
                 self.domain, active_objects, require_injective=False
@@ -791,7 +791,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        from src.algorithms.parallel_gain import (
+        from information_gain_aml.algorithms.parallel_gain import (
             ActionGainTask, _compute_action_gains_chunk_with_context
         )
 
@@ -893,7 +893,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             ActionGainContext with all necessary state for workers
         """
-        from src.algorithms.parallel_gain import ActionGainContext
+        from information_gain_aml.algorithms.parallel_gain import ActionGainContext
 
         cnf_clauses = {}
         cnf_fluent_to_var = {}
@@ -1741,6 +1741,144 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.info(f"Model export complete: {len(model['actions'])} actions, "
                     f"{len(model['predicates'])} predicates")
         return model
+
+    def to_pddl_string(self, mode: str = "safe") -> str:
+        """Export learned model as PDDL domain string.
+
+        Args:
+            mode: "safe" or "complete"
+                - safe: all possible preconditions (self.pre) + confirmed effects only.
+                  Very restrictive — won't predict applicable unless all possible precs hold.
+                - complete: only certain preconditions (singletons) + all possible effects.
+                  Very permissive — may introduce conflicts due to uncertainty.
+
+        Returns:
+            PDDL domain string
+        """
+        if mode not in ("safe", "complete"):
+            raise ValueError(f"mode must be 'safe' or 'complete', got '{mode}'")
+
+        lines = []
+        lines.append(f"(define (domain {self.domain.name})")
+
+        # Check if any negative preconditions exist
+        has_negative_precs = False
+        for action_name in self.pre:
+            precs = self.pre[action_name] if mode == "safe" else self._get_certain_preconditions(action_name)
+            if any(lit.startswith('¬') for lit in precs):
+                has_negative_precs = True
+                break
+
+        requirements = ":strips :typing"
+        if has_negative_precs:
+            requirements += " :negative-preconditions"
+        lines.append(f"  (:requirements {requirements})")
+
+        # Types
+        type_strs = []
+        for type_name, type_info in self.domain.types.items():
+            if type_name == "object":
+                continue
+            parent = type_info.parent or "object"
+            type_strs.append(f"{type_name} - {parent}")
+        if type_strs:
+            lines.append(f"  (:types {' '.join(type_strs)})")
+
+        # Predicates
+        pred_strs = []
+        for pred_name, pred_sig in self.domain.predicates.items():
+            if pred_sig.arity == 0:
+                pred_strs.append(f"({pred_name})")
+            else:
+                params = " ".join(f"?p{i} - {p.type}" for i, p in enumerate(pred_sig.parameters))
+                pred_strs.append(f"({pred_name} {params})")
+        if pred_strs:
+            lines.append("  (:predicates")
+            for ps in pred_strs:
+                lines.append(f"    {ps}")
+            lines.append("  )")
+
+        # Actions
+        for action_name, action in self.domain.lifted_actions.items():
+            # Parameters with standard naming (?x, ?y, ?z, ...)
+            param_names = self.domain._generate_parameter_names(action.arity)
+            param_strs = " ".join(
+                f"{param_names[i]} - {action.parameters[i].type}"
+                for i in range(action.arity)
+            )
+
+            # Select preconditions and effects based on mode
+            if mode == "safe":
+                precs = self.pre.get(action_name, set())
+                add_effs = self.eff_add.get(action_name, set())
+                del_effs = self.eff_del.get(action_name, set())
+            else:  # complete
+                precs = self._get_certain_preconditions(action_name)
+                add_effs = self.eff_add.get(action_name, set()) | self.eff_maybe_add.get(action_name, set())
+                del_effs = self.eff_del.get(action_name, set()) | self.eff_maybe_del.get(action_name, set())
+
+            # Filter out negative literals from effects (effects use positive names only)
+            add_effs = {e for e in add_effs if not e.startswith('¬')}
+            del_effs = {e for e in del_effs if not e.startswith('¬')}
+
+            lines.append(f"  (:action {action_name}")
+            lines.append(f"    :parameters ({param_strs})")
+
+            # Precondition
+            pddl_precs = sorted(self._literal_to_pddl(lit) for lit in precs)
+            if not pddl_precs:
+                lines.append("    :precondition ()")
+            elif len(pddl_precs) == 1:
+                lines.append(f"    :precondition {pddl_precs[0]}")
+            else:
+                lines.append(f"    :precondition (and")
+                for p in pddl_precs:
+                    lines.append(f"      {p}")
+                lines.append("    )")
+
+            # Effect
+            pddl_adds = sorted(self._literal_to_pddl(lit) for lit in add_effs)
+            pddl_dels = sorted(f"(not {self._literal_to_pddl(lit)})" for lit in del_effs)
+            pddl_effects = pddl_adds + pddl_dels
+            if not pddl_effects:
+                lines.append("    :effect ()")
+            elif len(pddl_effects) == 1:
+                lines.append(f"    :effect {pddl_effects[0]}")
+            else:
+                lines.append(f"    :effect (and")
+                for e in pddl_effects:
+                    lines.append(f"      {e}")
+                lines.append("    )")
+
+            lines.append("  )")
+
+        lines.append(")")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _literal_to_pddl(literal: str) -> str:
+        """Convert a parameter-bound literal to PDDL syntax.
+
+        Examples:
+            on(?x,?y)  → (on ?x ?y)
+            ¬clear(?x) → (not (clear ?x))
+            handempty   → (handempty)
+        """
+        negated = literal.startswith('¬')
+        if negated:
+            literal = literal[1:]
+
+        if '(' in literal:
+            pred_name = literal[:literal.index('(')]
+            params_str = literal[literal.index('(') + 1:-1]
+            params = params_str.replace(',', ' ')
+            inner = f"({pred_name} {params})"
+        else:
+            inner = f"({literal})"
+
+        if negated:
+            return f"(not {inner})"
+        return inner
 
     def _extract_predicate_name(self, literal: str) -> Optional[str]:
         """

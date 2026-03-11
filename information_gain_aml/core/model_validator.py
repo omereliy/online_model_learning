@@ -9,8 +9,8 @@ import re
 from dataclasses import dataclass
 from typing import Set, Dict, Optional, Any, Tuple
 
-from src.core.pddl_io import PDDLReader
-from src.core.expression_converter import ExpressionConverter
+from information_gain_aml.core.pddl_io import PDDLReader
+from information_gain_aml.core.expression_converter import ExpressionConverter
 
 logger = logging.getLogger(__name__)
 

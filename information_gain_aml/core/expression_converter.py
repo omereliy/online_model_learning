@@ -10,7 +10,7 @@ CRITICAL: Parameter-bound conversions preserve action's parameter names.
 from typing import List, Optional, Tuple
 from unified_planning.model.fnode import FNode
 from unified_planning.model import Parameter
-from src.core.pddl_types import ParameterBinding
+from information_gain_aml.core.pddl_types import ParameterBinding
 
 
 class ExpressionConverter:

@@ -16,8 +16,8 @@ from typing import Tuple, Set, Optional
 from unified_planning.io import PDDLReader as UPReader
 from unified_planning.model import Problem
 
-from src.core.up_adapter import UPAdapter
-from src.core.lifted_domain import LiftedDomainKnowledge
+from information_gain_aml.core.up_adapter import UPAdapter
+from information_gain_aml.core.lifted_domain import LiftedDomainKnowledge
 
 logger = logging.getLogger(__name__)
 

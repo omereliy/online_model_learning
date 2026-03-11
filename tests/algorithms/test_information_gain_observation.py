@@ -11,8 +11,8 @@ Tests that the algorithm correctly:
 import pytest
 from pathlib import Path
 
-from src.algorithms.information_gain import InformationGainLearner
-from src.environments.active_environment import ActiveEnvironment
+from information_gain_aml.algorithms.information_gain import InformationGainLearner
+from information_gain_aml.environments.active_environment import ActiveEnvironment
 
 
 class TestInformationGainObservation:

@@ -108,33 +108,7 @@ Each checkpoint file (`model_iter_NNN.json`) contains:
 
 ## Generating Checkpoints
 
-### Reconstruction Script
-
-**`scripts/reconstruct_early_models.py`** - Regenerate checkpoints from observations
-
-**Usage**:
-```bash
-# Reconstruct checkpoints for specific domain/problem
-python scripts/reconstruct_early_models.py \
-    --domain blocksworld \
-    --problem p00 \
-    --experiments-dir results/paper/consolidated_experiments/information_gain
-
-# Reconstruct all problems in a domain
-python scripts/reconstruct_early_models.py \
-    --domain blocksworld \
-    --experiments-dir results/paper/consolidated_experiments/information_gain
-
-# Reconstruct everything
-python scripts/reconstruct_early_models.py \
-    --experiments-dir results/paper/consolidated_experiments/information_gain
-```
-
-**What it does**:
-1. Loads experiment configuration (domain PDDL, problem PDDL, checkpoint frequency)
-2. Initializes Information Gain learner with domain
-3. Replays observations sequentially
-4. Exports model snapshot at each checkpoint iteration
+Checkpoints are generated automatically during experiment runs at predefined iteration counts. The `ExperimentRunner` calls `learner.export_model_snapshot()` at each checkpoint iteration.
 5. Saves to `models/model_iter_NNN.json` with proper metadata
 
 **Important**: Uses `export_model_snapshot()` method which produces the metadata-rich format required by post-processing.
@@ -474,7 +448,7 @@ overall_f1 = 2 * (overall_precision * overall_recall) / (overall_precision + ove
 
 **Cause**: Checkpoints not yet generated or wrong format used
 
-**Solution**: Run `scripts/reconstruct_early_models.py` to generate proper checkpoints
+**Solution**: Re-run the experiment to generate checkpoints
 
 ### Metrics All Zeros
 **Problem**: All metrics show 0.0 across all iterations
@@ -495,23 +469,9 @@ overall_f1 = 2 * (overall_precision * overall_recall) / (overall_precision + ove
 - `src/core/model_validator.py` - Ground truth comparison with normalization
 
 **Scripts**:
-- `scripts/reconstruct_early_models.py` - Regenerate checkpoints from observations
 - `scripts/analyze_information_gain_metrics.py` - Full metrics analysis pipeline
 
 **Support**:
 - `src/core/lifted_domain.py` - PDDL domain representation (parameter-bound literals)
 - `src/core/expression_converter.py` - UP expression → string conversion
 
-## Comparison with OLAM
-
-| Aspect | Information Gain | OLAM |
-|--------|------------------|------|
-| **Execution** | Runs in our codebase | External (user-run) |
-| **Checkpoint Format** | Single JSON with metadata | 8-10 separate JSON files |
-| **Reconstruction** | Replay observations | Parse JSON exports |
-| **Safe Model** | All possible precs + certain effects | Certain + uncertain precs + certain effects |
-| **Complete Model** | Certain precs + all effects | Certain precs + certain + uncertain effects |
-| **Normalization** | Already positional (?0, ?1) | Needs parameter normalization |
-| **Output Structure** | Per-iteration JSON + domain aggregation + CSV | Same pattern |
-
-Both use the **same metrics computation infrastructure** (ModelMetrics, ModelValidator) for consistent comparison.

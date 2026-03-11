@@ -8,8 +8,8 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-from src.core.model_validator import ModelValidator
-from src.core.model_reconstructor import ReconstructedModel
+from information_gain_aml.core.model_validator import ModelValidator
+from information_gain_aml.core.model_reconstructor import ReconstructedModel
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ class ModelMetrics:
         Returns:
             Dictionary with overall, precondition, and effect metrics
         """
-        from src.core.pddl_io import PDDLReader
+        from information_gain_aml.core.pddl_io import PDDLReader
 
         # Parse learned domain
         reader = PDDLReader()
@@ -242,14 +242,14 @@ class ModelMetrics:
         # Convert to ReconstructedModel format
         reconstructed_actions = {}
         for action_name, action in learned_domain.actions.items():
-            from src.core.model_reconstructor import ReconstructedActionModel
+            from information_gain_aml.core.model_reconstructor import ReconstructedActionModel
             reconstructed_actions[action_name] = ReconstructedActionModel(
                 preconditions=action.preconditions,
                 add_effects=action.add_effects,
                 del_effects=action.delete_effects
             )
 
-        from src.core.model_reconstructor import ReconstructedModel
+        from information_gain_aml.core.model_reconstructor import ReconstructedModel
         model = ReconstructedModel(actions=reconstructed_actions)
 
         # Compute separated metrics

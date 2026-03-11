@@ -17,7 +17,7 @@ import itertools
 from dataclasses import dataclass
 from typing import List, Set, Dict, Optional, Tuple
 
-from src.core.lifted_domain import LiftedDomainKnowledge, LiftedAction, ObjectInfo
+from information_gain_aml.core.lifted_domain import LiftedDomainKnowledge, LiftedAction, ObjectInfo
 
 logger = logging.getLogger(__name__)
 

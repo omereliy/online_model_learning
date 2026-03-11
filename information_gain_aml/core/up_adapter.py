@@ -271,7 +271,7 @@ class UPAdapter:
             result = UPAdapter.up_expression_to_parameter_bound(expr, params)
             # → 'on(?x,?y)'
         """
-        from src.core.expression_converter import ExpressionConverter
+        from information_gain_aml.core.expression_converter import ExpressionConverter
         return ExpressionConverter.to_parameter_bound_string(expr, parameters)
 
     @staticmethod
@@ -292,8 +292,8 @@ class UPAdapter:
             result = UPAdapter.up_expression_to_grounded(expr, binding)
             # → 'on_a_b'
         """
-        from src.core.expression_converter import ExpressionConverter
-        from src.core.pddl_types import ParameterBinding
+        from information_gain_aml.core.expression_converter import ExpressionConverter
+        from information_gain_aml.core.pddl_types import ParameterBinding
 
         pb = ParameterBinding(binding)
         return ExpressionConverter.to_grounded_string(expr, pb)

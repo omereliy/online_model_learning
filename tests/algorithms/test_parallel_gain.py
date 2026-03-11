@@ -14,13 +14,13 @@ import pytest
 import logging
 from typing import Set
 
-from src.algorithms.information_gain import InformationGainLearner
-from src.algorithms.parallel_gain import (
+from information_gain_aml.algorithms.information_gain import InformationGainLearner
+from information_gain_aml.algorithms.parallel_gain import (
     ActionGainContext, ActionGainTask, ActionGainResult,
     WorkerCNFCache, _compute_action_gains_chunk, _worker_init
 )
-from src.core.cnf_manager import CNFManager
-from src.environments.active_environment import ActiveEnvironment
+from information_gain_aml.core.cnf_manager import CNFManager
+from information_gain_aml.environments.active_environment import ActiveEnvironment
 
 logging.basicConfig(level=logging.WARNING)
 

@@ -2,9 +2,9 @@
 Test suite for multi-domain support in the online model learning framework.
 Tests various PDDL domains to ensure the framework works beyond blocksworld.
 """
-from src.experiments.metrics import MetricsCollector
-from src.core.pddl_io import parse_pddl
-from src.core import grounding
+from information_gain_aml.experiments.metrics import MetricsCollector
+from information_gain_aml.core.pddl_io import parse_pddl
+from information_gain_aml.core import grounding
 import pytest
 from pathlib import Path
 import sys

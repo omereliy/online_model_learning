@@ -12,8 +12,8 @@ import pytest
 from pathlib import Path
 import tempfile
 
-from src.core.object_subset_manager import ObjectSubsetManager, TypeRequirement
-from src.core.pddl_io import PDDLReader
+from information_gain_aml.core.object_subset_manager import ObjectSubsetManager, TypeRequirement
+from information_gain_aml.core.pddl_io import PDDLReader
 
 
 class TestTypeRequirement:

@@ -23,7 +23,7 @@ Design the implementation approach covering:
 - **Module classification**: Are affected files CORE, BRIDGE, or REMOVABLE?
 - **Files to modify**: Table of file | action | description
 - **Execution steps**: Numbered checklist
-- **Validation strategy**: `uv run pytest tests/ -v`, `uv run mypy src/`
+- **Validation strategy**: `uv run pytest tests/ -v`, `uv run mypy information_gain_aml/`
 
 ### Phase 3: Review
 Before presenting the plan, review it for simplification and correctness:
@@ -55,7 +55,7 @@ Do NOT proceed until approved.
 ### Phase 5: Execute
 Execute steps in order. After completion:
 1. Run `uv run pytest tests/ -v`
-2. Run `uv run mypy src/`
+2. Run `uv run mypy information_gain_aml/`
 3. Summarize changes, key decisions, validation results
 
 ## Fast Mode

@@ -16,7 +16,7 @@ Current: multi-module with Unified Planning. Target: 3-class design importable b
 
 ## Code Quality
 - `uv run pytest tests/ -v` after changes
-- `uv run mypy src/` after changes
+- `uv run mypy information_gain_aml/` after changes
 - All tests must pass before committing
 
 ## Workflow
@@ -27,15 +27,16 @@ Current: multi-module with Unified Planning. Target: 3-class design importable b
 ## Key Files
 | File | Purpose |
 |------|---------|
-| `src/algorithms/information_gain.py` | CNF-based learner (core algorithm) |
-| `src/core/cnf_manager.py` | CNF formulas + SAT solving |
-| `src/core/grounding.py` | Action/state grounding utilities |
-| `src/core/lifted_domain.py` | Domain representation |
-| `src/experiments/runner.py` | Experiment orchestration |
+| `information_gain_aml/algorithms/information_gain.py` | CNF-based learner (core algorithm) |
+| `information_gain_aml/core/cnf_manager.py` | CNF formulas + SAT solving |
+| `information_gain_aml/core/grounding.py` | Action/state grounding utilities |
+| `information_gain_aml/core/lifted_domain.py` | Domain representation |
+| `information_gain_aml/experiments/runner.py` | Experiment orchestration |
 
 ## Reference Docs
 - `docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md` — Algorithm formulas
-- `.claude/rules/` — Simplification, migration, testing, experiment rules
+- `docs/releasing.md` — PyPI release procedure
+- `.claude/rules/` — Simplification, migration, testing, experiment, releasing rules
 
 ## Integration
 - Target: importable from AMLGym via `OnlineAlgorithmAdapter`

@@ -40,7 +40,7 @@ import yaml
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.experiments.runner import ExperimentRunner
+from information_gain_aml.experiments.runner import ExperimentRunner
 
 # Setup logging
 logging.basicConfig(
@@ -324,8 +324,8 @@ Examples:
 
     if args.dry_run:
         logger.info("\nDRY RUN - Experiments that would be run:")
-        for alg, dom, prob in experiments[:10]:  # Show first 10
-            logger.info(f"  - {alg}/{dom}/{prob}")
+        for dom, prob in experiments[:10]:  # Show first 10
+            logger.info(f"  - information_gain/{dom}/{prob}")
         if len(experiments) > 10:
             logger.info(f"  ... and {len(experiments) - 10} more")
         return 0

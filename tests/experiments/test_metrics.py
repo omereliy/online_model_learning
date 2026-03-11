@@ -19,7 +19,7 @@ class TestMetricsCollector:
 
     def test_initialization(self):
         """Test MetricsCollector initialization with default and custom parameters."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         # Test default initialization
         collector = MetricsCollector()
@@ -35,7 +35,7 @@ class TestMetricsCollector:
 
     def test_record_action(self):
         """Test recording individual action executions."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -70,7 +70,7 @@ class TestMetricsCollector:
 
     def test_compute_mistake_rate(self):
         """Test mistake rate calculation over sliding window."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector(window_size=5)
 
@@ -97,7 +97,7 @@ class TestMetricsCollector:
 
     def test_compute_average_runtime(self):
         """Test average runtime calculation."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -114,7 +114,7 @@ class TestMetricsCollector:
 
     def test_should_collect(self):
         """Test checking if metrics should be collected at a given step."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector(interval=10)
 
@@ -132,7 +132,7 @@ class TestMetricsCollector:
 
     def test_get_snapshot(self):
         """Test getting current metrics snapshot."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector(window_size=3)
 
@@ -157,7 +157,7 @@ class TestMetricsCollector:
 
     def test_get_action_distribution(self):
         """Test getting distribution of action types."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -175,7 +175,7 @@ class TestMetricsCollector:
 
     def test_export_csv(self, temp_dir):
         """Test exporting metrics to CSV format."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -200,7 +200,7 @@ class TestMetricsCollector:
 
     def test_export_json(self, temp_dir):
         """Test exporting metrics to JSON format."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -228,7 +228,7 @@ class TestMetricsCollector:
 
     def test_export_invalid_format(self, temp_dir):
         """Test handling of invalid export format."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -238,7 +238,7 @@ class TestMetricsCollector:
 
     def test_reset(self):
         """Test resetting the metrics collector."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector()
 
@@ -257,7 +257,7 @@ class TestMetricsCollector:
 
     def test_edge_cases(self):
         """Test edge cases and boundary conditions."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector(window_size=1)
 
@@ -277,7 +277,7 @@ class TestMetricsCollector:
 
     def test_metrics_over_time(self):
         """Test tracking metrics evolution over time."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
 
         collector = MetricsCollector(interval=2, window_size=3)
 
@@ -300,7 +300,7 @@ class TestMetricsCollector:
 
     def test_concurrent_metrics(self):
         """Test thread-safety of metrics collection."""
-        from src.experiments.metrics import MetricsCollector
+        from information_gain_aml.experiments.metrics import MetricsCollector
         import threading
 
         collector = MetricsCollector()

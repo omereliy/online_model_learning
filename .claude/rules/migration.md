@@ -1,7 +1,7 @@
 ---
 description: Rules for aml-gym migration direction
 paths:
-  - "src/**"
+  - "information_gain_aml/**"
 ---
 
 ## AML-Gym Migration Direction
