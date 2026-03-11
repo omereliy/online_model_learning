@@ -6,7 +6,7 @@ to validate correctness rather than just evaluating outputs.
 """
 
 import pytest
-from src.core.cnf_manager import CNFManager
+from information_gain_aml.core.cnf_manager import CNFManager
 
 
 class TestCNFManagerBasics:

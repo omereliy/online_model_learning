@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Set
 import itertools
 
-from src.algorithms.information_gain import InformationGainLearner
+from information_gain_aml.algorithms.information_gain import InformationGainLearner
 
 
 def calculate_La_independently(learner, action_name: str) -> Set[str]:

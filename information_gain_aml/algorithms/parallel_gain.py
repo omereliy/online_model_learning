@@ -113,7 +113,7 @@ class WorkerCNFCache:
 
     def _reconstruct(self, action_name: str) -> 'CNFManager':
         """Reconstruct CNFManager from serialized state."""
-        from src.core.cnf_manager import CNFManager
+        from information_gain_aml.core.cnf_manager import CNFManager
         from pysat.formula import CNF
 
         mgr = CNFManager()
@@ -323,7 +323,7 @@ def _get_satisfied_literals(
 
     Simplified version that uses ground_literal_set directly.
     """
-    from src.core.grounding import ground_literal_set
+    from information_gain_aml.core.grounding import ground_literal_set
 
     satisfied = set()
     pre_literals = ctx.pre.get(action_name, set())
@@ -355,7 +355,7 @@ def _calculate_applicability_probability(
 
     pr(app(a,O,s)=1) = SAT(cnf_pre?(a,O,s)) / SAT(cnf_pre?(a))
     """
-    from src.core.grounding import ground_literal_set
+    from information_gain_aml.core.grounding import ground_literal_set
 
     # No constraints = always applicable
     if not ctx.pre_constraints.get(action_name):
@@ -421,7 +421,7 @@ def _calculate_potential_gain_success(
 
     sucPotential = preAppPotential + effPotential
     """
-    from src.core.grounding import ground_literal_set
+    from information_gain_aml.core.grounding import ground_literal_set
 
     state_internal = ctx.state.copy()
     satisfied = _get_satisfied_literals(action_name, state_internal, objects, ctx)

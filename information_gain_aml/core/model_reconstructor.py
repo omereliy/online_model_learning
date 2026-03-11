@@ -169,7 +169,7 @@ class ModelReconstructor:
             Dictionary mapping action names to sets of all possible preconditions (normalized)
         """
         from unified_planning.io import PDDLReader
-        from src.core.model_validator import normalize_predicate_parameters
+        from information_gain_aml.core.model_validator import normalize_predicate_parameters
 
         try:
             # Parse domain to get predicates and actions

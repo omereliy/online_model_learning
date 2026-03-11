@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.core.lifted_domain import LiftedDomainKnowledge
+    from information_gain_aml.core.lifted_domain import LiftedDomainKnowledge
 
 logger = logging.getLogger(__name__)
 

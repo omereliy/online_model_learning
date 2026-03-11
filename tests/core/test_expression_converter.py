@@ -6,8 +6,8 @@ These tests are written BEFORE implementation (TDD).
 import pytest
 from unified_planning.model import Fluent, Problem, Object
 from unified_planning.shortcuts import BoolType, UserType, InstantaneousAction
-from src.core.expression_converter import ExpressionConverter
-from src.core.pddl_types import ParameterBinding
+from information_gain_aml.core.expression_converter import ExpressionConverter
+from information_gain_aml.core.pddl_types import ParameterBinding
 
 
 class TestExpressionConverter:

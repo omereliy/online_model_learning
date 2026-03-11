@@ -62,7 +62,7 @@ class TestExperimentRunner:
 
     def test_initialization(self, config_file):
         """Test ExperimentRunner initialization."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         runner = ExperimentRunner(config_file)
 
@@ -73,7 +73,7 @@ class TestExperimentRunner:
 
     def test_load_config(self, config_file, sample_config):
         """Test configuration loading and validation."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         runner = ExperimentRunner(config_file)
         config = runner.config
@@ -84,14 +84,14 @@ class TestExperimentRunner:
 
     def test_invalid_config_file(self):
         """Test handling of invalid configuration file."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with pytest.raises(FileNotFoundError):
             runner = ExperimentRunner("nonexistent.yaml")
 
     def test_config_validation(self, temp_dir):
         """Test configuration validation for missing required fields."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         # Config missing required fields
         invalid_config = {
@@ -110,7 +110,7 @@ class TestExperimentRunner:
 
     def test_unsupported_algorithm(self, temp_dir):
         """Test handling of unsupported algorithm."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         config = {
             'experiment': {
@@ -130,10 +130,10 @@ class TestExperimentRunner:
         with pytest.raises(ValueError, match="Unsupported algorithm"):
             runner = ExperimentRunner(str(config_path))
 
-    @patch('src.experiments.runner.MockEnvironment')
+    @patch('information_gain_aml.experiments.runner.MockEnvironment')
     def test_run_experiment_basic(self, mock_env_class, config_file):
         """Test basic experiment execution."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         # Setup mocks
         mock_env = MagicMock()
@@ -161,7 +161,7 @@ class TestExperimentRunner:
 
     def test_stopping_criteria_max_iterations(self, config_file):
         """Test stopping on max iterations."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:
             mock_learner = MagicMock()
@@ -180,7 +180,7 @@ class TestExperimentRunner:
 
     def test_stopping_criteria_convergence(self, config_file):
         """Test stopping on convergence."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:
             mock_learner = MagicMock()
@@ -202,7 +202,7 @@ class TestExperimentRunner:
 
     def test_stopping_criteria_timeout(self, config_file):
         """Test stopping on timeout."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:
             mock_learner = MagicMock()
@@ -226,7 +226,7 @@ class TestExperimentRunner:
 
     def test_metrics_collection_intervals(self, config_file):
         """Test that metrics are collected at correct intervals."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:
             mock_learner = MagicMock()
@@ -252,7 +252,7 @@ class TestExperimentRunner:
 
     def test_results_export(self, config_file, temp_dir):
         """Test exporting results to different formats."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:
             mock_learner = MagicMock()
@@ -283,7 +283,7 @@ class TestExperimentRunner:
 
     def test_learned_model_saving(self, config_file, temp_dir):
         """Test saving the learned model."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         learned_model = {
             'actions': {
@@ -324,7 +324,7 @@ class TestExperimentRunner:
 
     def test_error_recovery(self, config_file):
         """Test error handling and recovery during experiment."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:
             mock_learner = MagicMock()
@@ -350,7 +350,7 @@ class TestExperimentRunner:
 
     def test_experiment_reproducibility(self, config_file):
         """Test that experiments are reproducible with same seed."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
         import random
         import numpy as np
 
@@ -388,8 +388,8 @@ class TestExperimentRunner:
 
     def test_integration_with_mock_environment(self, config_file):
         """Test full integration with mock environment."""
-        from src.experiments.runner import ExperimentRunner
-        from src.environments.mock_environment import MockEnvironment
+        from information_gain_aml.experiments.runner import ExperimentRunner
+        from information_gain_aml.environments.mock_environment import MockEnvironment
 
         runner = ExperimentRunner(config_file)
         runner.config['stopping_criteria']['max_iterations'] = 20
@@ -404,7 +404,7 @@ class TestExperimentRunner:
 
     def test_parallel_experiments(self, config_file):
         """Test running multiple experiments in parallel."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
         import threading
 
         results = []
@@ -439,10 +439,10 @@ class TestExperimentRunner:
         for result in results:
             assert result['total_iterations'] == 5
 
-    @patch('src.experiments.runner.MetricsCollector')
+    @patch('information_gain_aml.experiments.runner.MetricsCollector')
     def test_custom_metrics_collector(self, mock_metrics_class, config_file):
         """Test using custom metrics collector configuration."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
 
         mock_metrics = MagicMock()
         mock_metrics_class.return_value = mock_metrics
@@ -462,7 +462,7 @@ class TestExperimentRunner:
 
     def test_experiment_metadata(self, config_file):
         """Test that experiment metadata is properly recorded."""
-        from src.experiments.runner import ExperimentRunner
+        from information_gain_aml.experiments.runner import ExperimentRunner
         import platform
 
         with patch.object(ExperimentRunner, '_init_learner') as mock_init:

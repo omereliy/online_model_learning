@@ -6,7 +6,7 @@ These tests are written BEFORE implementation (TDD).
 import pytest
 from unified_planning.shortcuts import UserType
 from unified_planning.model import Object
-from src.core.pddl_types import (
+from information_gain_aml.core.pddl_types import (
     ParameterBinding,
     ParameterBoundLiteral,
     GroundedFluent,

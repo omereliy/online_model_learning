@@ -28,8 +28,8 @@ import sys
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.core.model_reconstructor import ModelReconstructor
-from src.core.model_metrics import ModelMetrics
+from information_gain_aml.core.model_reconstructor import ModelReconstructor
+from information_gain_aml.core.model_metrics import ModelMetrics
 
 logging.basicConfig(
     level=logging.INFO,

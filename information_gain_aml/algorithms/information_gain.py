@@ -16,10 +16,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional, Any, Set
 
-from src.core import grounding
-from src.core.grounding import is_injective_binding
-from src.core.cnf_manager import CNFManager
-from src.core.pddl_io import PDDLReader
+from information_gain_aml.core import grounding
+from information_gain_aml.core.grounding import is_injective_binding
+from information_gain_aml.core.cnf_manager import CNFManager
+from information_gain_aml.core.pddl_io import PDDLReader
 from .base_learner import BaseActionModelLearner
 
 logger = logging.getLogger(__name__)
@@ -139,7 +139,7 @@ class InformationGainLearner(BaseActionModelLearner):
         self._subset_iteration_count = 0
 
         if self.use_object_subset:
-            from src.core.object_subset_manager import ObjectSubsetManager
+            from information_gain_aml.core.object_subset_manager import ObjectSubsetManager
             self.subset_manager = ObjectSubsetManager(
                 domain=self.domain,
                 spare_objects_per_type=self.spare_objects_per_type,
@@ -573,7 +573,7 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         # Use subset-aware grounding if enabled, otherwise use full grounding
         if self.use_object_subset and self.subset_manager:
-            from src.core.grounding import ground_all_actions_with_subset
+            from information_gain_aml.core.grounding import ground_all_actions_with_subset
             active_objects = self.subset_manager.get_active_object_names()
             grounded_actions = ground_all_actions_with_subset(
                 self.domain, active_objects, require_injective=False
@@ -791,7 +791,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        from src.algorithms.parallel_gain import (
+        from information_gain_aml.algorithms.parallel_gain import (
             ActionGainTask, _compute_action_gains_chunk_with_context
         )
 
@@ -893,7 +893,7 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             ActionGainContext with all necessary state for workers
         """
-        from src.algorithms.parallel_gain import ActionGainContext
+        from information_gain_aml.algorithms.parallel_gain import ActionGainContext
 
         cnf_clauses = {}
         cnf_fluent_to_var = {}

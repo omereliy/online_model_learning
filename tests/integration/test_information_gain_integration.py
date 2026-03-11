@@ -9,8 +9,8 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from src.experiments.runner import ExperimentRunner
-from src.algorithms.information_gain import InformationGainLearner
+from information_gain_aml.experiments.runner import ExperimentRunner
+from information_gain_aml.algorithms.information_gain import InformationGainLearner
 
 
 @pytest.fixture

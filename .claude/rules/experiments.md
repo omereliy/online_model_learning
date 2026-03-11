@@ -2,13 +2,11 @@
 description: Rules for experiments and scripts
 paths:
   - "scripts/**"
-  - "configs/**"
 ---
 
 ## Experiments Rules
 
-- The `scripts/` directory contains analysis and experiment scripts
-- The `configs/` directory contains YAML experiment configurations
+- The `scripts/` directory contains experiment and analysis scripts
 
 ## Running experiments
 
@@ -42,10 +40,11 @@ Options:
 - `--output-dir` (default `results/amlgym`): where to save learned models
 - `--evaluate`: run AMLGym evaluation metrics after learning
 
-### Via internal runner (legacy)
+### Via local runner (legacy)
 
 ```bash
-python3 -m src.experiments.runner --config configs/<file>.yaml
+python3 scripts/run_full_experiments.py --mode quick
+python3 scripts/run_full_experiments.py --domains blocksworld hanoi --iterations 200
 ```
 
 ## Current experiments remain as verification

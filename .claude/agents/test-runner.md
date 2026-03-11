@@ -9,7 +9,7 @@ maxTurns: 6
 Run the test suite and type checker:
 
 1. Run `uv run pytest tests/ -v`
-2. Run `uv run mypy src/`
+2. Run `uv run mypy information_gain_aml/`
 
 Report results as:
 - Total tests: pass/fail count

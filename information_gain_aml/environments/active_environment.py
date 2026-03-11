@@ -19,8 +19,8 @@ from unified_planning.shortcuts import SequentialSimulator
 from unified_planning.model import State
 from unified_planning.plans import ActionInstance
 
-from src.core.pddl_io import PDDLReader
-from src.core.up_adapter import UPAdapter
+from information_gain_aml.core.pddl_io import PDDLReader
+from information_gain_aml.core.up_adapter import UPAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ class ActiveEnvironment:
             for action, params in applicable:
                 print(f"Can execute: {action}({', '.join(params)})")
         """
-        from src.core.grounding import ground_all_actions
+        from information_gain_aml.core.grounding import ground_all_actions
 
         applicable = []
 
@@ -273,7 +273,7 @@ class ActiveEnvironment:
         Note: This is a query method, not part of minimal interface.
               Returns all possible actions, not just applicable ones.
         """
-        from src.core.grounding import ground_all_actions
+        from information_gain_aml.core.grounding import ground_all_actions
 
         all_grounded = ground_all_actions(self._domain, require_injective=False)
         return [(g.action_name, g.objects) for g in all_grounded]
