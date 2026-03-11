@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """
 Performance profiling script for CNF/SAT operations in Information Gain algorithm.
 
@@ -206,7 +206,8 @@ def patch_methods_for_profiling():
 def run_profiled_experiment(
     domain: str,
     problem: str,
-    max_iterations: int = 50
+    max_iterations: int = 50,
+    benchmarks_dir: str = "benchmarks/olam-compatible"
 ) -> Dict[str, Any]:
     """
     Run a profiled experiment on a single domain/problem.
@@ -215,12 +216,13 @@ def run_profiled_experiment(
         domain: Domain name (e.g., 'blocksworld')
         problem: Problem name (e.g., 'p09')
         max_iterations: Number of iterations to run
+        benchmarks_dir: Directory containing benchmark PDDL domains
 
     Returns:
         Dictionary with timing results and experiment metadata
     """
-    domain_file = f"benchmarks/olam-compatible/{domain}/domain.pddl"
-    problem_file = f"benchmarks/olam-compatible/{domain}/{problem}.pddl"
+    domain_file = f"{benchmarks_dir}/{domain}/domain.pddl"
+    problem_file = f"{benchmarks_dir}/{domain}/{problem}.pddl"
 
     # Verify files exist
     if not Path(domain_file).exists():
@@ -410,6 +412,9 @@ def main():
                        help="Number of iterations per experiment (default: 50)")
     parser.add_argument("--domains", nargs='+',
                        help="Custom domains to test (default: blocksworld, depots, satellite, gold-miner)")
+    parser.add_argument("--benchmarks-dir", type=str,
+                       default="benchmarks/olam-compatible",
+                       help="Directory containing benchmark PDDL domains (default: benchmarks/olam-compatible)")
     parser.add_argument("--output", type=str,
                        help="Output file for results (default: auto-generated)")
 
@@ -439,7 +444,7 @@ def main():
         print(f"\n[{i}/{len(test_cases)}] {domain}/{problem}")
         print("-" * 40)
 
-        result = run_profiled_experiment(domain, problem, args.iterations)
+        result = run_profiled_experiment(domain, problem, args.iterations, args.benchmarks_dir)
         all_results.append(result)
 
     total_time = time.perf_counter() - total_start

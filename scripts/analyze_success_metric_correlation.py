@@ -12,13 +12,13 @@ Creates:
 import json
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict
 import matplotlib.pyplot as plt
 from collections import defaultdict
 from scipy import stats
 
 
-def load_domain_data_with_execution(domain_name: str, algorithm: str) -> Dict:
+def load_domain_data_with_execution(domain_name: str) -> Dict:
     """
     Load metrics and execution stats for a domain.
 
@@ -27,143 +27,72 @@ def load_domain_data_with_execution(domain_name: str, algorithm: str) -> Dict:
     """
     base_dir = Path("/home/omer/projects/online_model_learning/results")
 
-    if algorithm == "infogain":
-        # Load from information_gain_metrics
-        domain_dir = base_dir / "information_gain_metrics" / domain_name
-        problem_dirs = sorted([d for d in domain_dir.iterdir() if d.is_dir()])
+    # Load from information_gain_metrics
+    domain_dir = base_dir / "information_gain_metrics" / domain_name
+    problem_dirs = sorted([d for d in domain_dir.iterdir() if d.is_dir()])
 
-        # Aggregate across problems
-        all_iterations = defaultdict(lambda: {
-            "safe_prec_precision": [], "safe_prec_recall": [],
-            "safe_eff_precision": [], "safe_eff_recall": [],
-            "complete_prec_precision": [], "complete_prec_recall": [],
-            "complete_eff_precision": [], "complete_eff_recall": [],
-            "successes": 0, "failures": 0
-        })
+    # Aggregate across problems
+    all_iterations = defaultdict(lambda: {
+        "safe_prec_precision": [], "safe_prec_recall": [],
+        "safe_eff_precision": [], "safe_eff_recall": [],
+        "complete_prec_precision": [], "complete_prec_recall": [],
+        "complete_eff_precision": [], "complete_eff_recall": [],
+        "successes": 0, "failures": 0
+    })
 
-        for problem_dir in problem_dirs:
-            metrics_file = problem_dir / "metrics_per_iteration.json"
-            if not metrics_file.exists():
-                continue
+    for problem_dir in problem_dirs:
+        metrics_file = problem_dir / "metrics_per_iteration.json"
+        if not metrics_file.exists():
+            continue
 
-            with open(metrics_file) as f:
-                data = json.load(f)
+        with open(metrics_file) as f:
+            data = json.load(f)
 
-            for iteration_str, iter_data in data.items():
-                iteration = int(iteration_str)
+        for iteration_str, iter_data in data.items():
+            iteration = int(iteration_str)
 
-                # Safe model metrics
-                safe = iter_data.get("safe_model", {})
-                all_iterations[iteration]["safe_prec_precision"].append(safe.get("precondition_precision", 0))
-                all_iterations[iteration]["safe_prec_recall"].append(safe.get("precondition_recall", 0))
-                all_iterations[iteration]["safe_eff_precision"].append(safe.get("effect_precision", 0))
-                all_iterations[iteration]["safe_eff_recall"].append(safe.get("effect_recall", 0))
+            # Safe model metrics
+            safe = iter_data.get("safe_model", {})
+            all_iterations[iteration]["safe_prec_precision"].append(safe.get("precondition_precision", 0))
+            all_iterations[iteration]["safe_prec_recall"].append(safe.get("precondition_recall", 0))
+            all_iterations[iteration]["safe_eff_precision"].append(safe.get("effect_precision", 0))
+            all_iterations[iteration]["safe_eff_recall"].append(safe.get("effect_recall", 0))
 
-                # Complete model metrics
-                complete = iter_data.get("complete_model", {})
-                all_iterations[iteration]["complete_prec_precision"].append(complete.get("precondition_precision", 0))
-                all_iterations[iteration]["complete_prec_recall"].append(complete.get("precondition_recall", 0))
-                all_iterations[iteration]["complete_eff_precision"].append(complete.get("effect_precision", 0))
-                all_iterations[iteration]["complete_eff_recall"].append(complete.get("effect_recall", 0))
+            # Complete model metrics
+            complete = iter_data.get("complete_model", {})
+            all_iterations[iteration]["complete_prec_precision"].append(complete.get("precondition_precision", 0))
+            all_iterations[iteration]["complete_prec_recall"].append(complete.get("precondition_recall", 0))
+            all_iterations[iteration]["complete_eff_precision"].append(complete.get("effect_precision", 0))
+            all_iterations[iteration]["complete_eff_recall"].append(complete.get("effect_recall", 0))
 
-                # Execution stats (already cumulative per problem)
-                exec_stats = iter_data.get("execution_stats", {})
-                for action_stats in exec_stats.values():
-                    all_iterations[iteration]["successes"] += action_stats.get("successes", 0)
-                    all_iterations[iteration]["failures"] += action_stats.get("failures", 0)
+            # Execution stats (already cumulative per problem)
+            exec_stats = iter_data.get("execution_stats", {})
+            for action_stats in exec_stats.values():
+                all_iterations[iteration]["successes"] += action_stats.get("successes", 0)
+                all_iterations[iteration]["failures"] += action_stats.get("failures", 0)
 
-        # Average metrics across problems
-        result = {}
-        for iteration in sorted(all_iterations.keys()):
-            data = all_iterations[iteration]
-            result[iteration] = {
-                "safe_prec_precision": np.mean(data["safe_prec_precision"]),
-                "safe_prec_recall": np.mean(data["safe_prec_recall"]),
-                "safe_eff_precision": np.mean(data["safe_eff_precision"]),
-                "safe_eff_recall": np.mean(data["safe_eff_recall"]),
-                "complete_prec_precision": np.mean(data["complete_prec_precision"]),
-                "complete_prec_recall": np.mean(data["complete_prec_recall"]),
-                "complete_eff_precision": np.mean(data["complete_eff_precision"]),
-                "complete_eff_recall": np.mean(data["complete_eff_recall"]),
-                "successes": data["successes"],
-                "failures": data["failures"]
-            }
+    # Average metrics across problems
+    result = {}
+    for iteration in sorted(all_iterations.keys()):
+        data = all_iterations[iteration]
+        result[iteration] = {
+            "safe_prec_precision": np.mean(data["safe_prec_precision"]),
+            "safe_prec_recall": np.mean(data["safe_prec_recall"]),
+            "safe_eff_precision": np.mean(data["safe_eff_precision"]),
+            "safe_eff_recall": np.mean(data["safe_eff_recall"]),
+            "complete_prec_precision": np.mean(data["complete_prec_precision"]),
+            "complete_prec_recall": np.mean(data["complete_prec_recall"]),
+            "complete_eff_precision": np.mean(data["complete_eff_precision"]),
+            "complete_eff_recall": np.mean(data["complete_eff_recall"]),
+            "successes": data["successes"],
+            "failures": data["failures"]
+        }
 
-        return result
-
-    else:  # olam
-        # Load OLAM processed metrics
-        domain_dir = base_dir / "olam-results" / domain_name
-
-        safe_file = domain_dir / "domain_safe_metrics.json"
-        complete_file = domain_dir / "domain_complete_metrics.json"
-
-        with open(safe_file) as f:
-            safe_metrics = json.load(f)
-        with open(complete_file) as f:
-            complete_metrics = json.load(f)
-
-        # Load OLAM traces for execution stats
-        olam_results_path = Path(f"/home/omer/projects/olam_results/{domain_name}")
-        iteration_stats = defaultdict(lambda: {"successes": 0, "failures": 0})
-
-        if olam_results_path.exists():
-            for problem_dir in sorted(olam_results_path.iterdir()):
-                if not problem_dir.is_dir():
-                    continue
-
-                trace_file = problem_dir / "trace.json"
-                if not trace_file.exists():
-                    continue
-
-                with open(trace_file) as f:
-                    for line in f:
-                        entry = json.loads(line)
-                        iteration = entry.get("iter")
-                        success = entry.get("success", False)
-
-                        if iteration is not None:
-                            if success:
-                                iteration_stats[iteration]["successes"] += 1
-                            else:
-                                iteration_stats[iteration]["failures"] += 1
-
-        # Make execution stats cumulative
-        cumulative_stats = {}
-        total_s = 0
-        total_f = 0
-        for iteration in sorted(iteration_stats.keys()):
-            total_s += iteration_stats[iteration]["successes"]
-            total_f += iteration_stats[iteration]["failures"]
-            cumulative_stats[iteration] = {"successes": total_s, "failures": total_f}
-
-        # Combine metrics and execution stats
-        result = {}
-        for checkpoint_str in safe_metrics["checkpoints"].keys():
-            checkpoint = int(checkpoint_str)
-
-            safe_data = safe_metrics["checkpoints"][checkpoint_str]["safe"]
-            complete_data = complete_metrics["checkpoints"][checkpoint_str]["complete"]
-
-            result[checkpoint] = {
-                "safe_prec_precision": safe_data["preconditions"]["avg_precision"],
-                "safe_prec_recall": safe_data["preconditions"]["avg_recall"],
-                "safe_eff_precision": safe_data["effects"]["avg_precision"],
-                "safe_eff_recall": safe_data["effects"]["avg_recall"],
-                "complete_prec_precision": complete_data["preconditions"]["avg_precision"],
-                "complete_prec_recall": complete_data["preconditions"]["avg_recall"],
-                "complete_eff_precision": complete_data["effects"]["avg_precision"],
-                "complete_eff_recall": complete_data["effects"]["avg_recall"],
-                "successes": cumulative_stats.get(checkpoint, {}).get("successes", 0),
-                "failures": cumulative_stats.get(checkpoint, {}).get("failures", 0)
-            }
-
-        return result
+    return result
 
 
 def plot_scatter_correlation(
     domain_name: str,
-    algorithm: str,
     data: Dict,
     metric_type: str,
     output_dir: Path
@@ -173,7 +102,6 @@ def plot_scatter_correlation(
 
     Args:
         domain_name: Domain name
-        algorithm: 'olam' or 'infogain'
         data: Iteration data with metrics and execution stats
         metric_type: 'preconditions' or 'effects'
         output_dir: Output directory
@@ -205,7 +133,7 @@ def plot_scatter_correlation(
 
     # Create 2x2 subplot
     fig, axes = plt.subplots(2, 2, figsize=(16, 14))
-    fig.suptitle(f'{domain_name.upper()} ({algorithm.upper()}) - {metric_type.title()} vs Execution Outcomes',
+    fig.suptitle(f'{domain_name.upper()} (Information Gain) - {metric_type.title()} vs Execution Outcomes',
                  fontsize=16, fontweight='bold')
 
     # Color by iteration (gradient)
@@ -260,7 +188,7 @@ def plot_scatter_correlation(
 
     plt.tight_layout()
 
-    output_file = output_dir / f"{domain_name}_{algorithm}_{metric_type}_scatter_correlation.png"
+    output_file = output_dir / f"{domain_name}_{metric_type}_scatter_correlation.png"
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Saved: {output_file}")
     plt.close()
@@ -268,7 +196,6 @@ def plot_scatter_correlation(
 
 def plot_dual_axis_timeseries(
     domain_name: str,
-    algorithm: str,
     data: Dict,
     metric_type: str,
     output_dir: Path
@@ -278,7 +205,6 @@ def plot_dual_axis_timeseries(
 
     Args:
         domain_name: Domain name
-        algorithm: 'olam' or 'infogain'
         data: Iteration data with metrics and execution stats
         metric_type: 'preconditions' or 'effects'
         output_dir: Output directory
@@ -302,7 +228,7 @@ def plot_dual_axis_timeseries(
 
     # Create figure with dual y-axes
     fig, ax1 = plt.subplots(figsize=(14, 7))
-    fig.suptitle(f'{domain_name.upper()} ({algorithm.upper()}) - {metric_type.title()} Metrics vs Execution',
+    fig.suptitle(f'{domain_name.upper()} (Information Gain) - {metric_type.title()} Metrics vs Execution',
                  fontsize=14, fontweight='bold')
 
     # Left y-axis: Metrics
@@ -336,7 +262,7 @@ def plot_dual_axis_timeseries(
 
     plt.tight_layout()
 
-    output_file = output_dir / f"{domain_name}_{algorithm}_{metric_type}_dual_axis.png"
+    output_file = output_dir / f"{domain_name}_{metric_type}_dual_axis.png"
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
     print(f"Saved: {output_file}")
     plt.close()
@@ -344,7 +270,6 @@ def plot_dual_axis_timeseries(
 
 def compute_correlations(
     domain_name: str,
-    algorithm: str,
     data: Dict,
     metric_type: str
 ) -> Dict:
@@ -375,7 +300,7 @@ def compute_correlations(
 
     results = {
         "domain": domain_name,
-        "algorithm": algorithm,
+        "algorithm": "information_gain",
         "metric_type": metric_type,
         "n_iterations": len(iterations)
     }
@@ -422,7 +347,6 @@ def main():
 
     # Domains to analyze (excluding sokoban)
     domains = ["blocksworld", "depots", "driverlog", "ferry", "hanoi", "miconic", "satellite"]
-    algorithms = ["olam", "infogain"]
     metric_types = ["preconditions", "effects"]
 
     all_correlations = []
@@ -432,34 +356,31 @@ def main():
         print(f"Processing domain: {domain}")
         print('='*70)
 
-        for algorithm in algorithms:
-            print(f"\n  Algorithm: {algorithm}")
+        try:
+            # Load data
+            data = load_domain_data_with_execution(domain)
 
-            try:
-                # Load data
-                data = load_domain_data_with_execution(domain, algorithm)
+            if not data:
+                print(f"  No data available for {domain}")
+                continue
 
-                if not data:
-                    print(f"    No data available for {domain}/{algorithm}")
-                    continue
+            for metric_type in metric_types:
+                print(f"  Metric: {metric_type}")
 
-                for metric_type in metric_types:
-                    print(f"    Metric: {metric_type}")
+                # Create scatter plots
+                plot_scatter_correlation(domain, data, metric_type, output_dir)
 
-                    # Create scatter plots
-                    plot_scatter_correlation(domain, algorithm, data, metric_type, output_dir)
+                # Create dual-axis time series
+                plot_dual_axis_timeseries(domain, data, metric_type, output_dir)
 
-                    # Create dual-axis time series
-                    plot_dual_axis_timeseries(domain, algorithm, data, metric_type, output_dir)
+                # Compute correlations
+                corr = compute_correlations(domain, data, metric_type)
+                all_correlations.append(corr)
 
-                    # Compute correlations
-                    corr = compute_correlations(domain, algorithm, data, metric_type)
-                    all_correlations.append(corr)
-
-            except Exception as e:
-                print(f"    Error processing {domain}/{algorithm}: {e}")
-                import traceback
-                traceback.print_exc()
+        except Exception as e:
+            print(f"  Error processing {domain}: {e}")
+            import traceback
+            traceback.print_exc()
 
     # Save correlation results
     corr_file = output_dir / "correlation_statistics.json"
@@ -472,7 +393,7 @@ def main():
     print(f"\n{'='*70}")
     print("SUMMARY")
     print('='*70)
-    print(f"Generated {len(domains)} × {len(algorithms)} × {len(metric_types)} × 2 = {len(domains) * len(algorithms) * len(metric_types) * 2} plots")
+    print(f"Generated {len(domains)} × {len(metric_types)} × 2 = {len(domains) * len(metric_types) * 2} plots")
     print(f"  - Scatter correlation plots")
     print(f"  - Dual-axis time series plots")
     print(f"Computed correlations for {len(all_correlations)} combinations")

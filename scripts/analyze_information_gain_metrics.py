@@ -6,8 +6,6 @@ This script processes model checkpoints from the information gain algorithm,
 compares them against ground truth PDDL domains, and computes precision/recall
 for preconditions, add effects, and delete effects at each iteration.
 
-Follows the same pattern as analyze_olam_results.py for consistency.
-
 Input:
     results/paper/consolidated_experiments/information_gain/{domain}/{problem}/models/
     benchmarks/olam-compatible/{domain}/domain.pddl
