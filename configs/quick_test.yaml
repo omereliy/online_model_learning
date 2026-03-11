@@ -1,11 +1,11 @@
 experiment:
   name: "full_benchmark_comparison"
-  description: "Complete OLAM benchmark suite comparison"
-  algorithm: ["olam", "information_gain"]
+  description: "Complete benchmark suite comparison"
+  algorithm: "information_gain"
   # Run experiments for all algorithm variants
 
 domain_problem:
-  # All 22 domains from OLAM benchmarks
+  # All 22 benchmark domains
   domains:
     - blocksworld
     - depots
@@ -63,13 +63,6 @@ random:
 
 # Algorithm-specific configurations
 algorithm_configs:
-  olam:
-    eval_frequency: 1
-    planner_time_limit: 3600
-    max_precs_length: 20
-    neg_eff_assumption: false
-    use_system_java: true
-
   information_gain:
     selection_strategy: "greedy"
     epsilon: 0
