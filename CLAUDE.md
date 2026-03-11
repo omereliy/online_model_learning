@@ -1,11 +1,10 @@
 # Claude Code Context Guide
 
 ## Project Overview
-A framework for testing and comparing online action model learning algorithms in PDDL domains.
+A framework for online action model learning in PDDL domains using the Information Gain algorithm.
 
-**Algorithms:**
-1. **Information Gain** - CNF/SAT-based information-theoretic approach (primary)
-2. **OLAM** - Online Learning of Action Models (external, post-processing analysis)
+**Algorithm:**
+- **Information Gain** - CNF/SAT-based information-theoretic approach
 
 ## Quick Reference
 
@@ -29,18 +28,6 @@ from src.algorithms.information_gain import InformationGainLearner
 from src.core.pddl_io import PDDLReader
 ```
 
-### Analyzing OLAM Results (Post-Processing)
-OLAM is run externally. Our code reads its output for analysis:
-```bash
-# Process OLAM checkpoint exports
-python scripts/process_olam_results.py \
-    --olam-results /path/to/olam_results/depots \
-    --ground-truth benchmarks/olam-compatible/depots/domain.pddl \
-    --output-dir results/olam_processed
-```
-
-See `docs/OLAM_INPUT_OUTPUT.md` for OLAM output format details.
-
 ## Project Structure
 
 ```
@@ -54,9 +41,7 @@ src/
 │   ├── grounding.py             # Action/state grounding
 │   ├── pddl_io.py               # PDDL file reading
 │   ├── model_metrics.py         # Precision/recall/F1
-│   ├── model_validator.py       # Model correctness checking
-│   ├── olam_trace_parser.py     # Parse OLAM execution logs
-│   └── olam_knowledge_reconstructor.py  # Replay OLAM learning
+│   └── model_validator.py       # Model correctness checking
 ├── experiments/
 │   ├── runner.py                # Main experiment orchestration
 │   └── metrics.py               # Metric collection
@@ -111,7 +96,6 @@ Test structure:
 | File | Purpose |
 |------|---------|
 | `docs/IMPLEMENTATION_TASKS.md` | Project status, completed work |
-| `docs/OLAM_INPUT_OUTPUT.md` | OLAM file formats and workflow |
 | `docs/LIFTED_SUPPORT.md` | Parameterized actions/fluents |
 | `docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md` | Algorithm details |
 

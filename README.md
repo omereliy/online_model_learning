@@ -1,12 +1,10 @@
 # Online Action Model Learning Experiment Framework
 
 ## Overview
-A unified framework for testing and comparing online action model learning algorithms in PDDL domains, with advanced CNF/SAT solver integration for uncertainty representation.
+A framework for online action model learning in PDDL domains, using a CNF/SAT solver-based information-theoretic approach for uncertainty representation.
 
-## Algorithms Implemented
-1. **OLAM** - Online Learning of Action Models (Lamanna et al., 2021) [Python]
-2. **ModelLearner (Optimistic)** - Optimistic exploration with symbolic model estimates (Sreedharan et al., 2023) [Python]
-3. **Information-Theoretic Selection** - Novel CNF-based approach using expected information gain with SAT solver integration
+## Algorithm
+**Information-Theoretic Selection** - CNF-based approach using expected information gain with SAT solver integration
 
 ## Getting Started
 
@@ -29,15 +27,13 @@ pip install -r requirements.txt
 
 ```python
 from src.experiments.runner import ExperimentRunner
-from src.algorithms.olam_adapter import OLAMAdapter
-from src.algorithms.optimistic_adapter import OptimisticAdapter
 from src.algorithms.information_gain import InformationGainLearner
 
 # Configure experiment
 config = {
     'domain': 'blocksworld',
     'problems': ['p01', 'p02', 'p03'],
-    'algorithms': ['olam', 'optimistic', 'information_gain'],
+    'algorithms': ['information_gain'],
     'metrics': ['sample_complexity', 'time_to_goal', 'model_accuracy', 'cnf_formula_size'],
     'seed': 42,
     'cnf_settings': {
