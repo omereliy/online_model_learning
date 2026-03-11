@@ -35,7 +35,8 @@ Current: multi-module with Unified Planning. Target: 3-class design importable b
 
 ## Reference Docs
 - `docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md` — Algorithm formulas
-- `.claude/rules/` — Simplification, migration, testing, experiment rules
+- `docs/releasing.md` — PyPI release procedure
+- `.claude/rules/` — Simplification, migration, testing, experiment, releasing rules
 
 ## Integration
 - Target: importable from AMLGym via `OnlineAlgorithmAdapter`
