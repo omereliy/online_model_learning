@@ -24,7 +24,7 @@ class TestExperimentRunner:
         return {
             'experiment': {
                 'name': 'test_experiment',
-                'algorithm': 'olam',
+                'algorithm': 'information_gain',
                 'seed': 42
             },
             'domain_problem': {
@@ -32,9 +32,8 @@ class TestExperimentRunner:
                 'problem': 'benchmarks/olam-compatible/blocksworld/p01.pddl'
             },
             'algorithm_params': {
-                'olam': {
-                    'max_iterations': 100,
-                    'eval_frequency': 10
+                'information_gain': {
+                    'max_iterations': 100
                 }
             },
             'metrics': {
@@ -79,7 +78,7 @@ class TestExperimentRunner:
         runner = ExperimentRunner(config_file)
         config = runner.config
 
-        assert config['experiment']['algorithm'] == 'olam'
+        assert config['experiment']['algorithm'] == 'information_gain'
         assert config['metrics']['interval'] == 10
         assert config['stopping_criteria']['max_iterations'] == 100
 
@@ -108,23 +107,6 @@ class TestExperimentRunner:
 
         with pytest.raises(ValueError, match="Missing required.*algorithm"):
             runner = ExperimentRunner(str(config_path))
-
-    @patch('src.experiments.runner.OLAMAdapter')
-    def test_init_learner_olam(self, mock_olam, config_file):
-        """Test OLAM learner initialization."""
-        from src.experiments.runner import ExperimentRunner
-
-        mock_instance = MagicMock()
-        mock_olam.return_value = mock_instance
-
-        runner = ExperimentRunner(config_file)
-
-        # Check that OLAM was initialized with correct parameters
-        mock_olam.assert_called_once()
-        call_args = mock_olam.call_args
-        # OLAMAdapter uses keyword arguments
-        assert 'domain.pddl' in call_args.kwargs['domain_file']
-        assert 'p01.pddl' in call_args.kwargs['problem_file']
 
     def test_unsupported_algorithm(self, temp_dir):
         """Test handling of unsupported algorithm."""
