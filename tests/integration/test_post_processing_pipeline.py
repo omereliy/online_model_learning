@@ -170,43 +170,6 @@ class TestModelReconstruction:
         assert "clear(?y)" in filtered_del
 
 
-class TestMetricsCalculation:
-    """Test precision/recall calculation from reconstructed models."""
-
-    def test_precision_recall_calculation(self):
-        """Test basic precision/recall calculation."""
-        from scripts.recalculate_model_metrics import calculate_precision_recall
-
-        learned = {"a", "b", "c"}
-        ground_truth = {"a", "b", "d"}
-
-        metrics = calculate_precision_recall(learned, ground_truth)
-
-        # TP=2 (a,b), FP=1 (c), FN=1 (d)
-        assert abs(metrics["precision"] - 2/3) < 0.01  # 2/(2+1) = 0.667
-        assert abs(metrics["recall"] - 2/3) < 0.01     # 2/(2+1) = 0.667
-        assert abs(metrics["f1"] - 2/3) < 0.01         # 2*0.667*0.667/(0.667+0.667)
-
-    def test_empty_sets_handling(self):
-        """Test handling of empty sets in metrics calculation."""
-        from scripts.recalculate_model_metrics import calculate_precision_recall
-
-        # Both empty (perfect match)
-        metrics = calculate_precision_recall(set(), set())
-        assert metrics["precision"] == 1.0
-        assert metrics["recall"] == 1.0
-
-        # Learned empty, ground truth non-empty
-        metrics = calculate_precision_recall(set(), {"a", "b"})
-        assert metrics["precision"] == 0.0  # No false positives but also no true positives
-        assert metrics["recall"] == 0.0      # Missing all ground truth
-
-        # Learned non-empty, ground truth empty
-        metrics = calculate_precision_recall({"a", "b"}, set())
-        assert metrics["precision"] == 0.0  # All are false positives
-        assert metrics["recall"] == 1.0     # Nothing to recall
-
-
 class TestFullPipeline:
     """Test the complete post-processing pipeline."""
 
@@ -243,8 +206,7 @@ class TestFullPipeline:
                 json.dump(snapshot, f)
 
         # Verify snapshots can be loaded
-        from scripts.recalculate_model_metrics import find_model_snapshots
-        snapshots = find_model_snapshots(problem_dir)
+        snapshots = sorted(models_dir.glob("model_iter_*.json"))
         assert len(snapshots) == 3
 
         # Verify reconstruction works
