@@ -118,7 +118,7 @@ class TestModelValidator:
         assert result.precondition_recall == pytest.approx(0.667, rel=1e-2)
         assert result.precondition_f1 == pytest.approx(0.8, rel=1e-2)
         assert result.precondition_false_positives == set()
-        assert result.precondition_false_negatives == {"handempty"}
+        assert result.precondition_false_negatives == {"handempty()"}
 
     def test_extra_preconditions(self):
         """Test false positives in preconditions."""
@@ -217,8 +217,8 @@ class TestModelValidator:
         assert metrics["precision"] == 0.5
         assert metrics["recall"] == 0.5
         assert metrics["f1"] == 0.5
-        assert metrics["false_positives"] == {"e", "f"}
-        assert metrics["false_negatives"] == {"c", "d"}
+        assert metrics["false_positives"] == {"e()", "f()"}
+        assert metrics["false_negatives"] == {"c()", "d()"}
 
     def test_empty_learned_model(self):
         """Test edge case with empty learned model (all false negatives)."""
@@ -310,7 +310,7 @@ class TestModelValidator:
         assert metrics["precision"] == pytest.approx(0.667, rel=1e-2)
         assert metrics["recall"] == pytest.approx(0.667, rel=1e-2)
         assert metrics["false_positives"] == {"extra(?0)"}
-        assert metrics["false_negatives"] == {"handempty"}
+        assert metrics["false_negatives"] == {"handempty()"}
 
     def test_compare_effects_method(self):
         """Test the compare_effects method directly."""
@@ -417,7 +417,7 @@ class TestModelValidatorWithPDDL:
         pickup_model = validator.ground_truth_models["pick-up"]
         assert "clear(?x)" in pickup_model["preconditions"]
         assert "ontable(?x)" in pickup_model["preconditions"]
-        assert "handempty" in pickup_model["preconditions"]
+        assert "handempty()" in pickup_model["preconditions"]
         assert "holding(?x)" in pickup_model["add_effects"]
         assert "clear(?x)" in pickup_model["delete_effects"]
 
@@ -434,8 +434,8 @@ class TestModelValidatorWithPDDL:
         )
 
         # Should identify missing precondition and delete effect
-        assert result.precondition_false_negatives == {"handempty"}
-        assert result.delete_effect_false_negatives == {"handempty"}
+        assert result.precondition_false_negatives == {"handempty()"}
+        assert result.delete_effect_false_negatives == {"handempty()"}
         assert result.overall_f1 < 1.0  # Not perfect match
 
     def test_action_not_in_ground_truth(self):

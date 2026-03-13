@@ -9,6 +9,7 @@ from typing import Set
 import itertools
 
 from information_gain_aml.algorithms.information_gain import InformationGainLearner
+from information_gain_aml.core.lifted_domain import LiftedDomainKnowledge
 
 
 def calculate_La_independently(learner, action_name: str) -> Set[str]:
@@ -19,13 +20,13 @@ def calculate_La_independently(learner, action_name: str) -> Set[str]:
     on the implementation's internal state.
 
     Args:
-        learner: The learner instance (for accessing PDDL handler)
+        learner: The learner instance (for accessing domain)
         action_name: Name of the action
 
     Returns:
         Set of all parameter-bound literals (positive and negative)
     """
-    action = learner.pddl_handler.get_lifted_action(action_name)
+    action = learner.domain.get_action(action_name)
     if not action:
         return set()
 
@@ -37,8 +38,11 @@ def calculate_La_independently(learner, action_name: str) -> Set[str]:
     param_names = [f"?{param_letters[i]}" if i < len(param_letters) else f"?p{i}"
                    for i in range(num_params)]
 
+    # Create mapping from parameter names to types
+    param_types = {param_names[i]: action.parameters[i].type for i in range(num_params)}
+
     # For each fluent/predicate in the domain
-    for fluent in learner.pddl_handler.problem.fluents:
+    for fluent in learner.domain.predicates.values():
         pred_name = fluent.name
         pred_arity = fluent.arity
 
@@ -47,14 +51,20 @@ def calculate_La_independently(learner, action_name: str) -> Set[str]:
             La.add(pred_name)
             La.add(f"¬{pred_name}")
         else:
-            # Generate all valid parameter combinations for this predicate arity
-            # Use combinations_with_replacement to allow repeated parameters
-            for combo in itertools.combinations_with_replacement(param_names, pred_arity):
-                # Create positive literal
-                literal = f"{pred_name}({','.join(combo)})"
-                La.add(literal)
-                # Create negative literal
-                La.add(f"¬{literal}")
+            # Generate all parameter orderings (product with repetition)
+            # and filter by type compatibility
+            for combo in itertools.product(param_names, repeat=pred_arity):
+                # Check type compatibility
+                types_match = all(
+                    learner.domain.is_subtype(param_types[param], fluent.parameters[i].type)
+                    for i, param in enumerate(combo)
+                )
+                if types_match:
+                    # Create positive literal
+                    literal = f"{pred_name}({','.join(combo)})"
+                    La.add(literal)
+                    # Create negative literal
+                    La.add(f"¬{literal}")
 
     return La
 
@@ -81,6 +91,15 @@ def learner(depots_domain, depots_problem):
     )
 
 
+@pytest.fixture
+def initial_state(depots_domain, depots_problem):
+    """Get initial state from PDDL files."""
+    from information_gain_aml.core.pddl_io import PDDLReader
+    reader = PDDLReader()
+    _, state = reader.parse_domain_and_problem(depots_domain, depots_problem)
+    return state
+
+
 class TestInitialization:
     """Test learner initialization and state variables."""
 
@@ -90,10 +109,10 @@ class TestInitialization:
         assert learner.iteration_count == 0
         assert learner.observation_count == 0
 
-    def test_pddl_handler_initialized(self, learner):
-        """Test that PDDL handler is properly initialized."""
-        assert learner.pddl_handler is not None
-        assert learner.pddl_handler.problem is not None
+    def test_domain_initialized(self, learner):
+        """Test that domain is properly initialized."""
+        assert learner.domain is not None
+        assert isinstance(learner.domain, LiftedDomainKnowledge)
 
     def test_action_models_initialized(self, learner):
         """Test that action model state variables are initialized."""
@@ -125,8 +144,8 @@ class TestInitialization:
             assert learner.pre[action_name] == La_expected, \
                 f"Action {action_name}: pre should equal La (expected {len(La_expected)}, got {len(learner.pre[action_name])})"
 
-            # pre?(a) should be empty list
-            assert isinstance(learner.pre_constraints[action_name], list)
+            # pre?(a) should be empty set
+            assert isinstance(learner.pre_constraints[action_name], set)
             assert len(learner.pre_constraints[action_name]) == 0
 
             # eff+(a) and eff-(a) should be empty
@@ -303,10 +322,10 @@ class TestObservationRecording:
         """Test recording successful action observation."""
         initial_count = learner.observation_count
 
-        state = {'clear_a', 'on_b_c', 'handempty'}
-        action = 'pick-up'
-        objects = ['a']
-        next_state = {'holding_a', 'on_b_c'}
+        state = {'at_truck1_depot0', 'at_hoist0_depot0', 'available_hoist0'}
+        action = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
+        next_state = {'at_truck1_distributor0', 'at_hoist0_depot0', 'available_hoist0'}
 
         learner.observe(state, action, objects, success=True, next_state=next_state)
 
@@ -322,9 +341,9 @@ class TestObservationRecording:
 
     def test_observe_failure(self, learner):
         """Test recording failed action observation."""
-        state = {'clear_a', 'on_b_c', 'handempty'}
-        action = 'pick-up'
-        objects = ['a']
+        state = {'at_truck1_depot0', 'at_hoist0_depot0', 'available_hoist0'}
+        action = 'drive'
+        objects = ['truck1', 'depot0', 'distributor0']
 
         learner.observe(state, action, objects, success=False, next_state=None)
 
@@ -335,16 +354,16 @@ class TestObservationRecording:
 
     def test_multiple_observations_same_action(self, learner):
         """Test recording multiple observations for same action."""
-        action = 'pick-up'
-        state1 = {'clear_a'}
-        state2 = {'clear_b'}
+        action = 'drive'
+        state1 = {'at_truck1_depot0'}
+        state2 = {'at_truck1_distributor0'}
 
-        learner.observe(state1, action, ['a'], success=True, next_state={'holding_a'})
-        learner.observe(state2, action, ['b'], success=False, next_state=None)
+        learner.observe(state1, action, ['truck1', 'depot0', 'distributor0'], success=True, next_state={'at_truck1_distributor0'})
+        learner.observe(state2, action, ['truck1', 'distributor0', 'depot0'], success=False, next_state=None)
 
         assert len(learner.observation_history[action]) == 2
-        assert learner.observation_history[action][0]['objects'] == ['a']
-        assert learner.observation_history[action][1]['objects'] == ['b']
+        assert learner.observation_history[action][0]['objects'] == ['truck1', 'depot0', 'distributor0']
+        assert learner.observation_history[action][1]['objects'] == ['truck1', 'distributor0', 'depot0']
 
     def test_eff_maybe_sets_become_disjoint_after_success(self, learner):
         r"""
@@ -460,7 +479,7 @@ class TestReset:
     def test_reset_clears_observations(self, learner):
         """Test that reset clears observation history."""
         # Add some observations
-        learner.observe({'clear_a'}, 'pick-up', ['a'], success=True, next_state={'holding_a'})
+        learner.observe({'at_truck1_depot0'}, 'drive', ['truck1', 'depot0', 'distributor0'], success=True, next_state={'at_truck1_distributor0'})
 
         assert learner.observation_count > 0
 
@@ -616,7 +635,7 @@ class TestUpdateRules:
             "Failed observation should add one constraint"
 
         # The constraint should contain unsatisfied literals
-        constraint = learner.pre_constraints[action_name][0]
+        constraint = next(iter(learner.pre_constraints[action_name]))
         assert len(constraint) > 0, "Constraint should not be empty"
 
     def test_multiple_failures_accumulate_constraints(self, learner):
@@ -648,7 +667,7 @@ class TestUpdateRules:
         learner.observe(fail_state, action_name, objects, success=False)
         learner.update_model()
 
-        initial_constraint = learner.pre_constraints[action_name][0].copy()
+        initial_constraint = next(iter(learner.pre_constraints[action_name])).copy()
 
         # Now observe success
         success_state = {
@@ -662,7 +681,7 @@ class TestUpdateRules:
 
         # Constraint should be updated
         # pre?(a) = {B ∩ bindP(s, O) | B ∈ pre?(a)}
-        updated_constraint = learner.pre_constraints[action_name][0]
+        updated_constraint = next(iter(learner.pre_constraints[action_name]))
         assert updated_constraint != initial_constraint, \
             "Constraint should be updated after successful observation"
 
@@ -683,7 +702,7 @@ class TestUpdateRules:
         learner.update_model()
 
         # Check constraint contains negative literals
-        constraint = learner.pre_constraints[action_name][0]
+        constraint = next(iter(learner.pre_constraints[action_name]))
         has_negative = any(lit.startswith('¬') for lit in constraint)
         assert has_negative or len(constraint) > 0, \
             "Constraint should handle negative preconditions"
@@ -733,7 +752,7 @@ class TestCNFIntegrationWithAlgorithm:
         learner.update_model()
 
         # Constraints should be updated to keep only satisfied literals
-        constraint = learner.pre_constraints[action_name][0]
+        constraint = next(iter(learner.pre_constraints[action_name]))
         # Verify constraint was narrowed based on what was satisfied
 
     def test_negative_preconditions_properly_encoded_in_cnf(self, learner):
@@ -748,7 +767,7 @@ class TestCNFIntegrationWithAlgorithm:
 
         # The constraint should recognize that ¬on(?x,?y) was NOT satisfied
         # because on_block1_block2 WAS in the state
-        constraint = learner.pre_constraints[action_name][0]
+        constraint = next(iter(learner.pre_constraints[action_name]))
 
         # Should contain ¬on(?x,?y) as a possible required precondition
         lifted_constraint = learner.bindP(constraint, objects)
@@ -954,9 +973,9 @@ class TestInformationGain:
 class TestActionSelection:
     """Test action selection strategies."""
 
-    def test_greedy_selection_chooses_max_gain(self, learner):
+    def test_greedy_selection_chooses_max_gain(self, learner, initial_state):
         """Test that greedy selection chooses action with maximum expected gain."""
-        state = learner.pddl_handler.get_initial_state()
+        state = initial_state
 
         # Set selection strategy to greedy
         learner.selection_strategy = 'greedy'
@@ -966,21 +985,21 @@ class TestActionSelection:
         # Verify this was the best choice
         selected_gain = learner._calculate_expected_information_gain(action_name, objects, state)
 
-        # Check a few other possible actions
-        grounded_actions = learner.pddl_handler._grounded_actions[:5]  # Sample
-        for other_action, other_binding in grounded_actions:
-            other_objects = [obj.name for obj in other_binding.values()] if other_binding else []
+        # Check a few other possible actions using domain's lifted actions
+        from information_gain_aml.core import grounding
+        grounded_actions = grounding.ground_all_actions(learner.domain, require_injective=False)[:5]
+        for grounded_action in grounded_actions:
             other_gain = learner._calculate_expected_information_gain(
-                other_action.name, other_objects, state
+                grounded_action.action_name, grounded_action.objects, state
             )
             assert selected_gain >= other_gain - 0.001, "Greedy should select max gain action"
 
-    def test_epsilon_greedy_exploration(self, learner):
+    def test_epsilon_greedy_exploration(self, learner, initial_state):
         """Test epsilon-greedy balances exploration and exploitation."""
         import random
         random.seed(42)  # For reproducibility
 
-        state = learner.pddl_handler.get_initial_state()
+        state = initial_state
         learner.selection_strategy = 'epsilon_greedy'
         learner.epsilon = 0.1  # 10% exploration
 
@@ -994,12 +1013,12 @@ class TestActionSelection:
         unique_actions = set(selections)
         assert len(unique_actions) > 1, "Epsilon-greedy should explore different actions"
 
-    def test_boltzmann_selection(self, learner):
+    def test_boltzmann_selection(self, learner, initial_state):
         """Test Boltzmann/softmax selection based on gain values."""
         import random
         random.seed(42)
 
-        state = learner.pddl_handler.get_initial_state()
+        state = initial_state
         learner.selection_strategy = 'boltzmann'
         learner.temperature = 1.0
 
@@ -1013,9 +1032,9 @@ class TestActionSelection:
         unique_actions = set(selections)
         assert len(unique_actions) > 1, "Boltzmann should select various actions"
 
-    def test_tie_breaking(self, learner):
+    def test_tie_breaking(self, learner, initial_state):
         """Test handling when multiple actions have same gain."""
-        state = learner.pddl_handler.get_initial_state()
+        state = initial_state
         learner.selection_strategy = 'greedy'
 
         # In early learning, many actions may have similar gains
@@ -1039,13 +1058,13 @@ class TestActionSelection:
 class TestConvergenceImprovement:
     """Test that information gain improves convergence."""
 
-    def test_converges_faster_than_random(self, learner):
+    def test_converges_faster_than_random(self, learner, initial_state):
         """Test that info gain selection converges faster than random."""
         # This is a meta-test that would require running full learning episodes
         # For now, just verify the mechanism exists
 
         learner.selection_strategy = 'greedy'
-        state = learner.pddl_handler.get_initial_state()
+        state = initial_state
 
         # Should select informative actions
         action_name, objects = learner.select_action(state)
@@ -1057,11 +1076,8 @@ class TestConvergenceImprovement:
 class TestIntegration:
     """Integration tests with realistic scenarios."""
 
-    def test_select_and_observe_cycle(self, learner):
+    def test_select_and_observe_cycle(self, learner, initial_state):
         """Test a complete select-observe cycle."""
-        # Get initial state
-        initial_state = learner.pddl_handler.get_initial_state()
-
         # Select action
         action_name, objects = learner.select_action(initial_state)
 
@@ -1075,12 +1091,12 @@ class TestIntegration:
         assert learner.observation_count == 1
         assert action_name in learner.observation_history
 
-    def test_full_learning_cycle_with_info_gain(self, learner):
+    def test_full_learning_cycle_with_info_gain(self, learner, initial_state):
         """Test complete learning cycle with information gain selection."""
         learner.selection_strategy = 'greedy'
 
         # Run a few learning iterations
-        state = learner.pddl_handler.get_initial_state()
+        state = initial_state
 
         for i in range(5):
             # Select action based on information gain

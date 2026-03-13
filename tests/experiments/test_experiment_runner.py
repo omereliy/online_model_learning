@@ -410,29 +410,32 @@ class TestExperimentRunner:
         results = []
 
         def run_experiment(config, index):
-            with patch.object(ExperimentRunner, '_init_learner') as mock_init:
-                mock_learner = MagicMock()
-                mock_learner.select_action.return_value = ('action', ['obj'])
-                mock_learner.has_converged.return_value = False
-                mock_init.return_value = mock_learner
+            mock_learner = MagicMock()
+            mock_learner.select_action.return_value = ('action', ['obj'])
+            mock_learner.has_converged.return_value = False
 
-                runner = ExperimentRunner(config)
-                runner.config['experiment']['name'] = f"experiment_{index}"
-                runner.config['stopping_criteria']['max_iterations'] = 5
+            runner = ExperimentRunner(config)
+            runner.learner = mock_learner
+            runner.config['experiment']['name'] = f"experiment_{index}"
+            runner.config['stopping_criteria']['max_iterations'] = 5
 
-                with patch.object(runner, '_execute_action', return_value=(True, 0.01)):
-                    result = runner.run_experiment()
-                    results.append(result)
+            with patch.object(runner, '_execute_action', return_value=(True, 0.01)):
+                result = runner.run_experiment()
+                results.append(result)
 
-        # Run 3 experiments in parallel
-        threads = []
-        for i in range(3):
-            t = threading.Thread(target=run_experiment, args=(config_file, i))
-            threads.append(t)
-            t.start()
+        # Patch _init_learner once at the class level (thread-safe)
+        with patch.object(ExperimentRunner, '_init_learner') as mock_init:
+            mock_init.return_value = MagicMock()
 
-        for t in threads:
-            t.join()
+            # Run 3 experiments in parallel
+            threads = []
+            for i in range(3):
+                t = threading.Thread(target=run_experiment, args=(config_file, i))
+                threads.append(t)
+                t.start()
+
+            for t in threads:
+                t.join()
 
         # All experiments should complete
         assert len(results) == 3

@@ -20,11 +20,15 @@ class MockEnvironment:
     by a real PDDL environment in Phase 4.
     """
 
-    def __init__(self, success_rate: float = 0.7, seed: Optional[int] = None):
+    def __init__(self, domain_file: str = None, problem_file: str = None, *, success_rate: float = 0.7, seed: Optional[int] = None):
         """
         Initialize the mock environment.
 
         Args:
+            domain_file: Path to PDDL domain file (accepted for interface
+                compatibility with ActiveEnvironment, but ignored)
+            problem_file: Path to PDDL problem file (accepted for interface
+                compatibility with ActiveEnvironment, but ignored)
             success_rate: Probability of action success (0.0 to 1.0)
             seed: Random seed for reproducibility
         """

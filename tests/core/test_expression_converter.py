@@ -83,7 +83,7 @@ class TestExpressionConverter:
 
         result = ExpressionConverter.to_parameter_bound_string(expr, pickup.parameters)
 
-        assert result == "handempty"
+        assert result == "handempty()"
 
     def test_to_grounded_string_single_param(self, simple_problem):
         """Test converting to grounded string with binding."""

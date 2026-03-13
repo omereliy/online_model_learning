@@ -152,8 +152,8 @@ class TestInformationGainIntegration:
         runner = ExperimentRunner(config_path)
         results = runner.run_experiment()
 
-        # Check that learned model file exists
-        model_path = Path(temp_results_dir) / 'learned_model.json'
+        # Check that learned model file exists (runner routes test experiments to 'tests/' subdir)
+        model_path = Path(temp_results_dir) / 'tests' / 'learned_model.json'
         assert model_path.exists()
 
     def test_metrics_collection(self, base_config, temp_results_dir):
