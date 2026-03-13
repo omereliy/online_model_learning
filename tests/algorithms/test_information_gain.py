@@ -62,13 +62,13 @@ def calculate_La_independently(learner, action_name: str) -> Set[str]:
 @pytest.fixture
 def depots_domain():
     """Path to depots domain file."""
-    return "/home/omer/projects/domains/depots/domain.pddl"
+    return "benchmarks/olam-compatible/depots/domain.pddl"
 
 
 @pytest.fixture
 def depots_problem():
     """Path to depots problem file."""
-    return "/home/omer/projects/domains/depots/pfile1.pddl"
+    return "benchmarks/olam-compatible/depots/p01.pddl"
 
 
 @pytest.fixture

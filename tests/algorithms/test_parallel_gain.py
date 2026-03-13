@@ -352,18 +352,17 @@ class TestOptimizations:
         # Cache should be cleared
         assert len(cache._managers) == 0
 
-    def test_adaptive_threshold_respects_explicit_low_threshold(self):
-        """User-specified low threshold should override adaptive behavior."""
+    def test_parallel_enabled_with_multiple_workers(self):
+        """Parallel should be enabled when num_workers > 1."""
         learner = InformationGainLearner(
             domain_file="benchmarks/olam-compatible/blocksworld/domain.pddl",
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             num_workers=4,
-            parallel_threshold=100  # Low explicit threshold
         )
 
-        # With low threshold and enough actions, should use parallel
+        # With multiple workers, always uses parallel regardless of action count
         assert learner._should_use_parallel(150) == True
-        assert learner._should_use_parallel(50) == False
+        assert learner._should_use_parallel(50) == True
 
     def test_adaptive_threshold_disabled_workers(self):
         """Parallel should be disabled when num_workers=0."""
