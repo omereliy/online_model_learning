@@ -34,7 +34,40 @@ Only `information_gain_aml/algorithms/` and `information_gain_aml/core/` are inc
   ```
 - `chmod 600 ~/.pypirc`
 
-## Release Steps
+## Automated Release (CI/CD)
+
+Releases are automated via GitHub Actions. The workflow (`.github/workflows/publish.yml`) triggers on version tags and publishes to PyPI using [Trusted Publishers](https://docs.pypi.org/trusted-publishers/) (OIDC — no API tokens needed).
+
+### How to release
+
+1. Update version in both `pyproject.toml` and `information_gain_aml/__init__.py`
+2. Commit: `git commit -am "Bump version to X.Y.Z"`
+3. Tag: `git tag vX.Y.Z`
+4. Push: `git push origin master --tags`
+5. The workflow runs tests → builds → verifies wheel → waits for owner approval → publishes
+
+Monitor progress at: https://github.com/omereliy/online_model_learning/actions
+
+### One-time setup
+
+These steps must be done once before the first automated release:
+
+**1. Create `pypi` GitHub Environment:**
+- Repo Settings → Environments → New environment → `pypi`
+- Enable "Required reviewers" → add `omereliy`
+- Deployment branches → restrict to `master`
+
+**2. Configure PyPI Trusted Publisher:**
+- https://pypi.org/manage/project/information-gain-aml/settings/publishing/
+- Add GitHub Actions publisher: owner `omereliy`, repo `online_model_learning`, workflow `publish.yml`, environment `pypi`
+
+**3. Branch protection on `master`:**
+- Repo Settings → Branches → Add rule for `master`
+- "Restrict who can push" → add only `omereliy`
+
+---
+
+## Manual Release Steps (fallback)
 
 ### 1. Bump the version
 

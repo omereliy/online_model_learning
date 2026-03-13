@@ -1,0 +1,82 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest tests/ -v
+
+      - name: Run type checking
+        run: uv run mypy information_gain_aml/
+
+  publish:
+    name: Build and publish to PyPI
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Validate tag matches package version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PKG_VERSION=$(grep -Po '(?<=^version = ")[^"]+' pyproject.toml)
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: Tag version ($TAG_VERSION) does not match pyproject.toml version ($PKG_VERSION)"
+            exit 1
+          fi
+          echo "Version $TAG_VERSION validated."
+
+      - name: Clean build artifacts
+        run: rm -rf dist/ build/ *.egg-info information_gain_aml.egg-info
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build package
+        run: python3 -m build
+
+      - name: Verify wheel excludes experiments and environments
+        run: |
+          whl=$(ls dist/*.whl)
+          echo "Wheel contents:"
+          unzip -l "$whl"
+          if unzip -l "$whl" | grep -q "information_gain_aml/experiments/"; then
+            echo "ERROR: wheel contains experiments/"
+            exit 1
+          fi
+          if unzip -l "$whl" | grep -q "information_gain_aml/environments/"; then
+            echo "ERROR: wheel contains environments/"
+            exit 1
+          fi
+          echo "Wheel verification passed."
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
