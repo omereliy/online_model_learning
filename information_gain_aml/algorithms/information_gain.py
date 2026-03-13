@@ -49,7 +49,6 @@ class InformationGainLearner(BaseActionModelLearner):
                  spare_objects_per_type: int = 2,
                  max_iterations_per_subset: int = DEFAULT_MAX_ITERATIONS,
                  num_workers: Optional[int] = None,
-                 parallel_threshold: int = 3000,
                  learn_negative_preconditions: bool = True,
                  **kwargs):
         """
@@ -65,10 +64,6 @@ class InformationGainLearner(BaseActionModelLearner):
             max_iterations_per_subset: Max iterations before rotating to new subset (default: 100)
             num_workers: Number of worker processes for parallel gain computation.
                         None = auto (cpu_count), 0 = disabled (sequential only)
-            parallel_threshold: Minimum number of grounded actions to enable parallel computation.
-                        Default is 5000 because process creation overhead is significant.
-                        Parallelization is only beneficial for very large action spaces (>5000 actions)
-                        or single long-running computations. For typical domains, sequential is faster.
             learn_negative_preconditions: If True (default), precondition candidates include both
                         positive and negative literals. If False, only positive literals are used,
                         reducing hypothesis space from 3^n to 2^n. Effects always use full La.
@@ -153,9 +148,8 @@ class InformationGainLearner(BaseActionModelLearner):
             )
             logger.info(f"Object subset selection enabled (deferred until first state): {self.subset_manager.get_status()}")
 
-        # Parallel computation settings (Phase C optimization)
+        # Parallel computation settings
         self.num_workers = num_workers
-        self.parallel_threshold = parallel_threshold
 
         # Persistent process pool for parallel computation (avoids per-iteration spawn overhead)
         self._pool: Optional['ProcessPoolExecutor'] = None
@@ -609,8 +603,10 @@ class InformationGainLearner(BaseActionModelLearner):
                         cnf.get_all_solutions()  # Force cache population
 
         # Determine whether to use parallel computation
-        num_actions = len(grounded_actions)
-        use_parallel = self._should_use_parallel(num_actions)
+        actual_workers = self.num_workers
+        if actual_workers is None:
+            actual_workers = os.cpu_count() or 4
+        use_parallel = actual_workers > 1
 
         if use_parallel:
             return self._calculate_all_action_gains_parallel(grounded_actions, state)
@@ -727,32 +723,6 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"\nTop action after sorting: {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
 
         return action_gains
-
-    def _should_use_parallel(self, num_actions: int) -> bool:
-        """
-        Determine whether parallel computation should be used.
-
-        Always uses parallel unless explicitly disabled (num_workers=0)
-        or only 1 worker is available.
-
-        Args:
-            num_actions: Number of grounded actions (unused, kept for API compatibility)
-
-        Returns:
-            True if parallel computation should be used
-        """
-        # Explicitly disabled
-        if self.num_workers == 0:
-            return False
-
-        # Must have more than 1 worker to benefit from parallelism
-        actual_workers = self.num_workers
-        if actual_workers is None:
-            actual_workers = os.cpu_count() or 4
-        if actual_workers <= 1:
-            return False
-
-        return True
 
     def _get_or_create_pool(self, num_workers: int) -> ProcessPoolExecutor:
         """

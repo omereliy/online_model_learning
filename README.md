@@ -45,7 +45,6 @@ learner = InformationGainLearner(
     use_object_subset=True,               # object subset selection (default: True)
     spare_objects_per_type=2,             # extra objects per type beyond minimum
     num_workers=None,                      # parallel workers (None=auto, 0=sequential)
-    parallel_threshold=3000,              # min actions to enable parallelism
     learn_negative_preconditions=True,    # include negative precondition candidates
 )
 ```

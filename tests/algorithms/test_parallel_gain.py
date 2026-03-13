@@ -5,7 +5,7 @@ Verifies that:
 1. ActionGainContext can be serialized (pickled)
 2. CNFManager reconstruction produces correct results
 3. Parallel computation matches sequential computation
-4. Threshold behavior works correctly
+4. Worker mode selection (parallel vs sequential)
 5. Worker exception handling works
 """
 
@@ -33,7 +33,6 @@ def blocksworld_learner():
         problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
         max_iterations=10,
         num_workers=0,  # Disable parallel by default
-        parallel_threshold=50
     )
 
 
@@ -171,7 +170,6 @@ class TestParallelMatchesSequential:
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             max_iterations=5,
             num_workers=0,  # Force sequential
-            parallel_threshold=1000  # Never parallel
         )
 
         # Parallel learner
@@ -180,7 +178,6 @@ class TestParallelMatchesSequential:
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             max_iterations=5,
             num_workers=2,
-            parallel_threshold=1  # Always parallel
         )
 
         # Get action selections
@@ -199,7 +196,6 @@ class TestParallelMatchesSequential:
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             max_iterations=10,
             num_workers=0,
-            parallel_threshold=1000
         )
 
         learner_par = InformationGainLearner(
@@ -207,7 +203,6 @@ class TestParallelMatchesSequential:
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             max_iterations=10,
             num_workers=2,
-            parallel_threshold=1
         )
 
         # Add same observations to both
@@ -226,27 +221,11 @@ class TestParallelMatchesSequential:
         assert action_seq == action_par
 
 
-class TestThresholdBehavior:
-    """Test parallel threshold behavior."""
+class TestWorkerModes:
+    """Test parallel vs sequential worker modes."""
 
-    def test_sequential_below_threshold(self, blocksworld_env):
-        """Should use sequential when below threshold."""
-        state = blocksworld_env.get_state()
-
-        learner = InformationGainLearner(
-            domain_file="benchmarks/olam-compatible/blocksworld/domain.pddl",
-            problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
-            max_iterations=5,
-            num_workers=4,
-            parallel_threshold=10000  # Very high threshold
-        )
-
-        # Should complete without error (using sequential)
-        action, objects = learner.select_action(state)
-        assert action is not None
-
-    def test_parallel_above_threshold(self, blocksworld_env):
-        """Should use parallel when above threshold."""
+    def test_parallel_with_multiple_workers(self, blocksworld_env):
+        """Should complete using parallel when num_workers > 1."""
         state = blocksworld_env.get_state()
 
         learner = InformationGainLearner(
@@ -254,10 +233,8 @@ class TestThresholdBehavior:
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             max_iterations=5,
             num_workers=2,
-            parallel_threshold=1  # Very low threshold
         )
 
-        # Should complete without error (using parallel)
         action, objects = learner.select_action(state)
         assert action is not None
 
@@ -270,7 +247,6 @@ class TestThresholdBehavior:
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             max_iterations=5,
             num_workers=0,  # Disabled
-            parallel_threshold=1  # Would trigger parallel otherwise
         )
 
         action, objects = learner.select_action(state)
@@ -352,36 +328,12 @@ class TestOptimizations:
         # Cache should be cleared
         assert len(cache._managers) == 0
 
-    def test_parallel_enabled_with_multiple_workers(self):
-        """Parallel should be enabled when num_workers > 1."""
-        learner = InformationGainLearner(
-            domain_file="benchmarks/olam-compatible/blocksworld/domain.pddl",
-            problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
-            num_workers=4,
-        )
-
-        # With multiple workers, always uses parallel regardless of action count
-        assert learner._should_use_parallel(150) == True
-        assert learner._should_use_parallel(50) == True
-
-    def test_adaptive_threshold_disabled_workers(self):
-        """Parallel should be disabled when num_workers=0."""
-        learner = InformationGainLearner(
-            domain_file="benchmarks/olam-compatible/blocksworld/domain.pddl",
-            problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
-            num_workers=0
-        )
-
-        # Should always return False regardless of action count
-        assert learner._should_use_parallel(10000) == False
-
     def test_persistent_pool_created_once(self, blocksworld_env):
         """Persistent pool should be reused across iterations."""
         learner = InformationGainLearner(
             domain_file="benchmarks/olam-compatible/blocksworld/domain.pddl",
             problem_file="benchmarks/olam-compatible/blocksworld/p01.pddl",
             num_workers=2,
-            parallel_threshold=10  # Force parallel
         )
 
         state = blocksworld_env.get_state()
