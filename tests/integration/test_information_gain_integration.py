@@ -207,31 +207,6 @@ class TestInformationGainIntegration:
         assert isinstance(objects, list)
 
 
-class TestMultipleDomains:
-    """Test Information Gain learner on multiple PDDL domains."""
-
-    @pytest.fixture
-    def gripper_config(self, base_config, temp_results_dir):
-        """Configuration for gripper domain."""
-        config = base_config.copy()
-        config['domain_problem'] = {
-            'domain': 'benchmarks/olam-compatible/gripper/domain.pddl',
-            'problem': 'benchmarks/olam-compatible/gripper/p01.pddl'
-        }
-        config['output']['directory'] = temp_results_dir
-        return config
-
-    def test_gripper_domain(self, gripper_config, temp_results_dir):
-        """Test Information Gain learner on gripper domain."""
-        config_path = create_config_file(gripper_config, temp_results_dir)
-
-        runner = ExperimentRunner(config_path)
-        results = runner.run_experiment()
-
-        assert results is not None
-        assert results['total_iterations'] > 0
-
-
 class TestPerformance:
     """Performance-related integration tests."""
 

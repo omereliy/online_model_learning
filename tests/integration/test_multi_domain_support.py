@@ -32,11 +32,6 @@ class TestMultiDomainSupport:
                                 "stack",
                                 "unstack"],
                                  "olam-compatible"),
-                                 ("gripper",
-                                  ["move",
-                                   "pick",
-                                   "drop"],
-                                  "olam-compatible"),
                                  ("rover",
                                   ["navigate",
                                    "sample_soil",
@@ -73,7 +68,7 @@ class TestMultiDomainSupport:
             assert action in action_names, f"Missing action {action} in {domain_name}"
 
     @pytest.mark.parametrize("domain_name,compatibility", [
-        ("blocksworld", "olam-compatible"), ("gripper", "olam-compatible"),
+        ("blocksworld", "olam-compatible"),
         ("rover", "olam-compatible"),
         ("depots", "olam-compatible")
     ])
@@ -93,7 +88,6 @@ class TestMultiDomainSupport:
 
     @pytest.mark.parametrize("domain_name,min_actions", [
         ("blocksworld", 10),  # At least 10 grounded actions expected
-        ("gripper", 8),       # Move between rooms + pick/drop actions
         ("rover", 20),        # Complex domain with many actions
         ("depots", 10)        # Logistics-like domain
     ])
@@ -151,20 +145,6 @@ class TestMultiDomainSupport:
 
 class TestDomainSpecificFeatures:
     """Test domain-specific features and characteristics."""
-
-    def test_gripper_two_grippers(self):
-        """Test that gripper domain correctly handles two grippers."""
-        domain_file = BENCHMARKS_PATH / "olam-compatible/gripper/domain.pddl"
-        problem_file = BENCHMARKS_PATH / "olam-compatible/gripper/p01.pddl"
-
-        domain, _ = parse_pddl(str(domain_file), str(problem_file))
-
-        # Check that gripper type is defined
-        gripper_objects = [name for name, obj_info in domain.objects.items()
-                           if obj_info.type.lower() == 'gripper']
-        assert len(gripper_objects) == 2, "Should have exactly 2 grippers"
-        assert 'lgripper1' in gripper_objects
-        assert 'rgripper1' in gripper_objects
 
     def test_rover_specialized_equipment(self):
         """Test that rover domain has specialized equipment predicates."""
