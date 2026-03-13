@@ -1,70 +1,61 @@
-# Online Action Model Learning Experiment Framework
+# information-gain-aml
 
-## Overview
-A framework for online action model learning in PDDL domains, using a CNF/SAT solver-based information-theoretic approach for uncertainty representation.
+A CNF/SAT-based information-theoretic approach for online action model learning in PDDL planning domains.
 
-## Algorithm
-**Information-Theoretic Selection** - CNF-based approach using expected information gain with SAT solver integration
-
-## Getting Started
-
-For detailed architecture and design principles, see [DEVELOPMENT_RULES.md](docs/DEVELOPMENT_RULES.md)
+The algorithm maintains uncertainty over preconditions and effects using CNF formulas, selects actions that maximize expected information gain, and converges toward the true action model through online interaction with the environment.
 
 ## Installation
 
 ```bash
-# Install core dependencies
-pip install unified-planning pysat numpy pandas matplotlib
-
-# Install additional UP integrations (optional)
-pip install unified-planning[pyperplan,tamer]
-
-# Install requirements
-pip install -r requirements.txt
+pip install information-gain-aml
 ```
 
-## Usage
+## Quick Start
 
 ```python
-from src.experiments.runner import ExperimentRunner
-from src.algorithms.information_gain import InformationGainLearner
+from information_gain_aml.algorithms.information_gain import InformationGainLearner
 
-# Configure experiment
-config = {
-    'domain': 'blocksworld',
-    'problems': ['p01', 'p02', 'p03'],
-    'algorithms': ['information_gain'],
-    'metrics': ['sample_complexity', 'time_to_goal', 'model_accuracy', 'cnf_formula_size'],
-    'seed': 42,
-    'cnf_settings': {
-        'solver': 'minisat',
-        'minimize_formulas': True,
-        'max_clauses': 1000
-    }
-}
+learner = InformationGainLearner(
+    domain_file="path/to/domain.pddl",
+    problem_file="path/to/problem.pddl",
+)
 
-# Run experiments
-runner = ExperimentRunner(config)
-results = runner.run()
-runner.visualize_results(results)
+# Select an action based on expected information gain
+action_name, objects = learner.select_action(current_state)
+
+# After observing the outcome, update the model
+learner.update_model()
 ```
 
-## Code Examples
+## Key Features
 
-For detailed examples and code patterns, see [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)
+- **CNF-based uncertainty representation** -- precondition and effect knowledge encoded as SAT formulas
+- **Information-theoretic action selection** -- picks actions that maximize expected information gain
+- **Lifted learning** -- learns at the operator level, generalizing across object instances
+- **Object subset selection** -- scales to large domains by focusing on relevant object subsets
+- **Parallel gain computation** -- optional multiprocessing for large action spaces
 
-## Project Status
+## Configuration
 
-For current implementation status and roadmap, see [IMPLEMENTATION_TASKS.md](docs/IMPLEMENTATION_TASKS.md)
-
-## Testing
-
-```bash
-# Run curated test suite (51 tests, 100% pass rate)
-make test
-
-# Run with Docker for consistent environment
-make docker-test
+```python
+learner = InformationGainLearner(
+    domain_file="domain.pddl",
+    problem_file="problem.pddl",
+    max_iterations=1000,                  # max learning iterations
+    use_object_subset=True,               # object subset selection (default: True)
+    spare_objects_per_type=2,             # extra objects per type beyond minimum
+    num_workers=None,                      # parallel workers (None=auto, 0=sequential)
+    parallel_threshold=3000,              # min actions to enable parallelism
+    learn_negative_preconditions=True,    # include negative precondition candidates
+)
 ```
 
-For complete testing options and Docker usage, see [QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md#commands)
+## Requirements
+
+- Python >= 3.10
+- [python-sat](https://pysathq.github.io/) -- SAT solver for CNF management
+- [unified-planning](https://unified-planning.readthedocs.io/) -- PDDL parsing and domain representation
+
+## License
+
+MIT
