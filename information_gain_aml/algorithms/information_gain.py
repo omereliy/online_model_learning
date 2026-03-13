@@ -50,6 +50,7 @@ class InformationGainLearner(BaseActionModelLearner):
                  max_iterations_per_subset: int = DEFAULT_MAX_ITERATIONS,
                  num_workers: Optional[int] = None,
                  parallel_threshold: int = 3000,
+                 learn_negative_preconditions: bool = True,
                  **kwargs):
         """
         Initialize Information Gain learner.
@@ -68,6 +69,9 @@ class InformationGainLearner(BaseActionModelLearner):
                         Default is 5000 because process creation overhead is significant.
                         Parallelization is only beneficial for very large action spaces (>5000 actions)
                         or single long-running computations. For typical domains, sequential is faster.
+            learn_negative_preconditions: If True (default), precondition candidates include both
+                        positive and negative literals. If False, only positive literals are used,
+                        reducing hypothesis space from 3^n to 2^n. Effects always use full La.
             **kwargs: Additional parameters (selection_strategy, epsilon, temperature)
 
         Raises:
@@ -91,6 +95,7 @@ class InformationGainLearner(BaseActionModelLearner):
         super().__init__(domain_file, problem_file, **kwargs)
 
         self.max_iterations = max_iterations
+        self.learn_negative_preconditions = learn_negative_preconditions
 
         # Initialize domain knowledge using new architecture
         logger.debug("Parsing PDDL domain and problem files")
@@ -176,7 +181,11 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"Generated {len(La)} parameter-bound literals for {action_name}")
 
             # Initialize state variables according to algorithm
-            self.pre[action_name] = La.copy()  # Initially all literals possible
+            if self.learn_negative_preconditions:
+                pre_candidates = La.copy()
+            else:
+                pre_candidates = {l for l in La if not l.startswith('¬')}
+            self.pre[action_name] = pre_candidates  # Initially all candidate literals possible
             self.pre_constraints[action_name] = set()  # Empty constraint set
             self.eff_add[action_name] = set()  # No confirmed add effects
             self.eff_del[action_name] = set()  # No confirmed delete effects
@@ -399,10 +408,14 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Calculate information gain
         # La contains both p and ¬p for each fluent, so num_fluents = |La| / 2
-        # Each fluent has 3 possible states: positive precondition, negative precondition, or not a precondition
         la_size = len(self._get_parameter_bound_literals(action))
         num_fluents = la_size // 2  # La contains both p and ¬p for each fluent
-        total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
+        if self.learn_negative_preconditions:
+            # Each fluent has 3 possible states: positive precondition, negative precondition, or not
+            total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
+        else:
+            # Each fluent has 2 possible states: is a precondition or not
+            total_hypotheses = 2 ** num_fluents if num_fluents > 0 else 1
 
         model_reduction = current_models - new_models
         normalized_gain = model_reduction / total_hypotheses
@@ -933,7 +946,8 @@ class InformationGainLearner(BaseActionModelLearner):
             cnf_solution_cache=cnf_solution_cache,
             parameter_bound_literals=parameter_bound_literals,
             state=set(state),
-            base_model_counts=base_model_counts
+            base_model_counts=base_model_counts,
+            learn_negative_preconditions=self.learn_negative_preconditions
         )
 
     def _filter_applicable_actions(self, action_gains: List[Tuple[str, List[str], float]],
@@ -1491,7 +1505,10 @@ class InformationGainLearner(BaseActionModelLearner):
         # If still empty, use maximum possible models
         if not cnf.has_clauses():
             la_size = len(self._get_parameter_bound_literals(action))
-            count = 2 ** la_size if la_size > 0 else 1
+            if self.learn_negative_preconditions:
+                count = 2 ** la_size if la_size > 0 else 1  # 2n variables (pos + neg)
+            else:
+                count = 2 ** (la_size // 2) if la_size > 0 else 1  # n variables (pos only)
         else:
             # Perform expensive count and cache it
             count = cnf.count_solutions()

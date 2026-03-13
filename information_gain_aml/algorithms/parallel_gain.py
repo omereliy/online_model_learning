@@ -48,6 +48,9 @@ class ActionGainContext:
     # Pre-computed base model counts (avoids recalculation in workers)
     base_model_counts: Dict[str, int] = field(default_factory=dict)
 
+    # Precondition learning mode
+    learn_negative_preconditions: bool = True
+
     # Cached constraint literals (computed on access)
     _constraint_literals_cache: Dict[str, Set[str]] = field(default_factory=dict)
 
@@ -406,7 +409,10 @@ def _get_base_model_count(action_name: str, ctx: ActionGainContext, cnf: 'CNFMan
     # Fallback: calculate (for backwards compatibility with older contexts)
     if not cnf.has_clauses():
         la_size = len(ctx.parameter_bound_literals.get(action_name, set()))
-        return 2 ** la_size if la_size > 0 else 1
+        if ctx.learn_negative_preconditions:
+            return 2 ** la_size if la_size > 0 else 1  # 2n variables (pos + neg)
+        else:
+            return 2 ** (la_size // 2) if la_size > 0 else 1  # n variables (pos only)
 
     return cnf.count_solutions()
 
@@ -483,7 +489,10 @@ def _calculate_potential_gain_failure(
     # Calculate normalized gain
     la_size = len(ctx.parameter_bound_literals.get(action_name, set()))
     num_fluents = la_size // 2  # La contains both p and not-p
-    total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
+    if ctx.learn_negative_preconditions:
+        total_hypotheses = 3 ** num_fluents if num_fluents > 0 else 1
+    else:
+        total_hypotheses = 2 ** num_fluents if num_fluents > 0 else 1
 
     model_reduction = current_models - new_models
     normalized_gain = model_reduction / total_hypotheses

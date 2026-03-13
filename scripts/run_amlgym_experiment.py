@@ -44,6 +44,7 @@ def run_experiment(
     model_mode: str = "safe",
     use_object_subset: bool = True,
     spare_objects_per_type: int = 2,
+    learn_negative_preconditions: bool = True,
     seed: int = 42,
     output_dir: Path = Path("results/amlgym"),
     evaluate: bool = False,
@@ -74,6 +75,7 @@ def run_experiment(
         model_mode=model_mode,
         use_object_subset=use_object_subset,
         spare_objects_per_type=spare_objects_per_type,
+        learn_negative_preconditions=learn_negative_preconditions,
     )
 
     start = time.perf_counter()
@@ -157,6 +159,8 @@ def main():
                         help="Disable object subset selection (use all objects)")
     parser.add_argument("--spare-objects", type=int, default=2,
                         help="Extra objects per type for subset selection (default: 2)")
+    parser.add_argument("--no-negative-preconditions", action="store_true",
+                        help="Skip negative precondition learning (reduces hypothesis space)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", type=str, default="results/amlgym")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation metrics")
@@ -187,6 +191,7 @@ def main():
                 model_mode=args.model_mode,
                 use_object_subset=not args.no_object_subset,
                 spare_objects_per_type=args.spare_objects,
+                learn_negative_preconditions=not args.no_negative_preconditions,
                 seed=args.seed,
                 output_dir=output_dir,
                 evaluate=args.evaluate,

@@ -145,6 +145,40 @@ class TestInitialization:
                 f"Action {action_name}: eff_maybe_del should equal La"
 
 
+class TestLearnNegativePreconditionsFlag:
+    """Test learn_negative_preconditions parameter."""
+
+    def test_default_includes_negative_preconditions(self, learner):
+        """Default behavior: pre(a) includes both positive and negative literals."""
+        assert learner.learn_negative_preconditions is True
+        for action_name in learner.pre.keys():
+            has_negative = any(l.startswith('¬') for l in learner.pre[action_name])
+            assert has_negative, f"Action {action_name} should have negative precondition candidates by default"
+
+    def test_positive_only_preconditions(self, depots_domain, depots_problem):
+        """With learn_negative_preconditions=False, pre(a) has only positive literals."""
+        learner = InformationGainLearner(
+            domain_file=depots_domain,
+            problem_file=depots_problem,
+            max_iterations=100,
+            learn_negative_preconditions=False,
+        )
+        assert learner.learn_negative_preconditions is False
+
+        for action_name in learner.pre.keys():
+            La = learner._get_parameter_bound_literals(action_name)
+            La_positive = {l for l in La if not l.startswith('¬')}
+
+            # pre should only have positive literals
+            assert learner.pre[action_name] == La_positive, \
+                f"Action {action_name}: pre should be positive-only"
+            assert not any(l.startswith('¬') for l in learner.pre[action_name])
+
+            # Effects should still have full La (positive + negative)
+            assert learner.eff_maybe_add[action_name] == La
+            assert learner.eff_maybe_del[action_name] == La
+
+
 class TestParameterBoundLiterals:
     """Test generation of parameter-bound literals (La)."""
 
