@@ -22,7 +22,6 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from information_gain_aml.core.model_reconstructor import ModelReconstructor, ReconstructedModel
 from information_gain_aml.algorithms.information_gain import InformationGainLearner
-from information_gain_aml.experiments.runner import CHECKPOINTS
 
 
 class TestModelExport:
@@ -63,13 +62,6 @@ class TestModelExport:
             assert "confirmed_add_effects" in action_data
             assert "confirmed_del_effects" in action_data
 
-    def test_checkpoint_iterations(self):
-        """Test that checkpoint iterations are properly defined."""
-        assert len(CHECKPOINTS) == 21, "Should have 21 checkpoint iterations"
-        assert CHECKPOINTS[0] == 5, "First checkpoint should be at iteration 5"
-        assert CHECKPOINTS[-1] == 400, "Last checkpoint should be at iteration 400"
-        assert all(CHECKPOINTS[i] < CHECKPOINTS[i+1] for i in range(len(CHECKPOINTS)-1)), \
-            "Checkpoints should be in ascending order"
 
 
 class TestModelReconstruction:

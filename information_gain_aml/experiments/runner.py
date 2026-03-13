@@ -22,9 +22,9 @@ from .metrics import MetricsCollector
 logger = logging.getLogger(__name__)
 
 # Model snapshot checkpoints for post-processing analysis
-CHECKPOINTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 25, 30, 35,
-               40, 45, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 250,
-               300, 350, 400, 450, 500]
+CHECKPOINTS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+               25, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200,
+               250, 300, 350, 400, 450, 500]
 
 
 class ExperimentRunner:

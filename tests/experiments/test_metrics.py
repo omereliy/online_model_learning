@@ -121,9 +121,13 @@ class TestMetricsCollector:
         # Should collect at step 0 (initial)
         assert collector.should_collect(0)
 
-        # Should not collect at non-interval steps
-        assert collector.should_collect(5) == False
-        assert collector.should_collect(7) == False
+        # Should collect at checkpoint steps (1-20 are all checkpoints)
+        assert collector.should_collect(5)
+        assert collector.should_collect(7)
+
+        # Should not collect at non-interval, non-checkpoint steps
+        assert collector.should_collect(22) == False
+        assert collector.should_collect(37) == False
 
         # Should collect at interval steps
         assert collector.should_collect(10)

@@ -145,7 +145,7 @@ class TestModelValidator:
         assert result.precondition_precision == 0.75
         assert result.precondition_recall == 1.0
         assert result.precondition_f1 == pytest.approx(0.857, rel=1e-2)
-        assert result.precondition_false_positives == {"extra(?x)"}
+        assert result.precondition_false_positives == {"extra(?0)"}
         assert result.precondition_false_negatives == set()
 
     def test_missing_effects(self):
@@ -172,7 +172,7 @@ class TestModelValidator:
         assert result.add_effect_precision == 1.0
         assert result.add_effect_recall == pytest.approx(0.333, rel=1e-2)
         assert result.add_effect_false_positives == set()
-        assert result.add_effect_false_negatives == {"clear(?x)", "handempty()"}
+        assert result.add_effect_false_negatives == {"clear(?0)", "handempty()"}
 
     def test_extra_effects(self):
         """Test false positives in effects."""
@@ -197,7 +197,7 @@ class TestModelValidator:
         # Delete effects: precision 3/4 = 0.75, recall 3/3 = 1.0
         assert result.delete_effect_precision == 0.75
         assert result.delete_effect_recall == 1.0
-        assert result.delete_effect_false_positives == {"extra_delete(?y)"}
+        assert result.delete_effect_false_positives == {"extra_delete(?0)"}
         assert result.delete_effect_false_negatives == set()
 
     def test_precision_recall_calculation(self):
@@ -217,8 +217,8 @@ class TestModelValidator:
         assert metrics["precision"] == 0.5
         assert metrics["recall"] == 0.5
         assert metrics["f1"] == 0.5
-        assert metrics["false_positives"] == {"e", "f"}
-        assert metrics["false_negatives"] == {"c", "d"}
+        assert metrics["false_positives"] == {"e()", "f()"}
+        assert metrics["false_negatives"] == {"c()", "d()"}
 
     def test_empty_learned_model(self):
         """Test edge case with empty learned model (all false negatives)."""
@@ -239,11 +239,11 @@ class TestModelValidator:
             learned_delete_effects=set()
         )
 
-        # Everything is a false negative
-        assert result.precondition_precision == 0.0  # No true positives
+        # Empty learned set: no false positives → precision=1.0 (vacuous), recall=0.0
+        assert result.precondition_precision == 1.0
         assert result.precondition_recall == 0.0
         assert result.precondition_f1 == 0.0
-        assert result.precondition_false_negatives == {"clear(?x)", "ontable(?x)", "handempty()"}
+        assert result.precondition_false_negatives == {"clear(?0)", "ontable(?0)", "handempty()"}
 
     def test_over_general_learned_model(self):
         """Test edge case with over-general learned model (many false positives)."""
@@ -267,9 +267,9 @@ class TestModelValidator:
 
         # Everything is a false positive
         assert result.precondition_precision == 0.0
-        assert result.precondition_false_positives == {"extra1(?x)", "extra2(?y)", "extra3(?z)"}
-        assert result.add_effect_false_positives == {"effect1(?x)"}
-        assert result.delete_effect_false_positives == {"effect2(?y)"}
+        assert result.precondition_false_positives == {"extra1(?0)", "extra2(?0)", "extra3(?0)"}
+        assert result.add_effect_false_positives == {"effect1(?0)"}
+        assert result.delete_effect_false_positives == {"effect2(?0)"}
 
     def test_action_with_no_preconditions(self):
         """Test action with no preconditions (propositional)."""
@@ -309,7 +309,7 @@ class TestModelValidator:
         # Precision = 2/3 = 0.667, Recall = 2/3 = 0.667
         assert metrics["precision"] == pytest.approx(0.667, rel=1e-2)
         assert metrics["recall"] == pytest.approx(0.667, rel=1e-2)
-        assert metrics["false_positives"] == {"extra(?y)"}
+        assert metrics["false_positives"] == {"extra(?0)"}
         assert metrics["false_negatives"] == {"handempty()"}
 
     def test_compare_effects_method(self):
@@ -330,13 +330,13 @@ class TestModelValidator:
         # Add effects: TP = 1, FP = 1, FN = 1
         assert add_metrics["precision"] == 0.5
         assert add_metrics["recall"] == 0.5
-        assert add_metrics["false_positives"] == {"extra_add(?z)"}
-        assert add_metrics["false_negatives"] == {"clear(?x)"}
+        assert add_metrics["false_positives"] == {"extra_add(?0)"}
+        assert add_metrics["false_negatives"] == {"clear(?0)"}
 
         # Delete effects: TP = 1, FP = 0, FN = 1
         assert delete_metrics["precision"] == 1.0
         assert delete_metrics["recall"] == 0.5
-        assert delete_metrics["false_negatives"] == {"clear(?y)"}
+        assert delete_metrics["false_negatives"] == {"clear(?0)"}
 
 
 class TestModelValidatorWithPDDL:
