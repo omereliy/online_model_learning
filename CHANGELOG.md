@@ -9,19 +9,27 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Removed
-- Dead code from `cnf_manager.py`: `minimize_qm`, `_rebuild_from_solutions`, `minimize_espresso`, `get_variable`, `add_var_clause`, `remove_clause`, `merge`
-- Obsolete test-only methods superseded by assumptions API: `create_with_state_constraints`, `add_unit_constraint`, `add_constraint_from_unsatisfied`
-- Unused imports (`itertools`, `FrozenSet`) and pointless try/except import block
+---
+
+## [0.2.1] — 2026-03-14
+
+### Fixed
+- 58 mypy errors across the codebase: real bugs, null-safety issues, and type annotations
+- Zero-handling bug in `max_count` checks (`is not None` instead of truthiness)
+- `_invalidate_cache()` called per-iteration instead of once after loop
+- Empty-list handling for `assumptions` parameter
+- `__repr__` triggering SAT solve on print
 
 ### Changed
 - Extract `_literals_to_var_clause` helper to deduplicate literal conversion across 4 call sites
 - Extract `_enumerate_models` helper to deduplicate SAT model counting loop
 - Modernize type hints to Python 3.10+ style (`list[str]`, `dict[str, int]`, `X | None`)
-- Fix `__repr__` to not trigger SAT solve on print
+- Added mypy to CI pipeline as a dev dependency
 
-### Fixed
-- All 5 mypy errors in `cnf_manager.py` (type annotations, return types)
+### Removed
+- ~280 lines of dead code from `cnf_manager.py`: `minimize_qm`, `_rebuild_from_solutions`, `minimize_espresso`, `get_variable`, `add_var_clause`, `remove_clause`, `merge`
+- Obsolete test-only methods superseded by assumptions API: `create_with_state_constraints`, `add_unit_constraint`, `add_constraint_from_unsatisfied`
+- Unused imports (`itertools`, `FrozenSet`) and pointless try/except import block
 
 ---
 
@@ -121,7 +129,8 @@ Planned features and improvements for upcoming releases.
 
 ---
 
-[Unreleased]: https://github.com/omereliy/online_model_learning/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/omereliy/online_model_learning/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/omereliy/online_model_learning/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/omereliy/online_model_learning/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/omereliy/online_model_learning/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/omereliy/online_model_learning/releases/tag/v0.1.0
