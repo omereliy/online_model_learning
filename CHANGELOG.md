@@ -19,6 +19,7 @@ _No unreleased changes._
 - `learn_negative_preconditions` flag to skip negative precondition candidates
 - `--no-negative-preconditions` CLI option for local experiment script
 - GitHub Actions CI/CD workflow for automated PyPI publishing via Trusted Publishers (OIDC)
+- Local AMLGym experiment runner — run AMLGym benchmarks directly from this repo
 
 ### Changed
 - Split experiment skills for finer-grained control
@@ -93,11 +94,10 @@ Planned features and improvements for upcoming releases.
 
 | Type | Description |
 |------|-------------|
-| Feature | AMLGym-native environment integration — replace `active_environment.py` and `mock_environment.py` |
 | Refactor | Framework-agnostic core — remove Unified Planning imports from algorithm code |
 | Refactor | Consolidate to 3-class architecture: `SATKnowledgeBase`, `InformationGainLearner`, `Agent` |
 | Bug | Fix `ObjectSubsetManager` recursion bug (gripper domain) |
-| Milestone | **1.0.0** — Stable public API, fully importable from AMLGym |
+| Milestone | **1.0.0** — Stable public API |
 
 ---
 
