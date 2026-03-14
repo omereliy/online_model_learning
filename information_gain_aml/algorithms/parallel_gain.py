@@ -6,10 +6,15 @@ ProcessPoolExecutor. It handles data serialization, CNFManager reconstruction,
 and simplified gain computation functions that work without shared state.
 """
 
+from __future__ import annotations
+
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Dict, List, Set, FrozenSet, Optional, Any
+from typing import TYPE_CHECKING, Dict, List, Set, FrozenSet, Optional, Any
+
+if TYPE_CHECKING:
+    from information_gain_aml.core.cnf_manager import CNFManager
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +313,7 @@ def _get_certain_preconditions_count(action_name: str, ctx: ActionGainContext) -
 def _get_all_constraint_literals(action_name: str, ctx: ActionGainContext) -> Set[str]:
     """Get all literals from all constraint sets (cached)."""
     if action_name not in ctx._constraint_literals_cache:
-        all_literals = set()
+        all_literals: Set[str] = set()
         for constraint_set in ctx.pre_constraints.get(action_name, set()):
             all_literals.update(constraint_set)
         ctx._constraint_literals_cache[action_name] = all_literals

@@ -36,14 +36,14 @@ class MetricsCollector:
 
         # Main metrics storage
         self.metrics_df = pd.DataFrame()
-        self.snapshots = []
+        self.snapshots: list[dict[str, Any]] = []
 
         # Cumulative metrics
         self.cumulative_mistakes = 0
         self.total_actions = 0
 
         # Per-action type tracking
-        self.action_type_stats = {}
+        self.action_type_stats: dict[str, dict[str, int]] = {}
 
         # Thread safety - use RLock to prevent deadlocks when methods call each other
         self._lock = threading.RLock()
@@ -131,7 +131,7 @@ class MetricsCollector:
                 return 0.0
             return self.cumulative_mistakes / self.total_actions
 
-    def compute_mistake_rates_multiple_windows(self, windows: List[int] = None) -> Dict[int, float]:
+    def compute_mistake_rates_multiple_windows(self, windows: Optional[List[int]] = None) -> Dict[int, float]:
         """
         Calculate mistake rates for multiple window sizes.
 
@@ -290,7 +290,7 @@ class MetricsCollector:
 
             return self.metrics_df['action'].value_counts().to_dict()
 
-    def export(self, filepath: str, format: str = 'csv') -> None:
+    def export(self, filepath: str | Path, format: str = 'csv') -> None:
         """
         Export metrics to file.
 

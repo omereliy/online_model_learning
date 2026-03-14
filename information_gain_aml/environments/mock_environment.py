@@ -20,7 +20,7 @@ class MockEnvironment:
     by a real PDDL environment in Phase 4.
     """
 
-    def __init__(self, domain_file: str = None, problem_file: str = None, *, success_rate: float = 0.7, seed: Optional[int] = None):
+    def __init__(self, domain_file: Optional[str] = None, problem_file: Optional[str] = None, *, success_rate: float = 0.7, seed: Optional[int] = None):
         """
         Initialize the mock environment.
 

@@ -14,7 +14,10 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple, List, Dict, Optional, Any, Set
+from typing import TYPE_CHECKING, Tuple, List, Dict, Optional, Any, Set
+
+if TYPE_CHECKING:
+    from information_gain_aml.algorithms.parallel_gain import ActionGainContext
 
 from information_gain_aml.core import grounding
 from information_gain_aml.core.grounding import is_injective_binding
@@ -864,7 +867,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         return action_gains
 
-    def _create_parallel_context(self, state: Set[str]) -> 'ActionGainContext':
+    def _create_parallel_context(self, state: Set[str]) -> "ActionGainContext":
         """
         Create serializable context for parallel workers.
 
@@ -882,7 +885,7 @@ class InformationGainLearner(BaseActionModelLearner):
         cnf_fluent_to_var = {}
         cnf_var_to_fluent = {}
         cnf_next_var = {}
-        cnf_solution_cache = {}
+        cnf_solution_cache: Dict[str, Optional[List[Set[str]]]] = {}
         parameter_bound_literals = {}
         base_model_counts = {}
 
@@ -1139,7 +1142,7 @@ class InformationGainLearner(BaseActionModelLearner):
                 latest_action = action_name
                 latest_obs = obs_list[-1]
 
-        if not latest_obs:
+        if not latest_obs or latest_action is None:
             logger.debug("No observations to process")
             return
 
@@ -1154,6 +1157,7 @@ class InformationGainLearner(BaseActionModelLearner):
             f"Updating model for action '{action}' based on {'success' if success else 'failure'} observation")
 
         if success:
+            assert next_state is not None, "next_state required for successful observation"
             self._update_success(action, objects, state, next_state)
         else:
             self._update_failure(action, objects, state)
@@ -1406,7 +1410,7 @@ class InformationGainLearner(BaseActionModelLearner):
             Set of all literals appearing in any constraint set
         """
         if action not in self._constraint_literals_cache:
-            all_literals = set()
+            all_literals: Set[str] = set()
             for constraint_set in self.pre_constraints[action]:
                 all_literals.update(constraint_set)
             self._constraint_literals_cache[action] = all_literals
@@ -2069,7 +2073,7 @@ class InformationGainLearner(BaseActionModelLearner):
         domain_name = Path(self.domain_file).stem
         problem_name = Path(self.problem_file).stem
 
-        snapshot = {
+        snapshot: Dict[str, Any] = {
             "iteration": iteration,
             "algorithm": "information_gain",
             "actions": {},

@@ -6,10 +6,10 @@ across all actions in a learned model.
 
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from information_gain_aml.core.model_validator import ModelValidator
-from information_gain_aml.core.model_reconstructor import ReconstructedModel
+from information_gain_aml.core.model_reconstructor import ReconstructedModel, ReconstructedAction
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ModelMetrics:
     """Computes aggregate metrics for learned models against ground truth."""
 
-    def __init__(self, ground_truth_domain_file: Path, problem_file: Path = None):
+    def __init__(self, ground_truth_domain_file: Path, problem_file: Optional[Path] = None):
         """Initialize ModelMetrics.
 
         Args:
@@ -45,7 +45,7 @@ class ModelMetrics:
     def compute_metrics(
         self,
         model: ReconstructedModel,
-        observation_counts: Dict[str, int] = None,
+        observation_counts: Optional[Dict[str, int]] = None,
         min_observations: int = 0
     ) -> Dict[str, Any]:
         """Compute aggregate precision, recall, and F1 for a reconstructed model.
@@ -228,7 +228,7 @@ class ModelMetrics:
             str(self.problem_file)
         )
 
-        if not learned_domain.actions:
+        if not learned_domain.lifted_actions:
             logger.warning("Learned domain has no actions, returning zero metrics")
             return {
                 'precision': 0.0,
@@ -241,16 +241,19 @@ class ModelMetrics:
 
         # Convert to ReconstructedModel format
         reconstructed_actions = {}
-        for action_name, action in learned_domain.actions.items():
-            from information_gain_aml.core.model_reconstructor import ReconstructedActionModel
-            reconstructed_actions[action_name] = ReconstructedActionModel(
+        for action_name, action in learned_domain.lifted_actions.items():
+            reconstructed_actions[action_name] = ReconstructedAction(
+                name=action_name,
+                parameters=[p.name for p in action.parameters],
                 preconditions=action.preconditions,
                 add_effects=action.add_effects,
-                del_effects=action.delete_effects
+                del_effects=action.del_effects
             )
 
-        from information_gain_aml.core.model_reconstructor import ReconstructedModel
-        model = ReconstructedModel(actions=reconstructed_actions)
+        model = ReconstructedModel(
+            model_type="learned_pddl", algorithm="pddl_import",
+            iteration=0, actions=reconstructed_actions
+        )
 
         # Compute separated metrics
         total_prec_precision = 0.0

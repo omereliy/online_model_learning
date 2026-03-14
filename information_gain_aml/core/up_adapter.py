@@ -141,7 +141,7 @@ class UPAdapter:
             return None
 
     @staticmethod
-    def _get_object_combinations(fluent, problem: Problem) -> List[List]:
+    def _get_object_combinations(fluent, problem: Problem) -> "List[tuple[Any, ...]]":
         """
         Get all valid object combinations for a fluent's signature.
 

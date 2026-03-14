@@ -385,7 +385,7 @@ def lift_grounded_fluent(fluent: str, objects: List[str], domain: LiftedDomainKn
 
     # Find predicate by matching against domain predicates
     predicate_name = None
-    param_objects = []
+    param_objects: list[str] = []
 
     # Try to find matching predicate
     for pred_name in domain.predicates.keys():

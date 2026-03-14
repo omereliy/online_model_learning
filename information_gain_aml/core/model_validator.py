@@ -139,6 +139,7 @@ class ModelValidator:
 
         # Get UP problem for accessing actions (for compatibility)
         problem = reader.get_up_problem()
+        assert problem is not None, "UP problem must be available after parsing"
 
         # Extract ground truth for each action
         for action in problem.actions:
@@ -173,7 +174,7 @@ class ModelValidator:
         Returns:
             Set of parameter-bound literal strings
         """
-        literals = set()
+        literals: set[str] = set()
 
         if expression is None:
             return literals
