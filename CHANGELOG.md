@@ -9,7 +9,19 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-_No unreleased changes._
+### Removed
+- Dead code from `cnf_manager.py`: `minimize_qm`, `_rebuild_from_solutions`, `minimize_espresso`, `get_variable`, `add_var_clause`, `remove_clause`, `merge`
+- Obsolete test-only methods superseded by assumptions API: `create_with_state_constraints`, `add_unit_constraint`, `add_constraint_from_unsatisfied`
+- Unused imports (`itertools`, `FrozenSet`) and pointless try/except import block
+
+### Changed
+- Extract `_literals_to_var_clause` helper to deduplicate literal conversion across 4 call sites
+- Extract `_enumerate_models` helper to deduplicate SAT model counting loop
+- Modernize type hints to Python 3.10+ style (`list[str]`, `dict[str, int]`, `X | None`)
+- Fix `__repr__` to not trigger SAT solve on print
+
+### Fixed
+- All 5 mypy errors in `cnf_manager.py` (type annotations, return types)
 
 ---
 
@@ -73,10 +85,10 @@ Planned features and improvements for upcoming releases.
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Cleanup | Remove obsolete test-only methods from `cnf_manager.py` | Planned |
-| Cleanup | Remove dead code and fix imports | Planned |
-| Refactor | Extract literal conversion helper and deduplicate model counting | Planned |
-| Quality | Fix mypy errors and modernize type annotations | Planned |
+| Cleanup | Remove obsolete test-only methods from `cnf_manager.py` | Done |
+| Cleanup | Remove dead code and fix imports | Done |
+| Refactor | Extract literal conversion helper and deduplicate model counting | Done |
+| Quality | Fix mypy errors and modernize type annotations | Done |
 
 ### 0.3.0-beta.N — MCTS Pre-releases
 
