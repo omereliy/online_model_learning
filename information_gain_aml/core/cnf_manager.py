@@ -223,11 +223,11 @@ class CNFManager:
         solver = Minisat22(bootstrap_with=self.cnf)
         try:
             count = 0
-            solve_args = {"assumptions": assumptions} if assumptions else {}
+            solve_args = {"assumptions": assumptions} if assumptions is not None else {}
 
             while solver.solve(**solve_args):
                 count += 1
-                if max_count and count >= max_count:
+                if max_count is not None and count >= max_count:
                     break
                 model = solver.get_model()
                 solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
@@ -445,7 +445,7 @@ class CNFManager:
             var_clause = self._literals_to_var_clause(constraint_set)
             if var_clause:
                 self.cnf.append(var_clause)
-                self._invalidate_cache()
+        self._invalidate_cache()
 
     def clear_formula(self) -> None:
         """
