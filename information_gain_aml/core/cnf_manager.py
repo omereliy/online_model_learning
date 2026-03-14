@@ -3,17 +3,13 @@ CNF Manager for Online Action Model Learning
 Manages CNF formulas for precondition/effect uncertainty using PySAT.
 """
 
-try:
-    from pysat.solvers import Minisat22
-    from pysat.formula import CNF
-except ImportError:
-    # python-sat package uses different import path
-    from pysat.solvers import Minisat22
-    from pysat.formula import CNF
+from __future__ import annotations
 
-import itertools
+from pysat.solvers import Minisat22
+from pysat.formula import CNF
+
 import logging
-from typing import List, Dict, Set, Optional, FrozenSet
+from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +17,16 @@ logger = logging.getLogger(__name__)
 class CNFManager:
     """Manages CNF formulas for precondition/effect uncertainty."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize CNF manager with empty formula."""
-        self.fluent_to_var: Dict[str, int] = {}
-        self.var_to_fluent: Dict[int, str] = {}
+        self.fluent_to_var: dict[str, int] = {}
+        self.var_to_fluent: dict[int, str] = {}
         self.cnf = CNF()
         self.next_var = 1
-        self._solution_cache = None
+        self._solution_cache: list[set[str]] | None = None
         self._cache_valid = False
         # Solver reuse (Session 2 optimization)
-        self._solver: Optional[Minisat22] = None
+        self._solver: Minisat22 | None = None
         self._solver_valid: bool = False
 
     def add_fluent(self, fluent_str: str) -> int:
@@ -49,19 +45,22 @@ class CNFManager:
             self.next_var += 1
         return self.fluent_to_var[fluent_str]
 
-    def get_variable(self, fluent_str: str) -> Optional[int]:
+    def _literals_to_var_clause(self, literals: Iterable[str]) -> list[int]:
+        """Convert literal strings to PySAT variable clause.
+
+        Handles both '-' prefix (internal format) and '¬' prefix (algorithm format).
         """
-        Get variable ID for fluent if it exists.
+        clause = []
+        for lit in literals:
+            if lit.startswith('¬'):
+                clause.append(-self.add_fluent(lit[1:]))
+            elif lit.startswith('-'):
+                clause.append(-self.add_fluent(lit[1:]))
+            else:
+                clause.append(self.add_fluent(lit))
+        return clause
 
-        Args:
-            fluent_str: String representation of fluent
-
-        Returns:
-            Variable ID or None if fluent not mapped
-        """
-        return self.fluent_to_var.get(fluent_str)
-
-    def add_clause(self, clause: List[str]):
+    def add_clause(self, clause: list[str]) -> None:
         """
         Add clause with fluent strings (prefix '-' for negation).
 
@@ -69,27 +68,10 @@ class CNFManager:
             clause: List of fluent strings, prefix with '-' for negation
                    e.g., ['clear_b', '-on_a_b'] represents (clear_b OR NOT on_a_b)
         """
-        var_clause = []
-        for lit in clause:
-            negated = lit.startswith('-')
-            fluent = lit[1:] if negated else lit
-            var_id = self.add_fluent(fluent)
-            var_clause.append(-var_id if negated else var_id)
-
-        self.cnf.append(var_clause)
+        self.cnf.append(self._literals_to_var_clause(clause))
         self._invalidate_cache()
 
-    def add_var_clause(self, var_clause: List[int]):
-        """
-        Add clause using variable IDs directly.
-
-        Args:
-            var_clause: List of variable IDs (negative for negation)
-        """
-        self.cnf.append(var_clause)
-        self._invalidate_cache()
-
-    def add_clause_with_subsumption(self, clause: List[str]) -> bool:
+    def add_clause_with_subsumption(self, clause: list[str]) -> bool:
         """
         Add clause with subsumption checking to keep CNF minimal.
 
@@ -105,14 +87,7 @@ class CNFManager:
         Returns:
             True if clause was added, False if subsumed by existing clause
         """
-        # Convert to variable IDs
-        var_clause = []
-        for lit in clause:
-            negated = lit.startswith('-')
-            fluent = lit[1:] if negated else lit
-            var_id = self.add_fluent(fluent)
-            var_clause.append(-var_id if negated else var_id)
-
+        var_clause = self._literals_to_var_clause(clause)
         new_clause_set = frozenset(var_clause)
 
         # Check if new clause is subsumed by any existing shorter clause
@@ -140,7 +115,7 @@ class CNFManager:
         self._invalidate_cache()
         return True
 
-    def refine_clauses_by_intersection(self, satisfied_literals: Set[str]) -> int:
+    def refine_clauses_by_intersection(self, satisfied_literals: set[str]) -> int:
         """
         Refine existing clauses by removing unsatisfied literals (Session 2 optimization).
 
@@ -228,7 +203,7 @@ class CNFManager:
             self._solver_valid = True
         return self._solver
 
-    def _cleanup_solver(self):
+    def _cleanup_solver(self) -> None:
         """Clean up solver instance if it exists."""
         if self._solver is not None:
             try:
@@ -238,22 +213,30 @@ class CNFManager:
             self._solver = None
         self._solver_valid = False
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Clean up solver on object destruction."""
         self._cleanup_solver()
 
-    def remove_clause(self, clause_index: int):
-        """
-        Remove clause at given index.
+    def _enumerate_models(self, assumptions: list[int] | None = None,
+                          max_count: int | None = None) -> int:
+        """Count satisfying models by SAT enumeration with optional assumptions."""
+        solver = Minisat22(bootstrap_with=self.cnf)
+        try:
+            count = 0
+            solve_args = {"assumptions": assumptions} if assumptions is not None else {}
 
-        Args:
-            clause_index: Index of clause to remove
-        """
-        if 0 <= clause_index < len(self.cnf.clauses):
-            del self.cnf.clauses[clause_index]
-            self._invalidate_cache()
+            while solver.solve(**solve_args):
+                count += 1
+                if max_count is not None and count >= max_count:
+                    break
+                model = solver.get_model()
+                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
 
-    def count_solutions(self, max_solutions: int = None) -> int:
+            return count
+        finally:
+            solver.delete()
+
+    def count_solutions(self, max_solutions: int | None = None) -> int:
         """
         Count all satisfying assignments.
 
@@ -263,24 +246,9 @@ class CNFManager:
         Returns:
             Number of satisfying assignments
         """
-        solver = Minisat22(bootstrap_with=self.cnf)
-        try:
-            count = 0
+        return self._enumerate_models(max_count=max_solutions)
 
-            while solver.solve():
-                count += 1
-                if max_solutions and count >= max_solutions:
-                    break
-
-                # Block current solution to find next one
-                model = solver.get_model()
-                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
-
-            return count
-        finally:
-            solver.delete()
-
-    def get_all_solutions(self, max_solutions: int = None) -> List[Set[str]]:
+    def get_all_solutions(self, max_solutions: int | None = None) -> list[set[str]]:
         """
         Get all satisfying assignments as sets of true fluents.
 
@@ -330,9 +298,9 @@ class CNFManager:
             True if satisfiable, False otherwise
         """
         solver = self._get_or_create_solver()
-        return solver.solve()
+        return bool(solver.solve())
 
-    def get_model(self) -> Optional[Set[str]]:
+    def get_model(self) -> set[str] | None:
         """
         Get a single satisfying model if one exists.
 
@@ -351,104 +319,7 @@ class CNFManager:
             }
         return None
 
-    # TODO: CNF Minimization Methods (minimize_qm, _rebuild_from_solutions, minimize_espresso)
-    # These methods are currently unused but could potentially improve model counting performance.
-    # Current limitation: They call get_all_solutions() first (which is expensive), then rebuild.
-    # For proper integration, they would need incremental CNF simplification (subsumption
-    # elimination, resolution) rather than solution-based rebuilding.
-    # Consider connecting to the model counting pipeline if performance becomes an issue.
-
-    def minimize_qm(self):
-        """
-        Minimize CNF formula using Quine-McCluskey algorithm.
-        This is a simplified version for demonstration.
-        """
-        # Get all solutions as minterms
-        solutions = self.get_all_solutions()
-        if not solutions:
-            return
-
-        # Convert solutions to binary representation
-        all_vars = sorted(self.fluent_to_var.keys())
-        minterms = []
-
-        for solution in solutions:
-            term = []
-            for var in all_vars:
-                term.append(1 if var in solution else 0)
-            minterms.append(tuple(term))
-
-        # Simplified minimization (full QM would be more complex)
-        # For now, just rebuild CNF from solutions
-        self._rebuild_from_solutions(solutions)
-
-    def _rebuild_from_solutions(self, solutions: List[Set[str]]):
-        """
-        Rebuild CNF from list of solutions.
-
-        Args:
-            solutions: List of solution sets
-        """
-        if not solutions:
-            # Unsatisfiable formula
-            self.cnf = CNF()
-            self.cnf.append([1, -1])  # Add contradiction
-            return
-
-        # Create new CNF that excludes non-solutions
-        # This is a simplified approach
-        new_cnf = CNF()
-
-        # For each variable combination not in solutions, add blocking clause
-        all_vars = sorted(self.fluent_to_var.keys())
-        solution_tuples = set()
-
-        for sol in solutions:
-            term = tuple(var in sol for var in all_vars)
-            solution_tuples.add(term)
-
-        # Add clauses to block non-solutions (simplified for small formulas)
-        if len(all_vars) <= 10:  # Only for small problems
-            for assignment in itertools.product([False, True], repeat=len(all_vars)):
-                if assignment not in solution_tuples:
-                    # Block this assignment
-                    clause = []
-                    for i, var in enumerate(all_vars):
-                        var_id = self.fluent_to_var[var]
-                        if assignment[i]:
-                            clause.append(-var_id)
-                        else:
-                            clause.append(var_id)
-                    if clause:
-                        new_cnf.append(clause)
-
-        self.cnf = new_cnf
-        self._invalidate_cache()
-
-    def minimize_espresso(self):
-        """
-        Minimize CNF using Espresso algorithm.
-        Requires pyeda package for full implementation.
-        """
-        try:
-            from pyeda.inter import espresso_exprs
-            from pyeda.inter import expr
-
-            # Convert CNF to pyeda expression
-            solutions = self.get_all_solutions()
-            if not solutions:
-                return
-
-            # Build truth table and minimize
-            # This is a placeholder - full implementation would be more complex
-            logger.info("Espresso minimization not fully implemented")
-            self.minimize_qm()  # Fall back to QM
-
-        except ImportError:
-            logger.warning("pyeda not installed, using QM minimization instead")
-            self.minimize_qm()
-
-    def _invalidate_cache(self):
+    def _invalidate_cache(self) -> None:
         """Invalidate solution cache and solver when formula changes."""
         self._cache_valid = False
         self._solution_cache = None
@@ -501,31 +372,6 @@ class CNFManager:
 
         return new_manager
 
-    def merge(self, other: 'CNFManager'):
-        """
-        Merge another CNF manager's formula into this one.
-
-        Args:
-            other: CNFManager to merge
-        """
-        # Map variables from other to this
-        var_mapping = {}
-        for fluent, var in other.fluent_to_var.items():
-            var_mapping[var] = self.add_fluent(fluent)
-
-        # Add mapped clauses
-        for clause in other.cnf.clauses:
-            mapped_clause = []
-            for lit in clause:
-                var = abs(lit)
-                sign = 1 if lit > 0 else -1
-                if var in var_mapping:
-                    mapped_clause.append(sign * var_mapping[var])
-            if mapped_clause:
-                self.cnf.append(mapped_clause)
-
-        self._invalidate_cache()
-
     def get_probability(self, fluent_str: str) -> float:
         """
         Calculate probability of a fluent being true in satisfying assignments.
@@ -577,75 +423,9 @@ class CNFManager:
 
     def __repr__(self) -> str:
         """Detailed representation."""
-        return f"CNFManager(vars={len(self.fluent_to_var)}, clauses={len(self.cnf.clauses)}, sat={self.is_satisfiable()})"
+        return f"CNFManager(vars={len(self.fluent_to_var)}, clauses={len(self.cnf.clauses)})"
 
-    def create_with_state_constraints(self, state_constraints: Dict[str, bool]) -> 'CNFManager':
-        """
-        Create a new CNF manager with additional state constraints.
-
-        This method is used by information gain algorithm to add constraints
-        for unsatisfied literals in the current state.
-
-        Args:
-            state_constraints: Dict mapping fluent names to their required values
-                              e.g., {'a': True, 'b': False} means a must be true, b must be false
-
-        Returns:
-            New CNFManager with original clauses plus unit clauses for constraints
-        """
-        # Create a deep copy
-        new_cnf = self.copy()
-
-        # Add unit clauses for each state constraint
-        for fluent, must_be_true in state_constraints.items():
-            new_cnf.add_unit_constraint(fluent, must_be_true)
-
-        return new_cnf
-
-    def add_unit_constraint(self, fluent: str, must_be_true: bool):
-        """
-        Add a unit clause constraining a fluent to a specific value.
-
-        Args:
-            fluent: Fluent name to constrain
-            must_be_true: True if fluent must be true, False if it must be false
-        """
-        if must_be_true:
-            # Add unit clause [fluent] (fluent must be true)
-            self.add_clause([fluent])
-        else:
-            # Add unit clause [-fluent] (fluent must be false)
-            self.add_clause(['-' + fluent])
-
-    def add_constraint_from_unsatisfied(self, unsatisfied_literals: FrozenSet[str]):
-        """
-        Add a constraint clause from a set of unsatisfied literals.
-
-        Used by information gain algorithm when action fails to add
-        constraint that at least one unsatisfied literal must be a precondition.
-
-        Args:
-            unsatisfied_literals: Set of literals not satisfied in state
-                                 (can include negated literals like '¬clear_a')
-        """
-        if not unsatisfied_literals:
-            return
-
-        # Build clause from unsatisfied literals
-        clause = []
-        for literal in unsatisfied_literals:
-            if literal.startswith('¬'):
-                # Negative literal ¬p becomes -p in clause
-                positive = literal[1:]
-                clause.append('-' + positive)
-            else:
-                # Positive literal stays positive
-                clause.append(literal)
-
-        if clause:
-            self.add_clause(clause)
-
-    def build_from_constraint_sets(self, constraint_sets: Set[FrozenSet[str]]):
+    def build_from_constraint_sets(self, constraint_sets: set[frozenset[str]]) -> None:
         """
         Build CNF formula from constraint sets.
 
@@ -658,25 +438,16 @@ class CNFManager:
         # Clear existing formula but preserve variable mappings
         self.clear_formula()
 
-        # Add each constraint set as a clause
+        # Add each constraint set as a clause (handles ¬ prefix directly)
         for constraint_set in constraint_sets:
             if not constraint_set:
                 continue
+            var_clause = self._literals_to_var_clause(constraint_set)
+            if var_clause:
+                self.cnf.append(var_clause)
+        self._invalidate_cache()
 
-            clause = []
-            for literal in constraint_set:
-                if literal.startswith('¬'):
-                    # Negative literal
-                    positive = literal[1:]
-                    clause.append('-' + positive)
-                else:
-                    # Positive literal
-                    clause.append(literal)
-
-            if clause:
-                self.add_clause(clause)
-
-    def clear_formula(self):
+    def clear_formula(self) -> None:
         """
         Clear all clauses but preserve variable mappings.
 
@@ -694,7 +465,7 @@ class CNFManager:
         """
         return len(self.cnf.clauses) > 0
 
-    def state_constraints_to_assumptions(self, state_constraints: Dict[str, bool]) -> List[int]:
+    def state_constraints_to_assumptions(self, state_constraints: dict[str, bool]) -> list[int]:
         """
         Convert state constraints dict to PySAT assumptions list (Phase 2 enhancement).
 
@@ -716,7 +487,7 @@ class CNFManager:
 
         return assumptions
 
-    def count_models_with_assumptions(self, assumptions: List[int], use_cache: bool = True) -> int:
+    def count_models_with_assumptions(self, assumptions: list[int], use_cache: bool = True) -> int:
         """
         Count models with assumptions instead of deep copy (Phase 2 enhancement).
 
@@ -737,24 +508,9 @@ class CNFManager:
         if use_cache and self._cache_valid and self._solution_cache is not None:
             return self.count_models_with_assumptions_via_filter(assumptions)
 
-        # TODO: Consider adding timeout support here if needed for very complex formulas.
-        # PySAT's solve() could theoretically run indefinitely on pathological inputs.
-        solver = Minisat22(bootstrap_with=self.cnf)
-        try:
-            count = 0
+        return self._enumerate_models(assumptions=assumptions)
 
-            while solver.solve(assumptions=assumptions):
-                count += 1
-
-                # Block current solution to find next one
-                model = solver.get_model()
-                solver.add_clause([-lit for lit in model if abs(lit) < self.next_var])
-
-            return count
-        finally:
-            solver.delete()
-
-    def count_models_with_assumptions_via_filter(self, assumptions: List[int]) -> int:
+    def count_models_with_assumptions_via_filter(self, assumptions: list[int]) -> int:
         """
         Count models by filtering cached solutions (faster if solutions already cached).
 
@@ -796,7 +552,7 @@ class CNFManager:
 
         return count
 
-    def count_models_with_temporary_clause(self, clause_literals: FrozenSet[str]) -> int:
+    def count_models_with_temporary_clause(self, clause_literals: frozenset[str]) -> int:
         """
         Count models with a temporary clause added (Phase 2 enhancement).
 
@@ -813,18 +569,7 @@ class CNFManager:
         if not clause_literals:
             return self.count_solutions()
 
-        # Convert literals to variable IDs for PySAT clause
-        clause = []
-        for literal in clause_literals:
-            if literal.startswith('¬'):
-                # Negative literal
-                positive = literal[1:]
-                var_id = self.add_fluent(positive)
-                clause.append(-var_id)
-            else:
-                # Positive literal
-                var_id = self.add_fluent(literal)
-                clause.append(var_id)
+        clause = self._literals_to_var_clause(clause_literals)
 
         # Add clause temporarily
         self.cnf.clauses.append(clause)

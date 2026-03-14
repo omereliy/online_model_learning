@@ -19,6 +19,8 @@ from unified_planning.shortcuts import SequentialSimulator
 from unified_planning.model import State
 from unified_planning.plans import ActionInstance
 
+from unified_planning.model import Problem
+
 from information_gain_aml.core.pddl_io import PDDLReader
 from information_gain_aml.core.up_adapter import UPAdapter
 
@@ -61,7 +63,9 @@ class ActiveEnvironment:
         self._domain, self._initial_fluents = reader.parse_domain_and_problem(
             domain_file, problem_file
         )
-        self._up_problem = reader.get_up_problem()
+        up_problem = reader.get_up_problem()
+        assert up_problem is not None, "UP problem must be available after parsing"
+        self._up_problem: Problem = up_problem
 
         # Initialize simulator for execution
         self._simulator = SequentialSimulator(self._up_problem)
@@ -287,7 +291,7 @@ class ActiveEnvironment:
                 return action
         return None
 
-    def _resolve_parameters(self, parameters: List[str]) -> List:
+    def _resolve_parameters(self, parameters: List[str]) -> "List | None":
         """Resolve parameter names to UP object instances."""
         param_objects = []
         for param_name in parameters:

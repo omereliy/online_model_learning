@@ -307,22 +307,6 @@ class TestCNFManagerOperations:
         cnf2.add_clause(['d'])
         assert len(cnf2.cnf.clauses) == len(cnf1.cnf.clauses) + 1
 
-    def test_merge_basic(self):
-        """Test merging two CNF managers."""
-        cnf1 = CNFManager()
-        cnf1.add_clause(['a', 'b'])
-
-        cnf2 = CNFManager()
-        cnf2.add_clause(['c', 'd'])
-
-        original_clauses = len(cnf1.cnf.clauses)
-        cnf1.merge(cnf2)
-
-        # Expected: cnf1 now contains clauses from both
-        assert len(cnf1.cnf.clauses) == original_clauses + 1
-        assert 'c' in cnf1.fluent_to_var
-        assert 'd' in cnf1.fluent_to_var
-
     def test_get_model_satisfiable(self):
         """Test getting a model from satisfiable formula."""
         cnf = CNFManager()
@@ -394,53 +378,54 @@ class TestCNFManagerStringRepresentation:
         assert 'CNFManager' in str_repr
         assert 'CNFManager' in repr_str
         assert 'vars' in str_repr or 'clauses' in str_repr
-        assert 'sat=' in repr_str  # repr should include satisfiability
+        assert 'vars=' in repr_str or 'clauses=' in repr_str
 
 
 class TestCNFManagerConstraintOperations:
     """Test constraint-based operations for information gain algorithm."""
 
-    def test_create_with_state_constraints(self):
-        """Test creating CNF with state constraints added."""
+    def test_state_constraints_to_assumptions(self):
+        """Test assumptions-based model counting (production API)."""
         cnf = CNFManager()
 
-        # Build initial formula
+        # Build formula: (a OR b) AND (NOT a OR c)
         cnf.add_clause(['a', 'b'])
         cnf.add_clause(['-a', 'c'])
 
-        # Create copy with state constraints
-        state_constraints = {'a': False, 'b': True}  # a must be false, b must be true
-        cnf_with_state = cnf.create_with_state_constraints(state_constraints)
+        # Total solutions without constraints
+        total = cnf.count_solutions()
+        assert total == 4
 
-        # Expected: Original unchanged, new has additional unit clauses
-        assert len(cnf.cnf.clauses) == 2  # Original unchanged
-        assert len(cnf_with_state.cnf.clauses) == 4  # Original 2 + 2 unit clauses
+        # Count models with a=False, b=True via assumptions
+        assumptions = cnf.state_constraints_to_assumptions({'a': False, 'b': True})
+        count = cnf.count_models_with_assumptions(assumptions)
 
-        # Verify state constraints were added as unit clauses
-        # Check that the new CNF respects the constraints
-        model = cnf_with_state.get_model()
-        if model:  # If satisfiable
-            assert 'a' not in model  # a should be false
-            assert 'b' in model  # b should be true
+        # With a=False and b=True: only models where a is false and b is true
+        # Expected: 2 solutions ({b}, {b, c})
+        assert count == 2
 
-    def test_add_constraint_from_unsatisfied(self):
-        """Test adding constraint from unsatisfied literals."""
+        # Original CNF unchanged
+        assert cnf.count_solutions() == 4
+
+    def test_count_models_with_temporary_clause(self):
+        """Test temporary clause counting (production API)."""
         cnf = CNFManager()
 
-        # Initial setup
-        cnf.add_fluent('on_a_b')
-        cnf.add_fluent('clear_b')
-        cnf.add_fluent('handempty')
+        # Build formula: (a OR b)
+        cnf.add_clause(['a', 'b'])
 
-        # Add constraint from unsatisfied literals
-        unsatisfied_literals = {'on_a_b', '¬clear_b', 'handempty'}
-        frozen_unsatisfied = frozenset(unsatisfied_literals)
-        cnf.add_constraint_from_unsatisfied(frozen_unsatisfied)
+        # 3 solutions: {a}, {b}, {a, b}
+        assert cnf.count_solutions() == 3
 
-        # Expected: One clause with the unsatisfied literals
-        assert len(cnf.cnf.clauses) == 1
-        # The clause should contain these literals (some may be negated)
-        assert len(cnf.cnf.clauses[0]) == 3
+        # Add temporary clause requiring c
+        count = cnf.count_models_with_temporary_clause(frozenset({'c'}))
+
+        # Now: (a OR b) AND (c) — all 3 original solutions get c added
+        # Still 3 solutions but all include c
+        assert count == 3
+
+        # Original CNF unchanged
+        assert cnf.count_solutions() == 3
 
     def test_build_from_constraint_sets(self):
         """Test building CNF from constraint sets."""
@@ -480,28 +465,6 @@ class TestCNFManagerConstraintOperations:
         # Rebuild with new clauses
         cnf.add_clause(['a', 'c'])
         assert len(cnf.cnf.clauses) == 1
-
-    def test_add_unit_constraint(self):
-        """Test adding unit constraints for literals."""
-        cnf = CNFManager()
-
-        # Add some clauses
-        cnf.add_clause(['a', 'b'])
-
-        # Add unit constraint that 'a' must be true
-        cnf.add_unit_constraint('a', True)
-
-        # Add unit constraint that 'c' must be false
-        cnf.add_unit_constraint('c', False)
-
-        # Expected: 3 clauses total (original + 2 unit clauses)
-        assert len(cnf.cnf.clauses) == 3
-
-        # Check that unit clauses were added correctly
-        model = cnf.get_model()
-        if model:
-            assert 'a' in model  # a must be true
-            assert 'c' not in model  # c must be false
 
 
 class TestCNFManagerEdgeCases:

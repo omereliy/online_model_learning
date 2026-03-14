@@ -67,8 +67,8 @@ class ExperimentRunner:
         self.environment = self._init_environment()
 
         # Tracking
-        self.start_time = None
-        self.end_time = None
+        self.start_time: Optional[datetime] = None
+        self.end_time: Optional[datetime] = None
 
         logger.info(f"Initialized ExperimentRunner for {self.config['experiment']['name']}")
 
@@ -123,7 +123,7 @@ class ExperimentRunner:
 
     def _set_config_defaults(self) -> None:
         """Set default values for optional configuration fields."""
-        defaults = {
+        defaults: Dict[str, Dict[str, Any]] = {
             'metrics': {
                 'interval': 10,
                 'window_size': 50
@@ -304,7 +304,7 @@ class ExperimentRunner:
                 # Export model snapshot at checkpoints
                 if iteration + 1 in CHECKPOINTS:  # +1 because iteration is 0-based
                     try:
-                        self.learner.export_model_snapshot(
+                        self.learner.export_model_snapshot(  # type: ignore[attr-defined]
                             iteration=iteration + 1,
                             output_dir=Path(self.config['output']['directory'])
                         )
@@ -480,7 +480,7 @@ class ExperimentRunner:
             self._cleanup_old_test_results(output_dir)
 
         # Generate filename with timestamp
-        timestamp = self.start_time.strftime('%Y%m%d_%H%M%S')
+        timestamp = self.start_time.strftime('%Y%m%d_%H%M%S') if self.start_time else "unknown"
         base_name = f"{experiment_name}_{timestamp}"
 
         # Export metrics
