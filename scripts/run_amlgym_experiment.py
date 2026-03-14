@@ -38,6 +38,8 @@ from unified_planning.shortcuts import SequentialSimulator
 logger = logging.getLogger(__name__)
 
 
+# TODO: Add selection_strategy/lookahead flags here and in the InformationGainAgent adapter
+#  to support lookahead/MCTS strategies via AMLGym (matching run_full_experiments.py flags).
 def run_experiment(
     domain: str,
     max_steps: int = 500,

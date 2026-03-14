@@ -126,9 +126,14 @@ class InformationGainLearner(BaseActionModelLearner):
         self._base_cnf_count_cache: Dict[str, int] = {}
 
         # Phase 3: Action selection strategy
-        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
+        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann', 'lookahead'
         self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
         self.temperature = kwargs.get('temperature', 1.0)  # For Boltzmann
+
+        # Lookahead parameters (for selection_strategy='lookahead')
+        self.lookahead_depth = kwargs.get('lookahead_depth', 2)
+        self.lookahead_top_k = kwargs.get('lookahead_top_k', 5)
+        self.lookahead_discount = kwargs.get('lookahead_discount', 0.9)
 
         # Convergence tracking
         self._last_max_gain: float = float('inf')  # Track maximum information gain
@@ -466,6 +471,9 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Ensure state is in set format
         state = self._ensure_state_is_set(state)
+
+        # Store for use by lookahead selector (needs state for simulation)
+        self._current_state = state
 
         # Handle object subset selection with state awareness
         if self.use_object_subset and self.subset_manager:
@@ -1071,6 +1079,21 @@ class InformationGainLearner(BaseActionModelLearner):
 
             # Fallback to last action
             return action_gains[-1][0], action_gains[-1][1]
+
+        elif self.selection_strategy == 'lookahead':
+            # Bounded lookahead: evaluate top-k actions with depth-limited future gain
+            from information_gain_aml.algorithms.mcts_selector import BoundedLookaheadSelector
+            selector = BoundedLookaheadSelector(
+                self,
+                depth=self.lookahead_depth,
+                top_k=self.lookahead_top_k,
+                discount=self.lookahead_discount,
+            )
+            # _select_by_strategy receives action_gains but not state;
+            # we need the current state for simulation — stored from select_action()
+            best = selector.select_action(self._current_state, action_gains)
+            logger.debug(f"Lookahead: Selected {best[0]}({','.join(best[1])})")
+            return best[0], best[1]
 
         else:
             # Unknown strategy, default to greedy

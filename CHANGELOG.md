@@ -98,17 +98,27 @@ Planned features and improvements for upcoming releases.
 | Refactor | Extract literal conversion helper and deduplicate model counting | Done |
 | Quality | Fix mypy errors and modernize type annotations | Done |
 
-### 0.3.0-beta.N — MCTS Pre-releases
+### 0.3.0-beta.1 — MCTS Phase 1: Bounded Lookahead
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Feature | MCTS-based action selection (unstable, iterating toward 0.3.0) | Planned |
+| Feature | `BoundedLookaheadSelector` — depth-limited lookahead action selection using discounted information gain | In Progress |
+| Feature | `simulate_action()` — transition simulation using partial model (confirmed effects + stochastic applicability) | In Progress |
+| Feature | `selection_strategy='lookahead'` option with configurable depth, top_k, discount | In Progress |
 
-### 0.3.0 — MCTS
+### 0.3.0-beta.N — MCTS Phase 2: Full UCT
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Feature | Full MCTS-based action selection (stable) | Planned |
+| Feature | `IGMCTSSelector` with UCT selection, expansion, rollout, backpropagation | Planned |
+| Feature | `MCTSNode` tree structure with visit counts and reward tracking | Planned |
+| Feature | `selection_strategy='mcts'` with configurable iterations, exploration constant | Planned |
+
+### 0.3.0 — MCTS (Stable)
+
+| Type | Description | Status |
+|------|-------------|--------|
+| Feature | Stable MCTS-based action selection with lookahead and full UCT variants | Planned |
 
 ### 0.4.0 — Planned Action Sequences
 
