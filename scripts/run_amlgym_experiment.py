@@ -38,8 +38,6 @@ from unified_planning.shortcuts import SequentialSimulator
 logger = logging.getLogger(__name__)
 
 
-# TODO: Add selection_strategy/lookahead flags here and in the InformationGainAgent adapter
-#  to support lookahead/MCTS strategies via AMLGym (matching run_full_experiments.py flags).
 def run_experiment(
     domain: str,
     max_steps: int = 500,
@@ -50,6 +48,12 @@ def run_experiment(
     seed: int = 42,
     output_dir: Path = Path("results/amlgym"),
     evaluate: bool = False,
+    selection_strategy: str = "greedy",
+    lookahead_depth: int = 2,
+    lookahead_top_k: int = 5,
+    lookahead_discount: float = 0.9,
+    mcts_iterations: int = 50,
+    mcts_rollout_depth: int = 5,
 ) -> dict:
     """Run a single experiment on a domain."""
     logger.info(f"=== {domain} (max_steps={max_steps}, mode={model_mode}, seed={seed}) ===")
@@ -78,6 +82,12 @@ def run_experiment(
         use_object_subset=use_object_subset,
         spare_objects_per_type=spare_objects_per_type,
         learn_negative_preconditions=learn_negative_preconditions,
+        selection_strategy=selection_strategy,
+        lookahead_depth=lookahead_depth,
+        lookahead_top_k=lookahead_top_k,
+        lookahead_discount=lookahead_discount,
+        mcts_iterations=mcts_iterations,
+        mcts_rollout_depth=mcts_rollout_depth,
     )
 
     start = time.perf_counter()
@@ -166,6 +176,19 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-dir", type=str, default="results/amlgym")
     parser.add_argument("--evaluate", action="store_true", help="Run evaluation metrics")
+    parser.add_argument("--selection-strategy",
+                        choices=["greedy", "epsilon_greedy", "boltzmann", "lookahead", "mcts"],
+                        default="greedy", help="Action selection strategy (default: greedy)")
+    parser.add_argument("--lookahead-depth", type=int, default=2,
+                        help="Lookahead depth for 'lookahead' strategy (default: 2)")
+    parser.add_argument("--lookahead-top-k", type=int, default=5,
+                        help="Top-k actions to evaluate in lookahead (default: 5)")
+    parser.add_argument("--lookahead-discount", type=float, default=0.9,
+                        help="Discount factor for lookahead (default: 0.9)")
+    parser.add_argument("--mcts-iterations", type=int, default=50,
+                        help="Number of MCTS iterations (default: 50)")
+    parser.add_argument("--mcts-rollout-depth", type=int, default=5,
+                        help="MCTS rollout depth (default: 5)")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -197,6 +220,12 @@ def main():
                 seed=args.seed,
                 output_dir=output_dir,
                 evaluate=args.evaluate,
+                selection_strategy=args.selection_strategy,
+                lookahead_depth=args.lookahead_depth,
+                lookahead_top_k=args.lookahead_top_k,
+                lookahead_discount=args.lookahead_discount,
+                mcts_iterations=args.mcts_iterations,
+                mcts_rollout_depth=args.mcts_rollout_depth,
             )
             results.append(result)
         except Exception as e:
