@@ -126,7 +126,7 @@ class InformationGainLearner(BaseActionModelLearner):
         self._base_cnf_count_cache: Dict[str, int] = {}
 
         # Phase 3: Action selection strategy
-        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann', 'lookahead'
+        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann', 'lookahead', 'mcts'
         self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
         self.temperature = kwargs.get('temperature', 1.0)  # For Boltzmann
 
@@ -134,6 +134,10 @@ class InformationGainLearner(BaseActionModelLearner):
         self.lookahead_depth = kwargs.get('lookahead_depth', 2)
         self.lookahead_top_k = kwargs.get('lookahead_top_k', 5)
         self.lookahead_discount = kwargs.get('lookahead_discount', 0.9)
+
+        # MCTS parameters (for selection_strategy='mcts')
+        self.mcts_iterations = kwargs.get('mcts_iterations', 50)
+        self.mcts_rollout_depth = kwargs.get('mcts_rollout_depth', 5)
 
         # Convergence tracking
         self._last_max_gain: float = float('inf')  # Track maximum information gain
@@ -1093,6 +1097,21 @@ class InformationGainLearner(BaseActionModelLearner):
             # we need the current state for simulation — stored from select_action()
             best = selector.select_action(self._current_state, action_gains)
             logger.debug(f"Lookahead: Selected {best[0]}({','.join(best[1])})")
+            return best[0], best[1]
+
+        elif self.selection_strategy == 'mcts':
+            # Full UCT-based MCTS action selection
+            from information_gain_aml.algorithms.mcts_selector import IGMCTSSelector
+            mcts_selector = IGMCTSSelector(
+                self,
+                iterations=self.mcts_iterations,
+                rollout_depth=self.mcts_rollout_depth,
+            )
+            best = mcts_selector.select_action(self._current_state, action_gains)
+            logger.debug(
+                f"MCTS: Selected {best[0]}({','.join(best[1])}) "
+                f"after {self.mcts_iterations} iterations"
+            )
             return best[0], best[1]
 
         else:

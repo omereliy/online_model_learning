@@ -280,7 +280,7 @@ Examples:
     parser.add_argument("--no-negative-preconditions", action="store_true",
                        help="Skip negative precondition learning (reduces hypothesis space)")
     parser.add_argument("--selection-strategy", type=str, default="greedy",
-                       choices=["greedy", "epsilon_greedy", "boltzmann", "lookahead"],
+                       choices=["greedy", "epsilon_greedy", "boltzmann", "lookahead", "mcts"],
                        help="Action selection strategy (default: greedy)")
     parser.add_argument("--lookahead-depth", type=int, default=2,
                        help="Lookahead depth for 'lookahead' strategy (default: 2)")

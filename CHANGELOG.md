@@ -102,17 +102,16 @@ Planned features and improvements for upcoming releases.
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Feature | `BoundedLookaheadSelector` — depth-limited lookahead action selection using discounted information gain | In Progress |
-| Feature | `simulate_action()` — transition simulation using partial model (confirmed effects + stochastic applicability) | In Progress |
-| Feature | `selection_strategy='lookahead'` option with configurable depth, top_k, discount | In Progress |
+| Feature | `BoundedLookaheadSelector` — depth-limited lookahead action selection using discounted information gain | Done |
+| Feature | `simulate_action()` — transition simulation using partial model (confirmed effects + stochastic applicability) | Done |
+| Feature | `selection_strategy='lookahead'` option with configurable depth, top_k, discount | Done |
 
-### 0.3.0-beta.N — MCTS Phase 2: Full UCT
+### 0.3.0-beta.2 — MCTS Phase 2: Full UCT
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Feature | `IGMCTSSelector` with UCT selection, expansion, rollout, backpropagation | Planned |
-| Feature | `MCTSNode` tree structure with visit counts and reward tracking | Planned |
-| Feature | `selection_strategy='mcts'` with configurable iterations, exploration constant | Planned |
+| Feature | `IGMCTSSelector` with UCT selection, expansion, greedy rollout, backpropagation | Done |
+| Feature | `selection_strategy='mcts'` with configurable iterations and rollout depth | Done |
 
 ### 0.3.0 — MCTS (Stable)
 
