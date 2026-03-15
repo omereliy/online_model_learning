@@ -2116,6 +2116,15 @@ class InformationGainLearner(BaseActionModelLearner):
                 "constraint_sets": [sorted(list(cs)) for cs in self.pre_constraints.get(action_name, set())]
             }
 
+        # Add action model statistics for intermediate analysis
+        snapshot["statistics"] = {
+            "iterations": self.iteration_count,
+            "observations": self.observation_count,
+            "converged": self._converged,
+            "max_information_gain": self._last_max_gain,
+            "action_model_metrics": self.get_action_model_metrics()
+        }
+
         # Write to file
         output_path = models_dir / f"model_iter_{iteration:03d}.json"
         with open(output_path, 'w') as f:
