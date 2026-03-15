@@ -7,7 +7,22 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
-## [Unreleased]
+## [0.3.0] — 2026-03-15
+
+### Added
+- `BoundedLookaheadSelector` — depth-limited lookahead action selection with discounted future gain estimation
+- `IGMCTSSelector` — full UCT-based MCTS action selection (selection, expansion, greedy rollout, backpropagation)
+- `simulate_action()` — transition simulation using partial model (confirmed effects + stochastic applicability)
+- `selection_strategy='lookahead'` option with configurable depth, top_k, discount
+- `selection_strategy='mcts'` option with configurable iterations and rollout depth
+- Selection strategy and MCTS/lookahead CLI flags for AMLGym experiment script
+
+### Changed
+- Extract `_apply_injective_binding_filter()` to deduplicate binding filter logic in sequential/parallel gain computation
+
+### Known Issues
+- Full UCT MCTS (`selection_strategy='mcts'`) is significantly slower than other strategies; performance optimization needed before practical use
+- `run_full_experiments.py` missing `--mcts-iterations` / `--mcts-rollout-depth` CLI args (MCTS uses defaults; configurable via YAML)
 
 ---
 
@@ -98,17 +113,26 @@ Planned features and improvements for upcoming releases.
 | Refactor | Extract literal conversion helper and deduplicate model counting | Done |
 | Quality | Fix mypy errors and modernize type annotations | Done |
 
-### 0.3.0-beta.N — MCTS Pre-releases
+### 0.3.0-beta.1 — MCTS Phase 1: Bounded Lookahead
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Feature | MCTS-based action selection (unstable, iterating toward 0.3.0) | Planned |
+| Feature | `BoundedLookaheadSelector` — depth-limited lookahead action selection using discounted information gain | Done |
+| Feature | `simulate_action()` — transition simulation using partial model (confirmed effects + stochastic applicability) | Done |
+| Feature | `selection_strategy='lookahead'` option with configurable depth, top_k, discount | Done |
 
-### 0.3.0 — MCTS
+### 0.3.0-beta.2 — MCTS Phase 2: Full UCT
 
 | Type | Description | Status |
 |------|-------------|--------|
-| Feature | Full MCTS-based action selection (stable) | Planned |
+| Feature | `IGMCTSSelector` with UCT selection, expansion, greedy rollout, backpropagation | Done |
+| Feature | `selection_strategy='mcts'` with configurable iterations and rollout depth | Done |
+
+### 0.3.0 — MCTS (Stable)
+
+| Type | Description | Status |
+|------|-------------|--------|
+| Feature | Stable MCTS-based action selection with lookahead and full UCT variants | Done |
 
 ### 0.4.0 — Planned Action Sequences
 
@@ -129,7 +153,8 @@ Planned features and improvements for upcoming releases.
 
 ---
 
-[Unreleased]: https://github.com/omereliy/online_model_learning/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/omereliy/online_model_learning/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/omereliy/online_model_learning/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/omereliy/online_model_learning/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/omereliy/online_model_learning/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/omereliy/online_model_learning/compare/v0.1.0...v0.1.1

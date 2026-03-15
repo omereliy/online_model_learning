@@ -126,9 +126,18 @@ class InformationGainLearner(BaseActionModelLearner):
         self._base_cnf_count_cache: Dict[str, int] = {}
 
         # Phase 3: Action selection strategy
-        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann'
+        self.selection_strategy = kwargs.get('selection_strategy', 'greedy')  # 'greedy', 'epsilon_greedy', 'boltzmann', 'lookahead', 'mcts'
         self.epsilon = kwargs.get('epsilon', 0.1)  # For epsilon-greedy
         self.temperature = kwargs.get('temperature', 1.0)  # For Boltzmann
+
+        # Lookahead parameters (for selection_strategy='lookahead')
+        self.lookahead_depth = kwargs.get('lookahead_depth', 2)
+        self.lookahead_top_k = kwargs.get('lookahead_top_k', 5)
+        self.lookahead_discount = kwargs.get('lookahead_discount', 0.9)
+
+        # MCTS parameters (for selection_strategy='mcts')
+        self.mcts_iterations = kwargs.get('mcts_iterations', 50)
+        self.mcts_rollout_depth = kwargs.get('mcts_rollout_depth', 5)
 
         # Convergence tracking
         self._last_max_gain: float = float('inf')  # Track maximum information gain
@@ -467,6 +476,9 @@ class InformationGainLearner(BaseActionModelLearner):
         # Ensure state is in set format
         state = self._ensure_state_is_set(state)
 
+        # Store for use by lookahead selector (needs state for simulation)
+        self._current_state = state
+
         # Handle object subset selection with state awareness
         if self.use_object_subset and self.subset_manager:
             # First iteration: select initial subset using state information
@@ -683,42 +695,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
-
-        # Filter/prioritize injective bindings based on action execution history
-        # Actions without successful observations: filter out non-injective (strict)
-        # Actions with successful observations: prioritize injective (lenient)
-        filtered_gains = []
-        for action_name, objects, gain in action_gains:
-            is_injective = is_injective_binding(objects)
-            has_success = self._has_successful_observation(action_name)
-
-            if has_success:
-                # Action already executed successfully - prioritize injective but allow non-injective
-                filtered_gains.append((action_name, objects, gain, is_injective))
-            else:
-                # Action not yet executed - filter out non-injective (unless no alternative)
-                if is_injective:
-                    filtered_gains.append((action_name, objects, gain, is_injective))
-                # Non-injective for unexecuted action: defer (handled in fallback below)
-
-        # Separate by injectivity, preserving gain ordering within each group
-        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
-        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
-
-        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
-        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
-        for action_name, objects, gain in action_gains:
-            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
-                # Check if this action type has any injective options
-                if action_name not in actions_with_injective:
-                    non_injective_actions.append((action_name, objects, gain))
-                    # TODO: use ESAM effects logic on non-injective bindings
-
-        if non_injective_actions:
-            logger.debug(f"Injective binding filter: {len(injective_actions)} injective, "
-                         f"{len(non_injective_actions)} non-injective actions")
-
-        action_gains = injective_actions + non_injective_actions
+        action_gains = self._apply_injective_binding_filter(action_gains)
 
         # Log top action after sorting
         if action_gains:
@@ -823,42 +800,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
-
-        # Filter/prioritize injective bindings based on action execution history
-        # Actions without successful observations: filter out non-injective (strict)
-        # Actions with successful observations: prioritize injective (lenient)
-        filtered_gains = []
-        for action_name, objects, gain in action_gains:
-            is_injective = is_injective_binding(objects)
-            has_success = self._has_successful_observation(action_name)
-
-            if has_success:
-                # Action already executed successfully - prioritize injective but allow non-injective
-                filtered_gains.append((action_name, objects, gain, is_injective))
-            else:
-                # Action not yet executed - filter out non-injective (unless no alternative)
-                if is_injective:
-                    filtered_gains.append((action_name, objects, gain, is_injective))
-                # Non-injective for unexecuted action: defer (handled in fallback below)
-
-        # Separate by injectivity, preserving gain ordering within each group
-        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
-        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
-
-        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
-        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
-        for action_name, objects, gain in action_gains:
-            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
-                # Check if this action type has any injective options
-                if action_name not in actions_with_injective:
-                    non_injective_actions.append((action_name, objects, gain))
-                    # TODO: use ESAM effects logic on non-injective bindings
-
-        if non_injective_actions:
-            logger.debug(f"Injective binding filter (parallel): {len(injective_actions)} injective, "
-                         f"{len(non_injective_actions)} non-injective actions")
-
-        action_gains = injective_actions + non_injective_actions
+        action_gains = self._apply_injective_binding_filter(action_gains)
 
         # Log top action after sorting
         if action_gains:
@@ -866,6 +808,43 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"\nTop action after sorting (parallel): {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
 
         return action_gains
+
+    def _apply_injective_binding_filter(
+        self, action_gains: List[Tuple[str, List[str], float]]
+    ) -> List[Tuple[str, List[str], float]]:
+        """
+        Filter/prioritize injective bindings based on action execution history.
+
+        Actions without successful observations: filter out non-injective (strict).
+        Actions with successful observations: prioritize injective (lenient).
+        """
+        filtered_gains = []
+        for action_name, objects, gain in action_gains:
+            is_injective = is_injective_binding(objects)
+            has_success = self._has_successful_observation(action_name)
+
+            if has_success:
+                filtered_gains.append((action_name, objects, gain, is_injective))
+            else:
+                if is_injective:
+                    filtered_gains.append((action_name, objects, gain, is_injective))
+
+        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
+        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
+
+        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
+        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
+        for action_name, objects, gain in action_gains:
+            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
+                if action_name not in actions_with_injective:
+                    non_injective_actions.append((action_name, objects, gain))
+                    # TODO: use ESAM effects logic on non-injective bindings
+
+        if non_injective_actions:
+            logger.debug(f"Injective binding filter: {len(injective_actions)} injective, "
+                         f"{len(non_injective_actions)} non-injective actions")
+
+        return injective_actions + non_injective_actions
 
     def _create_parallel_context(self, state: Set[str]) -> "ActionGainContext":
         """
@@ -1071,6 +1050,36 @@ class InformationGainLearner(BaseActionModelLearner):
 
             # Fallback to last action
             return action_gains[-1][0], action_gains[-1][1]
+
+        elif self.selection_strategy == 'lookahead':
+            # Bounded lookahead: evaluate top-k actions with depth-limited future gain
+            from information_gain_aml.algorithms.mcts_selector import BoundedLookaheadSelector
+            selector = BoundedLookaheadSelector(
+                self,
+                depth=self.lookahead_depth,
+                top_k=self.lookahead_top_k,
+                discount=self.lookahead_discount,
+            )
+            # _select_by_strategy receives action_gains but not state;
+            # we need the current state for simulation — stored from select_action()
+            best = selector.select_action(self._current_state, action_gains)
+            logger.debug(f"Lookahead: Selected {best[0]}({','.join(best[1])})")
+            return best[0], best[1]
+
+        elif self.selection_strategy == 'mcts':
+            # Full UCT-based MCTS action selection
+            from information_gain_aml.algorithms.mcts_selector import IGMCTSSelector
+            mcts_selector = IGMCTSSelector(
+                self,
+                iterations=self.mcts_iterations,
+                rollout_depth=self.mcts_rollout_depth,
+            )
+            best = mcts_selector.select_action(self._current_state, action_gains)
+            logger.debug(
+                f"MCTS: Selected {best[0]}({','.join(best[1])}) "
+                f"after {self.mcts_iterations} iterations"
+            )
+            return best[0], best[1]
 
         else:
             # Unknown strategy, default to greedy
@@ -2106,6 +2115,15 @@ class InformationGainLearner(BaseActionModelLearner):
                 "possible_del_effects": sorted(list(self.eff_maybe_del.get(action_name, set()))),
                 "constraint_sets": [sorted(list(cs)) for cs in self.pre_constraints.get(action_name, set())]
             }
+
+        # Add action model statistics for intermediate analysis
+        snapshot["statistics"] = {
+            "iterations": self.iteration_count,
+            "observations": self.observation_count,
+            "converged": self._converged,
+            "max_information_gain": self._last_max_gain,
+            "action_model_metrics": self.get_action_model_metrics()
+        }
 
         # Write to file
         output_path = models_dir / f"model_iter_{iteration:03d}.json"
