@@ -38,7 +38,17 @@ Current: multi-module with Unified Planning. Target: 3-class design importable b
 - `docs/releasing.md` — PyPI release procedure
 - `.claude/rules/` — Simplification, migration, testing, experiment, releasing rules
 
+## Code Conventions
+- **Lazy imports for optional deps**: When adding integrations with external packages, import inside methods — not at module top level. Top-level imports break the AMLGym registry when the dep isn't installed.
+- **Wire through all entry points**: When adding CLI flags or features, check ALL scripts in `scripts/` and `experiments/` that use the same functionality. Don't wire a flag into only one script.
+
 ## Integration
 - Target: importable from AMLGym via `OnlineAlgorithmAdapter`
 - Currently: standalone with Unified Planning environment
 - Never write custom PDDL parsers — use library APIs
+
+## Prompting Tips
+When requesting changes, front-load constraints to avoid wrong approaches:
+- **Algorithm/SAT work**: "Reference `docs/information_gain_algorithm/INFORMATION_GAIN_ALGORITHM.md` for formulas. Relevant code is in [file]. Run pytest after changes."
+- **Experiment work**: "Check ALL scripts in `scripts/` and `experiments/` that invoke this. Start from the error trace, don't explore broadly."
+- **MCTS/optimization**: "Profile first before proposing changes. Run the experiment script to verify no regression."
