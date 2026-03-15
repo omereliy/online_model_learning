@@ -695,42 +695,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
-
-        # Filter/prioritize injective bindings based on action execution history
-        # Actions without successful observations: filter out non-injective (strict)
-        # Actions with successful observations: prioritize injective (lenient)
-        filtered_gains = []
-        for action_name, objects, gain in action_gains:
-            is_injective = is_injective_binding(objects)
-            has_success = self._has_successful_observation(action_name)
-
-            if has_success:
-                # Action already executed successfully - prioritize injective but allow non-injective
-                filtered_gains.append((action_name, objects, gain, is_injective))
-            else:
-                # Action not yet executed - filter out non-injective (unless no alternative)
-                if is_injective:
-                    filtered_gains.append((action_name, objects, gain, is_injective))
-                # Non-injective for unexecuted action: defer (handled in fallback below)
-
-        # Separate by injectivity, preserving gain ordering within each group
-        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
-        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
-
-        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
-        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
-        for action_name, objects, gain in action_gains:
-            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
-                # Check if this action type has any injective options
-                if action_name not in actions_with_injective:
-                    non_injective_actions.append((action_name, objects, gain))
-                    # TODO: use ESAM effects logic on non-injective bindings
-
-        if non_injective_actions:
-            logger.debug(f"Injective binding filter: {len(injective_actions)} injective, "
-                         f"{len(non_injective_actions)} non-injective actions")
-
-        action_gains = injective_actions + non_injective_actions
+        action_gains = self._apply_injective_binding_filter(action_gains)
 
         # Log top action after sorting
         if action_gains:
@@ -835,42 +800,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Sort by gain (highest first)
         action_gains.sort(key=lambda x: x[2], reverse=True)
-
-        # Filter/prioritize injective bindings based on action execution history
-        # Actions without successful observations: filter out non-injective (strict)
-        # Actions with successful observations: prioritize injective (lenient)
-        filtered_gains = []
-        for action_name, objects, gain in action_gains:
-            is_injective = is_injective_binding(objects)
-            has_success = self._has_successful_observation(action_name)
-
-            if has_success:
-                # Action already executed successfully - prioritize injective but allow non-injective
-                filtered_gains.append((action_name, objects, gain, is_injective))
-            else:
-                # Action not yet executed - filter out non-injective (unless no alternative)
-                if is_injective:
-                    filtered_gains.append((action_name, objects, gain, is_injective))
-                # Non-injective for unexecuted action: defer (handled in fallback below)
-
-        # Separate by injectivity, preserving gain ordering within each group
-        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
-        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
-
-        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
-        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
-        for action_name, objects, gain in action_gains:
-            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
-                # Check if this action type has any injective options
-                if action_name not in actions_with_injective:
-                    non_injective_actions.append((action_name, objects, gain))
-                    # TODO: use ESAM effects logic on non-injective bindings
-
-        if non_injective_actions:
-            logger.debug(f"Injective binding filter (parallel): {len(injective_actions)} injective, "
-                         f"{len(non_injective_actions)} non-injective actions")
-
-        action_gains = injective_actions + non_injective_actions
+        action_gains = self._apply_injective_binding_filter(action_gains)
 
         # Log top action after sorting
         if action_gains:
@@ -878,6 +808,43 @@ class InformationGainLearner(BaseActionModelLearner):
             logger.debug(f"\nTop action after sorting (parallel): {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
 
         return action_gains
+
+    def _apply_injective_binding_filter(
+        self, action_gains: List[Tuple[str, List[str], float]]
+    ) -> List[Tuple[str, List[str], float]]:
+        """
+        Filter/prioritize injective bindings based on action execution history.
+
+        Actions without successful observations: filter out non-injective (strict).
+        Actions with successful observations: prioritize injective (lenient).
+        """
+        filtered_gains = []
+        for action_name, objects, gain in action_gains:
+            is_injective = is_injective_binding(objects)
+            has_success = self._has_successful_observation(action_name)
+
+            if has_success:
+                filtered_gains.append((action_name, objects, gain, is_injective))
+            else:
+                if is_injective:
+                    filtered_gains.append((action_name, objects, gain, is_injective))
+
+        injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if inj]
+        non_injective_actions = [(a, o, g) for a, o, g, inj in filtered_gains if not inj]
+
+        # Fallback: For action types with NO injective bindings (unexecuted), add non-injective
+        actions_with_injective = {a for a, _, _, inj in filtered_gains if inj}
+        for action_name, objects, gain in action_gains:
+            if not is_injective_binding(objects) and not self._has_successful_observation(action_name):
+                if action_name not in actions_with_injective:
+                    non_injective_actions.append((action_name, objects, gain))
+                    # TODO: use ESAM effects logic on non-injective bindings
+
+        if non_injective_actions:
+            logger.debug(f"Injective binding filter: {len(injective_actions)} injective, "
+                         f"{len(non_injective_actions)} non-injective actions")
+
+        return injective_actions + non_injective_actions
 
     def _create_parallel_context(self, state: Set[str]) -> "ActionGainContext":
         """
