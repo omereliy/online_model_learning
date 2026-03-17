@@ -588,7 +588,7 @@ class ExperimentRunner:
 
         # Create timestamp marker file in problem directory
         timestamp = self.start_time.strftime('%Y%m%d_%H%M%S') if self.start_time else "unknown"
-        timestamp_file = base_output_dir / f"time{timestamp}"
+        timestamp_file = output_dir / f"time{timestamp}"
         timestamp_file.touch()
 
         logger.info(f"Exported results to {output_dir}")
