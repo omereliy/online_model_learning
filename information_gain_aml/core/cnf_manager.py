@@ -246,6 +246,8 @@ class CNFManager:
         Returns:
             Number of satisfying assignments
         """
+        if max_solutions is None and self._cache_valid and self._solution_cache is not None:
+            return len(self._solution_cache)
         return self._enumerate_models(max_count=max_solutions)
 
     def get_all_solutions(self, max_solutions: int | None = None) -> list[set[str]]:
@@ -556,8 +558,8 @@ class CNFManager:
         """
         Count models with a temporary clause added (Phase 2 enhancement).
 
-        Adds clause, counts models, removes clause - no deep copy needed!
-        Much faster than cnf.copy() for temporary constraints.
+        When solution cache is available, filters cached solutions in O(|cache| * |clause|)
+        instead of O(SAT_SOLVE). Falls back to SAT solving when cache is not populated.
 
         Args:
             clause_literals: Set of literal strings for the clause
@@ -569,6 +571,12 @@ class CNFManager:
         if not clause_literals:
             return self.count_solutions()
 
+        # Use cache-based filtering if available and all fluents are known
+        if self._cache_valid and self._solution_cache is not None:
+            result = self._count_models_with_clause_via_filter(clause_literals)
+            if result >= 0:
+                return result
+
         clause = self._literals_to_var_clause(clause_literals)
 
         # Add clause temporarily
@@ -576,8 +584,56 @@ class CNFManager:
 
         try:
             # Count models with new clause (creates fresh solver from self.cnf)
-            count = self.count_solutions()
+            count = self._enumerate_models()
             return count
         finally:
             # Remove temporary clause (restore original state)
             self.cnf.clauses.pop()
+
+    def _count_models_with_clause_via_filter(self, clause_literals: frozenset[str]) -> int:
+        """
+        Filter cached solutions by a disjunctive clause.
+
+        A clause (l₁ ∨ ... ∨ lₖ) is satisfied if ANY literal is true:
+        - Positive literal p: p ∈ solution
+        - Negative literal ¬p: base fluent ∉ solution
+
+        Only applicable when all fluents in the clause are known to the CNF.
+        Returns None if unknown fluents are found (caller should fall back to SAT).
+
+        Args:
+            clause_literals: Set of literal strings (prefix '¬' or '-' for negation)
+
+        Returns:
+            Number of cached solutions satisfying the clause, or -1 if
+            clause references unknown fluents (caller falls back to SAT)
+        """
+        if not self._solution_cache:
+            return 0
+
+        # Parse literals into positive and negative base fluents
+        positive = set()
+        negative = set()
+        for lit in clause_literals:
+            if lit.startswith('¬'):
+                negative.add(lit[1:])
+            elif lit.startswith('-'):
+                negative.add(lit[1:])
+            else:
+                positive.add(lit)
+
+        # All fluents must be known to the CNF for filtering to be valid
+        all_fluents = positive | negative
+        if not all_fluents.issubset(self.fluent_to_var):
+            return -1
+
+        count = 0
+        for solution in self._solution_cache:
+            # Clause satisfied if ANY positive literal is in solution
+            if positive and not positive.isdisjoint(solution):
+                count += 1
+                continue
+            # Or ANY negative literal's base fluent is absent from solution
+            if negative and not negative.issubset(solution):
+                count += 1
+        return count

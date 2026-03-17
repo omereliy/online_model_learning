@@ -427,6 +427,54 @@ class TestCNFManagerConstraintOperations:
         # Original CNF unchanged
         assert cnf.count_solutions() == 3
 
+    def test_count_models_with_temporary_clause_cached(self):
+        """Test that cache-filtered temporary clause gives same results as SAT."""
+        cnf = CNFManager()
+        cnf.add_clause(['a', 'b'])
+
+        # Populate cache — solutions: {a}, {b}, {a,b}
+        cnf.get_all_solutions()
+        assert cnf._cache_valid
+
+        # Positive literal clause — (a): solutions where a is true
+        count = cnf.count_models_with_temporary_clause(frozenset({'a'}))
+        # {a}: yes. {b}: no. {a,b}: yes.
+        assert count == 2
+
+        # Negative literal clause — (¬a): solutions where a is NOT true
+        count = cnf.count_models_with_temporary_clause(frozenset({'¬a'}))
+        # {a}: no. {b}: yes. {a,b}: no.
+        assert count == 1
+
+        # Mixed clause — (a ∨ ¬b): satisfied if a∈solution OR b∉solution
+        count = cnf.count_models_with_temporary_clause(frozenset({'a', '¬b'}))
+        # {a}: a∈ → yes. {b}: a∉ and b∈ → no. {a,b}: a∈ → yes.
+        assert count == 2
+
+        # Unknown fluent falls back to SAT (no error)
+        count = cnf.count_models_with_temporary_clause(frozenset({'c'}))
+        assert count == 3  # (a∨b) ∧ (c) — all 3 base solutions + c=True
+
+        # Original CNF unchanged
+        assert cnf.count_solutions() == 3
+        assert len(cnf.cnf.clauses) == 1
+
+    def test_count_solutions_uses_cache(self):
+        """Test that count_solutions returns len(cache) when cache is valid."""
+        cnf = CNFManager()
+        cnf.add_clause(['a', 'b'])
+
+        # Without cache — enumerates
+        assert cnf.count_solutions() == 3
+
+        # Populate cache
+        solutions = cnf.get_all_solutions()
+        assert len(solutions) == 3
+        assert cnf._cache_valid
+
+        # With cache — returns len(cache) without re-enumerating
+        assert cnf.count_solutions() == 3
+
     def test_build_from_constraint_sets(self):
         """Test building CNF from constraint sets."""
         cnf = CNFManager()
