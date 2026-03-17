@@ -323,7 +323,6 @@ class MetricsCollector:
                     'actions': self.metrics_df.to_dict(orient='records'),
                     'summary': {
                         'total_actions': len(self.metrics_df),
-                        'final_mistake_rate': self.compute_mistake_rate(),
                         'average_runtime': self.compute_average_runtime(),
                         'action_distribution': self.get_action_distribution()
                     }
