@@ -34,6 +34,17 @@ learner.update_model()
 - **Lifted learning** -- learns at the operator level, generalizing across object instances
 - **Object subset selection** -- scales to large domains by focusing on relevant object subsets
 - **Parallel gain computation** -- optional multiprocessing for large action spaces
+- **MCTS-based action selection** -- lookahead and full UCT strategies for deeper exploration
+
+## Action Selection Strategies
+
+| Strategy | Description | Speed |
+|----------|-------------|-------|
+| `greedy` | Selects the action with the highest immediate information gain | Fast (default) |
+| `lookahead` | Bounded depth-limited lookahead with discounted future gain | Moderate |
+| `mcts` | Full UCT-based Monte Carlo Tree Search | Slow (see note below) |
+
+> **Performance note:** The `mcts` strategy performs SAT solving during rollouts, which makes it significantly slower than other strategies. For large domains it may be impractical. Performance improvements are planned for a future release. Use `lookahead` for a balance between exploration depth and speed.
 
 ## Configuration
 
@@ -46,6 +57,10 @@ learner = InformationGainLearner(
     spare_objects_per_type=2,             # extra objects per type beyond minimum
     num_workers=None,                      # parallel workers (None=auto, 0=sequential)
     learn_negative_preconditions=True,    # include negative precondition candidates
+    selection_strategy="greedy",          # "greedy", "lookahead", or "mcts"
+    lookahead_depth=2,                    # depth for lookahead strategy
+    mcts_iterations=50,                   # iterations for mcts strategy
+    mcts_rollout_depth=5,                # rollout depth for mcts strategy
 )
 ```
 

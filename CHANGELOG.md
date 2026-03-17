@@ -20,9 +20,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - Extract `_apply_injective_binding_filter()` to deduplicate binding filter logic in sequential/parallel gain computation
 
-### Known Issues
-- Full UCT MCTS (`selection_strategy='mcts'`) is significantly slower than other strategies; performance optimization needed before practical use
-- `run_full_experiments.py` missing `--mcts-iterations` / `--mcts-rollout-depth` CLI args (MCTS uses defaults; configurable via YAML)
+### Notes
+- Full UCT MCTS (`selection_strategy='mcts'`) is significantly slower than other strategies due to SAT solving during rollouts. Performance improvements planned for a future release. Use `lookahead` for a balance between exploration depth and speed.
 
 ---
 
