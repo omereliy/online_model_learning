@@ -89,7 +89,11 @@ EXPERIMENT_MODES = {
 def create_experiment_config(algorithm: str, domain: str, problem: str,
                            iterations: int, output_dir: str,
                            use_object_subset: bool = True,
-                           learn_negative_preconditions: bool = True) -> Dict[str, Any]:
+                           learn_negative_preconditions: bool = True,
+                           selection_strategy: str = 'greedy',
+                           lookahead_depth: int = 2,
+                           lookahead_top_k: int = 5,
+                           lookahead_discount: float = 0.9) -> Dict[str, Any]:
     """Create experiment configuration dynamically."""
     config: Dict[str, Any] = {'experiment': {
         'name': f"{algorithm}_{domain}_{problem}",
@@ -111,14 +115,17 @@ def create_experiment_config(algorithm: str, domain: str, problem: str,
         'save_learned_model': True
     }, 'algorithm_params': {
         'information_gain': {
-            'selection_strategy': 'greedy',
+            'selection_strategy': selection_strategy,
             'max_iterations': iterations,
             'model_stability_window': min(50, iterations // 10),
             'info_gain_epsilon': 0.001,
             'success_rate_threshold': 0.98,
             'success_rate_window': min(50, iterations // 10),
             'use_object_subset': use_object_subset,
-            'learn_negative_preconditions': learn_negative_preconditions
+            'learn_negative_preconditions': learn_negative_preconditions,
+            'lookahead_depth': lookahead_depth,
+            'lookahead_top_k': lookahead_top_k,
+            'lookahead_discount': lookahead_discount
         }
     }}
 
@@ -155,7 +162,11 @@ def run_single_experiment(domain: str, problem: str,
                          iterations: int, base_output_dir: str,
                          force: bool = False,
                          use_object_subset: bool = True,
-                         learn_negative_preconditions: bool = True) -> bool:
+                         learn_negative_preconditions: bool = True,
+                         selection_strategy: str = 'greedy',
+                         lookahead_depth: int = 2,
+                         lookahead_top_k: int = 5,
+                         lookahead_discount: float = 0.9) -> bool:
     """Run a single experiment."""
     output_dir = f"{base_output_dir}/{domain}/{problem}"
 
@@ -172,7 +183,11 @@ def run_single_experiment(domain: str, problem: str,
         return False
 
     # Create configuration
-    config = create_experiment_config("information_gain", domain, problem, iterations, output_dir, use_object_subset, learn_negative_preconditions)
+    config = create_experiment_config(
+        "information_gain", domain, problem, iterations, output_dir,
+        use_object_subset, learn_negative_preconditions,
+        selection_strategy, lookahead_depth, lookahead_top_k, lookahead_discount
+    )
 
     # Save config
     config_path = Path(output_dir)
@@ -264,6 +279,15 @@ Examples:
                        help="Disable object subset selection")
     parser.add_argument("--no-negative-preconditions", action="store_true",
                        help="Skip negative precondition learning (reduces hypothesis space)")
+    parser.add_argument("--selection-strategy", type=str, default="greedy",
+                       choices=["greedy", "epsilon_greedy", "boltzmann", "lookahead", "mcts"],
+                       help="Action selection strategy (default: greedy)")
+    parser.add_argument("--lookahead-depth", type=int, default=2,
+                       help="Lookahead depth for 'lookahead' strategy (default: 2)")
+    parser.add_argument("--lookahead-top-k", type=int, default=5,
+                       help="Number of top actions to evaluate per level (default: 5)")
+    parser.add_argument("--lookahead-discount", type=float, default=0.9,
+                       help="Discount factor for future gains (default: 0.9)")
 
     args = parser.parse_args()
 
@@ -359,7 +383,9 @@ Examples:
         success = run_single_experiment(
             domain, problem, iterations,
             base_output_dir, args.force, args.use_object_subset,
-            not args.no_negative_preconditions
+            not args.no_negative_preconditions,
+            args.selection_strategy, args.lookahead_depth,
+            args.lookahead_top_k, args.lookahead_discount
         )
 
         if success:

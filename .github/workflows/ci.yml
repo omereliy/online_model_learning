@@ -1,3 +1,4 @@
+# CI workflow - runs tests on pull requests to master
 name: CI
 
 on:

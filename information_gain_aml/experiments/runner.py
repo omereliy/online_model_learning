@@ -347,6 +347,12 @@ class ExperimentRunner:
             'metrics': self.metrics.get_summary_statistics()
         })
 
+        # Add learning statistics from the learner
+        if isinstance(self.learner, InformationGainLearner):
+            action_metrics = self.learner.get_action_model_metrics()
+            results['action_model_metrics'] = action_metrics
+            results['aggregated_statistics'] = self._compute_aggregated_statistics(action_metrics)
+
         # Export results
         self._export_results(results)
 
@@ -455,6 +461,80 @@ class ExperimentRunner:
         logger.error(f"Traceback:\n{''.join(traceback.format_tb(error.__traceback__))}")
         # For now, just log. In production, might want to save state or retry
 
+    def _compute_aggregated_statistics(self, action_model_metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Aggregate per-action learning statistics into domain-level summary.
+
+        Computes three aggregation views:
+        - weighted_percent: sum(counts) / sum(La_sizes) * 100 (weighted by hypothesis space)
+        - avg_percent: mean of per-action percentages (each action equal weight)
+        - min/max explored_percent: bottleneck and best-case indicators
+        """
+        if not action_model_metrics:
+            return {}
+
+        total_la_size = 0
+        total_observations = 0
+        count_sums: Dict[str, Dict[str, int]] = {
+            cat: {'certain_count': 0, 'excluded_count': 0, 'uncertain_count': 0}
+            for cat in ['preconditions', 'add_effects', 'delete_effects']
+        }
+        per_action_percents: Dict[str, list] = {
+            f'{cat}_{metric}': []
+            for cat in ['preconditions', 'add_effects', 'delete_effects']
+            for metric in ['certain_percent', 'excluded_percent', 'uncertain_percent']
+        }
+        explored_percents: list = []
+
+        for metrics in action_model_metrics.values():
+            la = metrics['La_size']
+            total_la_size += la
+            total_observations += metrics['observations']
+
+            for cat in ['preconditions', 'add_effects', 'delete_effects']:
+                for key in ['certain_count', 'excluded_count', 'uncertain_count']:
+                    count_sums[cat][key] += metrics[cat][key]
+                for key in ['certain_percent', 'excluded_percent', 'uncertain_percent']:
+                    per_action_percents[f'{cat}_{key}'].append(metrics[cat][key])
+
+            explored_percents.append(metrics['learning_progress']['explored_percent'])
+
+        num_actions = len(action_model_metrics)
+
+        result: Dict[str, Any] = {
+            'num_actions': num_actions,
+            'total_observations': total_observations,
+            'total_la_size': total_la_size,
+        }
+
+        for cat in ['preconditions', 'add_effects', 'delete_effects']:
+            result[cat] = {
+                **count_sums[cat],
+                'weighted_certain_percent': (count_sums[cat]['certain_count'] / total_la_size * 100) if total_la_size > 0 else 0,
+                'weighted_excluded_percent': (count_sums[cat]['excluded_count'] / total_la_size * 100) if total_la_size > 0 else 0,
+                'weighted_uncertain_percent': (count_sums[cat]['uncertain_count'] / total_la_size * 100) if total_la_size > 0 else 0,
+                'avg_certain_percent': sum(per_action_percents[f'{cat}_certain_percent']) / num_actions,
+                'avg_excluded_percent': sum(per_action_percents[f'{cat}_excluded_percent']) / num_actions,
+                'avg_uncertain_percent': sum(per_action_percents[f'{cat}_uncertain_percent']) / num_actions,
+            }
+
+        total_certain = sum(count_sums[cat]['certain_count'] for cat in count_sums)
+        total_excluded = sum(count_sums[cat]['excluded_count'] for cat in count_sums)
+        total_uncertain = sum(count_sums[cat]['uncertain_count'] for cat in count_sums)
+        total_slots = 3 * total_la_size
+
+        result['learning_progress'] = {
+            'total_certain': total_certain,
+            'total_excluded': total_excluded,
+            'total_uncertain': total_uncertain,
+            'weighted_explored_percent': ((total_certain + total_excluded) / total_slots * 100) if total_slots > 0 else 0,
+            'avg_explored_percent': sum(explored_percents) / num_actions,
+            'min_explored_percent': min(explored_percents),
+            'max_explored_percent': max(explored_percents),
+        }
+
+        return result
+
     def _export_results(self, results: Dict[str, Any]) -> None:
         """
         Export experiment results to files.
@@ -479,35 +559,37 @@ class ExperimentRunner:
         if is_test:
             self._cleanup_old_test_results(output_dir)
 
-        # Generate filename with timestamp
-        timestamp = self.start_time.strftime('%Y%m%d_%H%M%S') if self.start_time else "unknown"
-        base_name = f"{experiment_name}_{timestamp}"
-
         # Export metrics
-        for format in self.config['output']['formats']:
-            if format == 'csv':
-                csv_path = output_dir / f"{base_name}_metrics.csv"
+        for fmt in self.config['output']['formats']:
+            if fmt == 'csv':
+                csv_path = output_dir / "metrics.csv"
                 self.metrics.export(str(csv_path), format='csv')
 
-            elif format == 'json':
-                json_path = output_dir / f"{base_name}_metrics.json"
+            elif fmt == 'json':
+                json_path = output_dir / "metrics.json"
                 self.metrics.export(str(json_path), format='json')
 
         # Save experiment summary
-        summary_path = output_dir / f"{base_name}_summary.json"
+        summary_path = output_dir / "summary.json"
         with open(summary_path, 'w') as f:
             json.dump(results, f, indent=2, default=str)
 
-        # Save learned model if requested
+        # Save learned model if requested (without statistics — those are in summary.json)
         if self.config['output'].get('save_learned_model', False):
             try:
                 learned_model = self.learner.get_learned_model()
+                learned_model.pop('statistics', None)
                 model_path = output_dir / 'learned_model.json'
                 with open(model_path, 'w') as f:
                     json.dump(learned_model, f, indent=2, default=str)
                 logger.info(f"Saved learned model to {model_path}")
             except Exception as e:
                 logger.error(f"Failed to save learned model: {e}")
+
+        # Create timestamp marker file in problem directory
+        timestamp = self.start_time.strftime('%Y%m%d_%H%M%S') if self.start_time else "unknown"
+        timestamp_file = base_output_dir / f"time{timestamp}"
+        timestamp_file.touch()
 
         logger.info(f"Exported results to {output_dir}")
 

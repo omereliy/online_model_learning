@@ -62,6 +62,13 @@ class TestModelExport:
             assert "confirmed_add_effects" in action_data
             assert "confirmed_del_effects" in action_data
 
+        # Check statistics are included in snapshot
+        assert "statistics" in snapshot
+        assert "action_model_metrics" in snapshot["statistics"]
+        assert "iterations" in snapshot["statistics"]
+        for action_name in snapshot["actions"]:
+            assert action_name in snapshot["statistics"]["action_model_metrics"]
+
 
 
 class TestModelReconstruction:

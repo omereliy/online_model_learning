@@ -378,7 +378,6 @@ class MetricsCollector:
                     'successful_actions': 0,
                     'failed_actions': 0,
                     'success_rate': 0.0,
-                    'mistake_rate': 0.0,
                     'average_runtime': 0.0,
                     'runtime_std': 0.0,
                     'action_distribution': {}
@@ -392,7 +391,6 @@ class MetricsCollector:
                 'successful_actions': successful,
                 'failed_actions': total - successful,
                 'success_rate': successful / total,
-                'mistake_rate': self.compute_mistake_rate(),
                 'average_runtime': self.metrics_df['runtime'].mean(),
                 'runtime_std': self.metrics_df['runtime'].std(),
                 'action_distribution': self.get_action_distribution()
