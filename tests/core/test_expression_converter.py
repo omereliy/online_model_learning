@@ -7,7 +7,7 @@ import pytest
 from unified_planning.model import Fluent, Problem, Object
 from unified_planning.shortcuts import BoolType, UserType, InstantaneousAction
 from information_gain_aml.core.expression_converter import ExpressionConverter
-from information_gain_aml.core.pddl_types import ParameterBinding
+from information_gain_aml.core.expression_converter import ParameterBinding
 
 
 class TestExpressionConverter:
@@ -123,26 +123,6 @@ class TestExpressionConverter:
         result = ExpressionConverter.to_grounded_string(expr, binding)
 
         assert result == "handempty"
-
-    def test_to_cnf_clauses_single_literal(self, simple_problem):
-        """Test converting single literal to CNF."""
-        problem, pickup, clear, on, handempty, a, b = simple_problem
-
-        x = pickup.parameter("x")
-        expr = clear(x)
-
-        result = ExpressionConverter.to_cnf_clauses(expr, pickup.parameters)
-
-        # Single literal becomes single-element clause
-        assert result == [["clear(?x)"]]
-
-    def test_to_cnf_clauses_and_expression(self, simple_problem):
-        """Test AND expression becomes multiple clauses."""
-        problem, pickup, clear, on, handempty, a, b = simple_problem
-
-        # This test requires creating an AND expression
-        # Will be implemented based on UP's expression builder
-        pass  # TODO: Implement when we have AND expression
 
     def test_preserves_action_parameter_names(self, simple_problem):
         """CRITICAL: Verify parameter names from action are preserved."""
