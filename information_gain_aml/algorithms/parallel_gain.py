@@ -82,7 +82,16 @@ class ActionGainResult:
 _worker_cache: Optional['WorkerCNFCache'] = None
 
 
-class WorkerCNFCache:
+class GainCacheBase:
+    """Base interface for gain computation cache (provides context + CNF access)."""
+
+    context: ActionGainContext
+
+    def get_cnf(self, action_name: str) -> 'CNFManager':
+        raise NotImplementedError
+
+
+class WorkerCNFCache(GainCacheBase):
     """
     Per-worker cache of reconstructed CNFManagers.
 
@@ -146,6 +155,23 @@ class WorkerCNFCache:
             mgr._cache_valid = True
 
         return mgr
+
+
+class SequentialGainCache(GainCacheBase):
+    """
+    Lightweight cache for in-process gain computation.
+
+    Wraps the learner's existing CNFManagers directly (no reconstruction).
+    Used by the sequential path to share gain functions with the parallel path.
+    """
+
+    def __init__(self, context: ActionGainContext, cnf_managers: Dict[str, 'CNFManager']):
+        self.context = context
+        self._managers = cnf_managers
+
+    def get_cnf(self, action_name: str) -> 'CNFManager':
+        """Return the learner's CNFManager directly (no copy)."""
+        return self._managers[action_name]
 
 
 # ========== Worker Functions ==========
@@ -259,7 +285,7 @@ def _compute_action_gains_chunk_with_context(
 def _compute_single_action_gain(
     action_name: str,
     objects: List[str],
-    cache: WorkerCNFCache
+    cache: GainCacheBase
 ) -> float:
     """
     Compute expected information gain for a single grounded action.
