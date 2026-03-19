@@ -20,7 +20,7 @@ import sys
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from information_gain_aml.core.model_reconstructor import ModelReconstructor, ReconstructedModel
+from information_gain_aml.core.model_evaluation import ModelReconstructor, ReconstructedModel
 from information_gain_aml.algorithms.information_gain import InformationGainLearner
 
 
@@ -269,7 +269,7 @@ def cleanup_test_files():
 def test_imports():
     """Test that all required modules can be imported."""
     try:
-        from information_gain_aml.core.model_reconstructor import ModelReconstructor
+        from information_gain_aml.core.model_evaluation import ModelReconstructor
         from information_gain_aml.algorithms.information_gain import InformationGainLearner
         from information_gain_aml.experiments.runner import ExperimentRunner
         assert True

@@ -4,7 +4,7 @@ import pytest
 from typing import Set, Dict
 from dataclasses import dataclass
 
-from information_gain_aml.core.model_validator import ModelValidator, ModelComparisonResult
+from information_gain_aml.core.model_evaluation import ModelValidator, ModelComparisonResult
 
 
 class TestModelComparisonResult:
