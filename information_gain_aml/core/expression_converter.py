@@ -7,10 +7,34 @@ expressions to various string representations.
 CRITICAL: Parameter-bound conversions preserve action's parameter names.
 """
 
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, List, Optional
 from unified_planning.model.fnode import FNode
-from unified_planning.model import Parameter
-from information_gain_aml.core.pddl_types import ParameterBinding
+from unified_planning.model import Object, Parameter
+
+
+@dataclass
+class ParameterBinding:
+    """Type-safe wrapper for parameter -> object mappings.
+
+    Represents binding of action parameters to concrete objects.
+
+    Attributes:
+        bindings: Dict mapping parameter names (without ?) to Object instances
+    """
+    bindings: Dict[str, Object]
+
+    def get_object(self, param_name: str) -> Object:
+        """Get object bound to parameter."""
+        return self.bindings[param_name]
+
+    def object_names(self) -> List[str]:
+        """Get list of object names in parameter order."""
+        return [obj.name for obj in self.bindings.values()]
+
+    def to_dict(self) -> Dict[str, Object]:
+        """Convert to plain dict."""
+        return self.bindings
 
 
 class ExpressionConverter:
@@ -122,53 +146,3 @@ class ExpressionConverter:
                 return fluent.name
 
         return None
-
-    @staticmethod
-    def to_cnf_clauses(expr: FNode,
-                       action_parameters: List[Parameter]) -> List[List[str]]:
-        """Extract CNF clauses from FNode expression.
-
-        Args:
-            expr: FNode expression (can be AND/OR/NOT/FLUENT)
-            action_parameters: Action's parameters (for parameter-bound literals)
-
-        Returns:
-            List of CNF clauses (each clause is list of literals)
-        """
-        clauses = []
-
-        # Handle different expression types
-        if hasattr(expr, 'is_and') and expr.is_and():
-            # AND: each operand becomes a separate clause
-            for arg in expr.args:
-                sub_clauses = ExpressionConverter.to_cnf_clauses(arg, action_parameters)
-                clauses.extend(sub_clauses)
-
-        elif hasattr(expr, 'is_or') and expr.is_or():
-            # OR: combine operands into single clause
-            clause = []
-            for arg in expr.args:
-                sub_clauses = ExpressionConverter.to_cnf_clauses(arg, action_parameters)
-                if sub_clauses and sub_clauses[0]:
-                    clause.extend(sub_clauses[0])
-            if clause:
-                clauses.append(clause)
-
-        elif hasattr(expr, 'is_not') and expr.is_not():
-            # NOT: negate the inner expression
-            inner = expr.args[0] if expr.args else expr
-            param_bound_str = ExpressionConverter.to_parameter_bound_string(
-                inner, action_parameters
-            )
-            if param_bound_str:
-                clauses.append([f"-{param_bound_str}"])
-
-        else:
-            # Base case: fluent expression
-            param_bound_str = ExpressionConverter.to_parameter_bound_string(
-                expr, action_parameters
-            )
-            if param_bound_str:
-                clauses.append([param_bound_str])
-
-        return clauses

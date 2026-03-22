@@ -292,8 +292,7 @@ class UPAdapter:
             result = UPAdapter.up_expression_to_grounded(expr, binding)
             # → 'on_a_b'
         """
-        from information_gain_aml.core.expression_converter import ExpressionConverter
-        from information_gain_aml.core.pddl_types import ParameterBinding
+        from information_gain_aml.core.expression_converter import ExpressionConverter, ParameterBinding
 
         pb = ParameterBinding(binding)
         return ExpressionConverter.to_grounded_string(expr, pb)

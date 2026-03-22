@@ -5,7 +5,7 @@ Tests for PDDL type-safe data classes.
 import pytest
 from unified_planning.shortcuts import UserType
 from unified_planning.model import Object
-from information_gain_aml.core.pddl_types import ParameterBinding
+from information_gain_aml.core.expression_converter import ParameterBinding
 
 
 class TestParameterBinding:

@@ -5,14 +5,12 @@ Implements a CNF/SAT-based information-theoretic approach to learning action mod
 using expected information gain for action selection.
 """
 
-import json
 import logging
 import math
 import os
 import random
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Tuple, List, Dict, Optional, Any, Set
 
@@ -329,6 +327,10 @@ class InformationGainLearner(BaseActionModelLearner):
         - effPotential(a, O, s) = eff+Potential + eff-Potential
         - sucPotential(a, O, s) = effPotential + preAppPotential
 
+        Uses grounded-space computation: grounds maybe-effects and checks against
+        state directly. This matches the parallel worker implementation and avoids
+        fragile lift_fluent_set parsing.
+
         Args:
             action: Action name
             objects: Object binding
@@ -343,18 +345,16 @@ class InformationGainLearner(BaseActionModelLearner):
         # Precondition knowledge gain: literals that would be ruled out
         pre_gain = len(self.pre[action] - satisfied_literals)
 
-        # Effect knowledge gain
-        # eff+Potential(a, O, s) = |eff?+(a) \ bindP(s, O)| / |La|
-        # eff-Potential(a, O, s) = |eff?-(a) ∩ bindP(s, O)| / |La|
+        # Effect knowledge gain via grounded-space computation
+        # Ground maybe-effects and check against state directly
+        grounded_maybe_add = grounding.ground_literal_set(self.eff_maybe_add[action], objects)
+        grounded_maybe_del = grounding.ground_literal_set(self.eff_maybe_del[action], objects)
 
-        # Get lifted versions of state fluents
-        lifted_state = self.bindP(state_internal, objects)
+        # eff+Potential: maybe-add effects NOT in state (can rule them out after success)
+        eff_add_gain = sum(1 for g in grounded_maybe_add if g not in state_internal)
 
-        # Add effects we can rule out (not in unchanged fluents)
-        eff_add_gain = len(self.eff_maybe_add[action] - lifted_state)
-
-        # Delete effects we can confirm (are in current state)
-        eff_del_gain = len(self.eff_maybe_del[action].intersection(lifted_state))
+        # eff-Potential: maybe-del effects IN state (can confirm them after success)
+        eff_del_gain = sum(1 for g in grounded_maybe_del if g in state_internal)
 
         # Normalize by La size
         la_size = len(self._get_parameter_bound_literals(action))
@@ -632,6 +632,9 @@ class InformationGainLearner(BaseActionModelLearner):
         """
         Sequential implementation of action gain computation.
 
+        Uses the same _compute_single_action_gain function as the parallel path
+        via a SequentialGainCache, guaranteeing identical results.
+
         Args:
             grounded_actions: List of GroundedAction objects
             state: Current state as set of fluent strings
@@ -639,8 +642,14 @@ class InformationGainLearner(BaseActionModelLearner):
         Returns:
             List of (action_name, objects, expected_gain) tuples, sorted by gain (highest first)
         """
-        # Log detailed action selection breakdown (debug level)
-        logger.debug("\nAction Selection (sorted by expected gain):")
+        from information_gain_aml.algorithms.parallel_gain import (
+            SequentialGainCache, _compute_single_action_gain
+        )
+
+        cache = SequentialGainCache(
+            context=self._create_sequential_context(state),
+            cnf_managers=self.cnf_managers
+        )
 
         action_gains = []
         for i, grounded_action in enumerate(grounded_actions):
@@ -648,59 +657,27 @@ class InformationGainLearner(BaseActionModelLearner):
                 action_name = grounded_action.action_name
                 objects = grounded_action.objects
 
-                # Early termination: Check if action is fully learned (no uncertainty remains)
-                # This avoids expensive SAT queries for converged actions
-                has_constraints = bool(self.pre_constraints[action_name])
-                has_pre_uncertainty = len(self.pre[action_name]) > len(self._get_certain_preconditions(action_name))
-                has_add_uncertainty = bool(self.eff_maybe_add[action_name] - self.eff_add[action_name])
-                has_del_uncertainty = bool(self.eff_maybe_del[action_name] - self.eff_del[action_name])
-
-                if not has_constraints and not has_pre_uncertainty and not has_add_uncertainty and not has_del_uncertainty:
-                    # Action is fully learned - no information gain possible
-                    action_gains.append((action_name, objects, 0.0))
-                    continue
-
-                # Calculate applicability probability and success gain
-                prob_success = self._calculate_applicability_probability(action_name, objects, state)
-                gain_success = self._calculate_potential_gain_success(action_name, objects, state)
-
-                # Early termination for failure gain: Check if constraint already exists
-                # If so, failure would add no new information
-                state_internal = self._state_to_internal(state)
-                satisfied = self._get_satisfied_literals(action_name, state_internal, objects)
-                unsatisfied = frozenset(self.pre[action_name] - satisfied)
-
-                if not unsatisfied or unsatisfied in self.pre_constraints[action_name]:
-                    # Failure constraint already exists or all preconditions satisfied
-                    gain_failure = 0.0
-                else:
-                    gain_failure = self._calculate_potential_gain_failure(action_name, objects, state)
-
-                expected_gain = prob_success * gain_success + (1.0 - prob_success) * gain_failure
-
+                expected_gain = _compute_single_action_gain(action_name, objects, cache)
                 action_gains.append((action_name, objects, expected_gain))
 
                 # Log detailed breakdown for first 10 and last action
                 if i < 10 or i == len(grounded_actions) - 1:
                     action_str = f"{action_name}({','.join(objects)})"
-                    logger.debug(f"  {action_str:30s} E[gain]={expected_gain:.6f} "
-                               f"[P(success)={prob_success:.3f}, gain_success={gain_success:.3f}, gain_failure={gain_failure:.3f}]")
+                    logger.debug(f"  {action_str:30s} E[gain]={expected_gain:.6f}")
                 elif i == 10:
                     logger.debug(f"  ... ({len(grounded_actions) - 11} more actions)")
 
             except Exception as e:
                 logger.warning(f"Error calculating gain for {grounded_action.action_name}: {e}")
-                # Add with zero gain as fallback
                 action_gains.append((grounded_action.action_name, grounded_action.objects, 0.0))
 
-        # Sort by gain (highest first)
-        action_gains.sort(key=lambda x: x[2], reverse=True)
+        # Sort by gain (highest first), with deterministic tie-breaking
+        action_gains.sort(key=lambda x: (-x[2], x[0], x[1]))
         action_gains = self._apply_injective_binding_filter(action_gains)
 
-        # Log top action after sorting
         if action_gains:
             top_action, top_objects, top_gain = action_gains[0]
-            logger.debug(f"\nTop action after sorting: {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
+            logger.debug(f"Top action: {top_action}({','.join(top_objects)}) E[gain]={top_gain:.6f}")
 
         return action_gains
 
@@ -798,14 +775,13 @@ class InformationGainLearner(BaseActionModelLearner):
             self._cleanup_pool()  # Clean up on error
             return self._calculate_all_action_gains_sequential(grounded_actions, state)
 
-        # Sort by gain (highest first)
-        action_gains.sort(key=lambda x: x[2], reverse=True)
+        # Sort by gain (highest first), with deterministic tie-breaking
+        action_gains.sort(key=lambda x: (-x[2], x[0], x[1]))
         action_gains = self._apply_injective_binding_filter(action_gains)
 
-        # Log top action after sorting
         if action_gains:
             top_action, top_objects, top_gain = action_gains[0]
-            logger.debug(f"\nTop action after sorting (parallel): {top_action}({','.join(top_objects)}) with E[gain]={top_gain:.6f}")
+            logger.debug(f"Top action (parallel): {top_action}({','.join(top_objects)}) E[gain]={top_gain:.6f}")
 
         return action_gains
 
@@ -898,6 +874,51 @@ class InformationGainLearner(BaseActionModelLearner):
             cnf_solution_cache=cnf_solution_cache,
             parameter_bound_literals=parameter_bound_literals,
             state=set(state),
+            base_model_counts=base_model_counts,
+            learn_negative_preconditions=self.learn_negative_preconditions
+        )
+
+    def _create_sequential_context(self, state: Set[str]) -> "ActionGainContext":
+        """
+        Create lightweight context for in-process gain computation.
+
+        References learner state directly (no deep copies) since this context
+        stays in the same process. Used by _calculate_all_action_gains_sequential
+        to share gain functions with the parallel path.
+
+        Args:
+            state: Current state as set of fluent strings
+
+        Returns:
+            ActionGainContext referencing learner state
+        """
+        from information_gain_aml.algorithms.parallel_gain import ActionGainContext
+
+        parameter_bound_literals = {}
+        base_model_counts = {}
+
+        for action_name in self.pre.keys():
+            parameter_bound_literals[action_name] = self._get_parameter_bound_literals(action_name)
+            base_model_counts[action_name] = self._get_base_model_count(action_name)
+
+        # CNF fields are unused by SequentialGainCache (it uses cnf_managers directly),
+        # but ActionGainContext requires them. Pass empty dicts.
+        empty_dict: Dict[str, Any] = {}
+
+        return ActionGainContext(
+            pre=self.pre,
+            pre_constraints=self.pre_constraints,
+            eff_add=self.eff_add,
+            eff_del=self.eff_del,
+            eff_maybe_add=self.eff_maybe_add,
+            eff_maybe_del=self.eff_maybe_del,
+            cnf_clauses=empty_dict,
+            cnf_fluent_to_var=empty_dict,
+            cnf_var_to_fluent=empty_dict,
+            cnf_next_var=empty_dict,
+            cnf_solution_cache=empty_dict,
+            parameter_bound_literals=parameter_bound_literals,
+            state=state,
             base_model_counts=base_model_counts,
             learn_negative_preconditions=self.learn_negative_preconditions
         )
@@ -1558,348 +1579,26 @@ class InformationGainLearner(BaseActionModelLearner):
         return summary
 
     def get_action_model_metrics(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Get detailed learning metrics for each action showing what has been learned.
-
-        For each action, computes:
-        - Certain components (definitively in the model)
-        - Excluded components (definitively NOT in the model)
-        - Uncertain components (still unsure)
-
-        This is a standard metric in action model learning papers.
-
-        Returns:
-            Dict[action_name -> metrics] where metrics contains counts and percentages
-        """
-        action_metrics = {}
-
-        for action_name in self.pre.keys():
-            # Get La: all possible parameter-bound literals for this action
-            La = self._get_parameter_bound_literals(action_name)
-            la_size = len(La)
-
-            # === PRECONDITIONS ===
-            # Certain preconditions: literals that MUST be preconditions
-            # These are in the intersection of all satisfying models of the CNF
-            # For practical tracking: literals that appear in all constraint sets
-            # (In the absence of explicit model intersection, we use pre(a) as "possible")
-            certain_pre = set()
-            if self.pre_constraints[action_name]:
-                # Literals that appear in ALL constraints are required preconditions
-                # Convert frozensets to sets for intersection operation
-                constraint_sets = [set(c) for c in self.pre_constraints[action_name]]
-                certain_pre = set.intersection(*constraint_sets) if constraint_sets else set()
-
-            # Excluded preconditions: literals that are definitely NOT preconditions
-            # These are La \ pre(a) - ruled out by successful actions
-            excluded_pre = La - self.pre[action_name]
-
-            # Uncertain preconditions: literals that might be preconditions
-            # These are pre(a) \ certain_pre
-            uncertain_pre = self.pre[action_name] - certain_pre
-
-            # === ADD EFFECTS ===
-            # Certain add effects: eff_add[action] - confirmed by observations
-            certain_eff_add = self.eff_add[action_name]
-
-            # Excluded add effects: literals that are definitely NOT add effects
-            # These are La \ (eff_add ∪ eff_maybe_add)
-            excluded_eff_add = La - (self.eff_add[action_name] | self.eff_maybe_add[action_name])
-
-            # Uncertain add effects: eff_maybe_add[action]
-            uncertain_eff_add = self.eff_maybe_add[action_name]
-
-            # === DELETE EFFECTS ===
-            # Certain delete effects: eff_del[action] - confirmed by observations
-            certain_eff_del = self.eff_del[action_name]
-
-            # Excluded delete effects: literals that are definitely NOT delete effects
-            # These are La \ (eff_del ∪ eff_maybe_del)
-            excluded_eff_del = La - (self.eff_del[action_name] | self.eff_maybe_del[action_name])
-
-            # Uncertain delete effects: eff_maybe_del[action]
-            uncertain_eff_del = self.eff_maybe_del[action_name]
-
-            # Compute metrics
-            action_metrics[action_name] = {
-                # Counts
-                'La_size': la_size,
-                'observations': len(self.observation_history[action_name]),
-
-                # Preconditions
-                'preconditions': {
-                    'certain_count': len(certain_pre),
-                    'excluded_count': len(excluded_pre),
-                    'uncertain_count': len(uncertain_pre),
-                    'certain_percent': (len(certain_pre) / la_size * 100) if la_size > 0 else 0,
-                    'excluded_percent': (len(excluded_pre) / la_size * 100) if la_size > 0 else 0,
-                    'uncertain_percent': (len(uncertain_pre) / la_size * 100) if la_size > 0 else 0,
-                },
-
-                # Add effects
-                'add_effects': {
-                    'certain_count': len(certain_eff_add),
-                    'excluded_count': len(excluded_eff_add),
-                    'uncertain_count': len(uncertain_eff_add),
-                    'certain_percent': (len(certain_eff_add) / la_size * 100) if la_size > 0 else 0,
-                    'excluded_percent': (len(excluded_eff_add) / la_size * 100) if la_size > 0 else 0,
-                    'uncertain_percent': (len(uncertain_eff_add) / la_size * 100) if la_size > 0 else 0,
-                },
-
-                # Delete effects
-                'delete_effects': {
-                    'certain_count': len(certain_eff_del),
-                    'excluded_count': len(excluded_eff_del),
-                    'uncertain_count': len(uncertain_eff_del),
-                    'certain_percent': (len(certain_eff_del) / la_size * 100) if la_size > 0 else 0,
-                    'excluded_percent': (len(excluded_eff_del) / la_size * 100) if la_size > 0 else 0,
-                    'uncertain_percent': (len(uncertain_eff_del) / la_size * 100) if la_size > 0 else 0,
-                },
-
-                # Overall learning progress
-                'learning_progress': {
-                    # Total certain knowledge (preconditions + effects)
-                    'total_certain': len(certain_pre) + len(certain_eff_add) + len(certain_eff_del),
-                    # Total excluded knowledge
-                    'total_excluded': len(excluded_pre) + len(excluded_eff_add) + len(excluded_eff_del),
-                    # Total uncertain
-                    'total_uncertain': len(uncertain_pre) + len(uncertain_eff_add) + len(uncertain_eff_del),
-                    # Percentage of model space explored (certain + excluded)
-                    'explored_percent': ((len(certain_pre) + len(excluded_pre) +
-                                        len(certain_eff_add) + len(excluded_eff_add) +
-                                        len(certain_eff_del) + len(excluded_eff_del)) / (3 * la_size) * 100) if la_size > 0 else 0,
-                }
-            }
-
-        return action_metrics
+        """Get detailed learning metrics for each action."""
+        from information_gain_aml.algorithms.model_export import get_action_model_metrics
+        return get_action_model_metrics(self)
 
     def get_statistics(self) -> Dict[str, Any]:
-        """
-        Get learning statistics including detailed action model metrics.
-
-        Returns:
-            Dictionary with learning statistics and per-action metrics
-        """
-        # Get base statistics
+        """Get learning statistics including detailed action model metrics."""
         stats = super().get_statistics()
-
-        # Add information gain specific stats
         stats['max_information_gain'] = self._last_max_gain
-
-        # Add detailed action model metrics
         stats['action_model_metrics'] = self.get_action_model_metrics()
-
         return stats
 
     def get_learned_model(self) -> Dict[str, Any]:
-        """
-        Export the current learned model.
-
-        Returns:
-            Dictionary containing the learned model
-        """
-        logger.debug("Exporting learned model")
-
-        predicates_set = set()  # Use set for deduplication
-        actions_dict = {}
-
-        # Export learned action models
-        for action_name in self.pre.keys():
-            actions_dict[action_name] = {
-                'name': action_name,
-                'preconditions': {
-                    'possible': sorted(list(self.pre[action_name])),
-                    'constraints': [sorted(list(c)) for c in self.pre_constraints[action_name]]
-                },
-                'effects': {
-                    'add': sorted(list(self.eff_add[action_name])),
-                    'delete': sorted(list(self.eff_del[action_name])),
-                    'maybe_add': sorted(list(self.eff_maybe_add[action_name])),
-                    'maybe_delete': sorted(list(self.eff_maybe_del[action_name]))
-                },
-                'observations': len(self.observation_history[action_name])
-            }
-
-            logger.debug(
-                f"Exported action '{action_name}': {len(self.pre[action_name])} preconditions, "
-                f"{len(self.eff_add[action_name])} add effects, "
-                f"{len(self.eff_del[action_name])} delete effects, "
-                f"{len(self.observation_history[action_name])} observations")
-
-            # Extract predicates from literals
-            for literal in self.pre[action_name]:
-                pred_name = self._extract_predicate_name(literal)
-                if pred_name:
-                    predicates_set.add(pred_name)
-
-        model = {
-            'actions': actions_dict,
-            'predicates': sorted(list(predicates_set)),  # Convert set to sorted list for JSON
-            'statistics': self.get_statistics()
-        }
-
-        logger.info(f"Model export complete: {len(model['actions'])} actions, "
-                    f"{len(model['predicates'])} predicates")
-        return model
+        """Export the current learned model."""
+        from information_gain_aml.algorithms.model_export import get_learned_model
+        return get_learned_model(self)
 
     def to_pddl_string(self, mode: str = "safe") -> str:
-        """Export learned model as PDDL domain string.
-
-        Args:
-            mode: "safe" or "complete"
-                - safe: all possible preconditions (self.pre) + confirmed effects only.
-                  Very restrictive — won't predict applicable unless all possible precs hold.
-                - complete: only certain preconditions (singletons) + all possible effects.
-                  Very permissive — may introduce conflicts due to uncertainty.
-
-        Returns:
-            PDDL domain string
-        """
-        if mode not in ("safe", "complete"):
-            raise ValueError(f"mode must be 'safe' or 'complete', got '{mode}'")
-
-        lines = []
-        lines.append(f"(define (domain {self.domain.name})")
-
-        # Check if any negative preconditions exist
-        has_negative_precs = False
-        for action_name in self.pre:
-            precs = self.pre[action_name] if mode == "safe" else self._get_certain_preconditions(action_name)
-            if any(lit.startswith('¬') for lit in precs):
-                has_negative_precs = True
-                break
-
-        requirements = ":strips :typing"
-        if has_negative_precs:
-            requirements += " :negative-preconditions"
-        lines.append(f"  (:requirements {requirements})")
-
-        # Types
-        type_strs = []
-        for type_name, type_info in self.domain.types.items():
-            if type_name == "object":
-                continue
-            parent = type_info.parent or "object"
-            type_strs.append(f"{type_name} - {parent}")
-        if type_strs:
-            lines.append(f"  (:types {' '.join(type_strs)})")
-
-        # Predicates
-        pred_strs = []
-        for pred_name, pred_sig in self.domain.predicates.items():
-            if pred_sig.arity == 0:
-                pred_strs.append(f"({pred_name})")
-            else:
-                params = " ".join(f"?p{i} - {p.type}" for i, p in enumerate(pred_sig.parameters))
-                pred_strs.append(f"({pred_name} {params})")
-        if pred_strs:
-            lines.append("  (:predicates")
-            for ps in pred_strs:
-                lines.append(f"    {ps}")
-            lines.append("  )")
-
-        # Actions
-        for action_name, action in self.domain.lifted_actions.items():
-            # Parameters with standard naming (?x, ?y, ?z, ...)
-            param_names = self.domain._generate_parameter_names(action.arity)
-            param_strs = " ".join(
-                f"{param_names[i]} - {action.parameters[i].type}"
-                for i in range(action.arity)
-            )
-
-            # Select preconditions and effects based on mode
-            if mode == "safe":
-                precs = self.pre.get(action_name, set())
-                add_effs = self.eff_add.get(action_name, set())
-                del_effs = self.eff_del.get(action_name, set())
-            else:  # complete
-                precs = self._get_certain_preconditions(action_name)
-                add_effs = self.eff_add.get(action_name, set()) | self.eff_maybe_add.get(action_name, set())
-                del_effs = self.eff_del.get(action_name, set()) | self.eff_maybe_del.get(action_name, set())
-
-            # Filter out negative literals from effects (effects use positive names only)
-            add_effs = {e for e in add_effs if not e.startswith('¬')}
-            del_effs = {e for e in del_effs if not e.startswith('¬')}
-
-            lines.append(f"  (:action {action_name}")
-            lines.append(f"    :parameters ({param_strs})")
-
-            # Precondition
-            pddl_precs = sorted(self._literal_to_pddl(lit) for lit in precs)
-            if not pddl_precs:
-                lines.append("    :precondition ()")
-            elif len(pddl_precs) == 1:
-                lines.append(f"    :precondition {pddl_precs[0]}")
-            else:
-                lines.append(f"    :precondition (and")
-                for p in pddl_precs:
-                    lines.append(f"      {p}")
-                lines.append("    )")
-
-            # Effect
-            pddl_adds = sorted(self._literal_to_pddl(lit) for lit in add_effs)
-            pddl_dels = sorted(f"(not {self._literal_to_pddl(lit)})" for lit in del_effs)
-            pddl_effects = pddl_adds + pddl_dels
-            if not pddl_effects:
-                lines.append("    :effect ()")
-            elif len(pddl_effects) == 1:
-                lines.append(f"    :effect {pddl_effects[0]}")
-            else:
-                lines.append(f"    :effect (and")
-                for e in pddl_effects:
-                    lines.append(f"      {e}")
-                lines.append("    )")
-
-            lines.append("  )")
-
-        lines.append(")")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _literal_to_pddl(literal: str) -> str:
-        """Convert a parameter-bound literal to PDDL syntax.
-
-        Examples:
-            on(?x,?y)  → (on ?x ?y)
-            ¬clear(?x) → (not (clear ?x))
-            handempty   → (handempty)
-        """
-        negated = literal.startswith('¬')
-        if negated:
-            literal = literal[1:]
-
-        if '(' in literal:
-            pred_name = literal[:literal.index('(')]
-            params_str = literal[literal.index('(') + 1:-1]
-            params = params_str.replace(',', ' ')
-            inner = f"({pred_name} {params})"
-        else:
-            inner = f"({literal})"
-
-        if negated:
-            return f"(not {inner})"
-        return inner
-
-    def _extract_predicate_name(self, literal: str) -> Optional[str]:
-        """
-        Extract predicate name from literal.
-
-        Simple parsing logic - no need for delegation.
-
-        Args:
-            literal: Literal string (e.g., 'on(?x,?y)' or '¬clear(?x)')
-
-        Returns:
-            Predicate name or None
-        """
-        # Remove negation if present
-        if literal.startswith('¬'):
-            literal = literal[1:]
-
-        # Extract predicate name (before '(' or whole string if no parens)
-        if '(' in literal:
-            return literal[:literal.index('(')]
-        return literal
+        """Export learned model as PDDL domain string."""
+        from information_gain_aml.algorithms.model_export import to_pddl_string
+        return to_pddl_string(self, mode)
 
     def _negate_literal(self, literal: str) -> str:
         """
@@ -2064,73 +1763,9 @@ class InformationGainLearner(BaseActionModelLearner):
             return False
 
     def export_model_snapshot(self, iteration: int, output_dir: Path) -> None:
-        """
-        Export model snapshot at checkpoint.
-
-        Exports the current state of knowledge sets for all actions to a JSON file.
-        This includes preconditions (certain/uncertain), effects (confirmed/possible),
-        and constraint sets for post-processing analysis.
-
-        Args:
-            iteration: Current iteration number
-            output_dir: Directory to export the model snapshot to
-        """
-        models_dir = output_dir / "models"
-        models_dir.mkdir(exist_ok=True)
-
-        # Extract domain and problem names from file paths
-        domain_name = Path(self.domain_file).stem
-        problem_name = Path(self.problem_file).stem
-
-        snapshot: Dict[str, Any] = {
-            "iteration": iteration,
-            "algorithm": "information_gain",
-            "actions": {},
-            "metadata": {
-                "domain": domain_name,
-                "problem": problem_name,
-                "export_timestamp": datetime.now().isoformat()
-            }
-        }
-
-        # Export knowledge for each action
-        for action_name in self.pre.keys():
-            # Extract knowledge sets
-            possible_precs = self._get_possible_preconditions(action_name)
-            certain_precs = self._get_certain_preconditions(action_name)
-            uncertain_precs = possible_precs - certain_precs
-
-            # Get action parameters
-            action = self.domain.lifted_actions.get(action_name)
-            parameters = [p.name for p in action.parameters] if action else []
-
-            snapshot["actions"][action_name] = {
-                "parameters": parameters,
-                "possible_preconditions": sorted(list(possible_precs)),
-                "certain_preconditions": sorted(list(certain_precs)),
-                "uncertain_preconditions": sorted(list(uncertain_precs)),
-                "confirmed_add_effects": sorted(list(self.eff_add.get(action_name, set()))),
-                "confirmed_del_effects": sorted(list(self.eff_del.get(action_name, set()))),
-                "possible_add_effects": sorted(list(self.eff_maybe_add.get(action_name, set()))),
-                "possible_del_effects": sorted(list(self.eff_maybe_del.get(action_name, set()))),
-                "constraint_sets": [sorted(list(cs)) for cs in self.pre_constraints.get(action_name, set())]
-            }
-
-        # Add action model statistics for intermediate analysis
-        snapshot["statistics"] = {
-            "iterations": self.iteration_count,
-            "observations": self.observation_count,
-            "converged": self._converged,
-            "max_information_gain": self._last_max_gain,
-            "action_model_metrics": self.get_action_model_metrics()
-        }
-
-        # Write to file
-        output_path = models_dir / f"model_iter_{iteration:03d}.json"
-        with open(output_path, 'w') as f:
-            json.dump(snapshot, f, indent=2)
-
-        logger.debug(f"Exported model snapshot at iteration {iteration} to {output_path}")
+        """Export model snapshot at checkpoint."""
+        from information_gain_aml.algorithms.model_export import export_model_snapshot
+        export_model_snapshot(self, iteration, output_dir)
 
     def _get_certain_preconditions(self, action_name: str) -> Set[str]:
         """
@@ -2152,18 +1787,6 @@ class InformationGainLearner(BaseActionModelLearner):
                 literal = next(iter(constraint_set))
                 certain.add(literal)
         return certain
-
-    def _get_possible_preconditions(self, action_name: str) -> Set[str]:
-        """
-        Get all possible preconditions (not yet ruled out).
-
-        Args:
-            action_name: Name of the action
-
-        Returns:
-            Set of possible precondition literals
-        """
-        return set(self.pre.get(action_name, set()))
 
     def reset(self) -> None:
         """Reset the learner to initial state."""
