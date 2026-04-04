@@ -77,7 +77,7 @@ def run_experiment(
     # Run algorithm
     agent = get_algorithm(
         "InformationGainAgent",
-        max_steps=max_steps,
+        input_domain_path=input_domain_path,
         model_mode=model_mode,
         use_object_subset=use_object_subset,
         spare_objects_per_type=spare_objects_per_type,
@@ -91,7 +91,7 @@ def run_experiment(
     )
 
     start = time.perf_counter()
-    model_str, trajectory = agent.learn(simulator, input_domain_path, seed=seed)
+    model_str, trajectory = agent.learn(simulator, max_steps=max_steps, seed=seed)
     elapsed = time.perf_counter() - start
 
     n_actions = len(trajectory.actions)

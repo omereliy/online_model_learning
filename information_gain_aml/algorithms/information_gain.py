@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Tuple, List, Dict, Optional, Any, Set
 
 if TYPE_CHECKING:
     from information_gain_aml.algorithms.parallel_gain import ActionGainContext
+    from information_gain_aml.algorithms.planning_explorer import ExplorationPlan, PlanningExplorer
 
 from information_gain_aml.core import grounding
 from information_gain_aml.core.grounding import is_injective_binding
@@ -51,6 +52,7 @@ class InformationGainLearner(BaseActionModelLearner):
                  max_iterations_per_subset: int = DEFAULT_MAX_ITERATIONS,
                  num_workers: Optional[int] = None,
                  learn_negative_preconditions: bool = True,
+                 use_planning_explorer: bool = True,
                  **kwargs):
         """
         Initialize Information Gain learner.
@@ -68,6 +70,8 @@ class InformationGainLearner(BaseActionModelLearner):
             learn_negative_preconditions: If True (default), precondition candidates include both
                         positive and negative literals. If False, only positive literals are used,
                         reducing hypothesis space from 3^n to 2^n. Effects always use full La.
+            use_planning_explorer: If True (default), use planner to navigate to informative states
+                        when information gain is zero. If False, fall back to random action selection.
             **kwargs: Additional parameters (selection_strategy, epsilon, temperature)
 
         Raises:
@@ -92,6 +96,7 @@ class InformationGainLearner(BaseActionModelLearner):
 
         self.max_iterations = max_iterations
         self.learn_negative_preconditions = learn_negative_preconditions
+        self.use_planning_explorer = use_planning_explorer
 
         # Initialize domain knowledge using new architecture
         logger.debug("Parsing PDDL domain and problem files")
@@ -139,6 +144,10 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Convergence tracking
         self._last_max_gain: float = float('inf')  # Track maximum information gain
+
+        # Planning-based exploration (fallback when gain=0 with remaining uncertainty)
+        self._exploration_plan: Optional['ExplorationPlan'] = None
+        self._planning_explorer: Optional['PlanningExplorer'] = None
 
         # Object subset selection (for reduced grounding space)
         self.use_object_subset = use_object_subset
@@ -529,25 +538,35 @@ class InformationGainLearner(BaseActionModelLearner):
 
             # Check if there's still learning potential at the lifted level
             if self._has_lifted_learning_potential():
-                logger.info("Lifted-level uncertainty exists - continuing exploration")
-                uncertainty = self._get_lifted_uncertainty_summary()
-                total_uncertain = sum(
-                    u['uncertain_pre'] + u['uncertain_add'] + u['uncertain_del']
-                    for u in uncertainty.values()
-                )
-                logger.debug(f"Total lifted uncertainty: {total_uncertain} literals across {len(uncertainty)} actions")
+                if self.use_planning_explorer:
+                    # Continue active exploration plan
+                    if self._exploration_plan and self._exploration_plan.plan_actions:
+                        next_action, next_objects = self._exploration_plan.plan_actions.pop(0)
+                        if not self._exploration_plan.plan_actions:
+                            self._exploration_plan = None
+                        logger.info(f"Continuing exploration plan: {next_action}({','.join(next_objects)})")
+                        return next_action, next_objects
 
-                # Find applicable actions to continue exploring
+                    # Try to find a new exploration plan
+                    plan = self._get_exploration_plan(state)
+                    if plan is not None:
+                        self._exploration_plan = plan
+                        next_action, next_objects = self._exploration_plan.plan_actions.pop(0)
+                        if not self._exploration_plan.plan_actions:
+                            self._exploration_plan = None
+                        logger.info(f"New exploration plan targeting {plan.target_operator}: "
+                                   f"{next_action}({','.join(next_objects)})")
+                        return next_action, next_objects
+
+                    logger.info("Planning failed - falling back to random exploration")
+
+                # Random fallback (used when planning disabled or planning failed)
                 applicable_actions = self._filter_applicable_actions(action_gains, state)
-
                 if applicable_actions:
-                    # Select random applicable action to continue exploring
                     selected_action, selected_objects = random.choice(applicable_actions)
-                    logger.info(f"Selecting random applicable action to continue exploring: "
+                    logger.info(f"Selecting random applicable action: "
                                f"{selected_action}({','.join(selected_objects)})")
                 else:
-                    # No applicable actions in current state - need state change
-                    # Select any action (even if likely to fail) to potentially learn from failure
                     selected_action, selected_objects = random.choice(
                         [(a, o) for a, o, _ in action_gains]
                     )
@@ -947,6 +966,13 @@ class InformationGainLearner(BaseActionModelLearner):
         logger.debug(f"Found {len(applicable)}/{len(action_gains)} applicable actions")
         return applicable
 
+    def _get_exploration_plan(self, state: Set[str]):
+        """Try to find a planning-based exploration plan."""
+        if self._planning_explorer is None:
+            from information_gain_aml.algorithms.planning_explorer import PlanningExplorer
+            self._planning_explorer = PlanningExplorer(self)
+        return self._planning_explorer.find_exploration_plan(state)
+
     def _log_action_model_state(self, action: str, objects: List[str], state: Set[str]) -> None:
         """
         Log the current action model state before execution (debug level for detailed diagnostics).
@@ -1148,9 +1174,23 @@ class InformationGainLearner(BaseActionModelLearner):
 
         logger.debug(f"Total observations for '{action}': {len(self.observation_history[action])}")
 
+        # Snapshot effects before update for exploration plan abort detection
+        prev_eff_add = set(self.eff_add.get(action, set()))
+        prev_eff_del = set(self.eff_del.get(action, set()))
+
         # Automatically update model after recording observation
         # This ensures the model learns immediately from each observation
         self.update_model()
+
+        # Abort exploration plan if action failed or effects changed (model invalidated)
+        if self._exploration_plan is not None:
+            if not success:
+                logger.info("Aborting exploration plan: action failed")
+                self._exploration_plan = None
+            elif (self.eff_add.get(action, set()) != prev_eff_add
+                  or self.eff_del.get(action, set()) != prev_eff_del):
+                logger.info("Aborting exploration plan: effects changed (model updated)")
+                self._exploration_plan = None
 
     def update_model(self) -> None:
         """
@@ -1788,6 +1828,25 @@ class InformationGainLearner(BaseActionModelLearner):
                 certain.add(literal)
         return certain
 
+    # ========== PlanningExplorer Protocol Methods ==========
+
+    def get_uncertain_action_names(self) -> List[str]:
+        """Actions with uncertain preconditions."""
+        return [name for name in self.pre
+                if self.pre[name] - self._get_certain_preconditions(name)]
+
+    def get_certain_preconditions(self, action: str) -> Set[str]:
+        """Certain preconditions for an action."""
+        return self._get_certain_preconditions(action)
+
+    def get_uncertain_preconditions(self, action: str) -> Set[str]:
+        """Uncertain preconditions = possible minus certain."""
+        return self.pre[action] - self._get_certain_preconditions(action)
+
+    def get_all_action_names(self) -> List[str]:
+        """All action schema names."""
+        return list(self.pre.keys())
+
     def reset(self) -> None:
         """Reset the learner to initial state."""
         logger.info("Resetting learner to initial state")
@@ -1809,6 +1868,11 @@ class InformationGainLearner(BaseActionModelLearner):
 
         # Clear convergence tracking
         self._last_max_gain = float('inf')
+
+        # Clear exploration plan state
+        self._exploration_plan = None
+        if self._planning_explorer is not None:
+            self._planning_explorer.reset()
 
         # Reset object subset selection to original setting
         self.use_object_subset = self._original_use_object_subset

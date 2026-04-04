@@ -93,7 +93,8 @@ def create_experiment_config(algorithm: str, domain: str, problem: str,
                            selection_strategy: str = 'greedy',
                            lookahead_depth: int = 2,
                            lookahead_top_k: int = 5,
-                           lookahead_discount: float = 0.9) -> Dict[str, Any]:
+                           lookahead_discount: float = 0.9,
+                           use_planning_explorer: bool = True) -> Dict[str, Any]:
     """Create experiment configuration dynamically."""
     config: Dict[str, Any] = {'experiment': {
         'name': f"{algorithm}_{domain}_{problem}",
@@ -125,7 +126,8 @@ def create_experiment_config(algorithm: str, domain: str, problem: str,
             'learn_negative_preconditions': learn_negative_preconditions,
             'lookahead_depth': lookahead_depth,
             'lookahead_top_k': lookahead_top_k,
-            'lookahead_discount': lookahead_discount
+            'lookahead_discount': lookahead_discount,
+            'use_planning_explorer': use_planning_explorer
         }
     }}
 
@@ -166,7 +168,8 @@ def run_single_experiment(domain: str, problem: str,
                          selection_strategy: str = 'greedy',
                          lookahead_depth: int = 2,
                          lookahead_top_k: int = 5,
-                         lookahead_discount: float = 0.9) -> bool:
+                         lookahead_discount: float = 0.9,
+                         use_planning_explorer: bool = True) -> bool:
     """Run a single experiment."""
     output_dir = f"{base_output_dir}/{domain}/{problem}"
 
@@ -186,7 +189,8 @@ def run_single_experiment(domain: str, problem: str,
     config = create_experiment_config(
         "information_gain", domain, problem, iterations, output_dir,
         use_object_subset, learn_negative_preconditions,
-        selection_strategy, lookahead_depth, lookahead_top_k, lookahead_discount
+        selection_strategy, lookahead_depth, lookahead_top_k, lookahead_discount,
+        use_planning_explorer
     )
 
     # Save config
@@ -288,6 +292,8 @@ Examples:
                        help="Number of top actions to evaluate per level (default: 5)")
     parser.add_argument("--lookahead-discount", type=float, default=0.9,
                        help="Discount factor for future gains (default: 0.9)")
+    parser.add_argument("--no-planning-explorer", action="store_true",
+                       help="Disable planning-based exploration (fall back to random on zero gain)")
 
     args = parser.parse_args()
 
@@ -385,7 +391,8 @@ Examples:
             base_output_dir, args.force, args.use_object_subset,
             not args.no_negative_preconditions,
             args.selection_strategy, args.lookahead_depth,
-            args.lookahead_top_k, args.lookahead_discount
+            args.lookahead_top_k, args.lookahead_discount,
+            not args.no_planning_explorer
         )
 
         if success:
