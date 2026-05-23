@@ -3,6 +3,7 @@ name: simplifier
 description: Reviews plans and code for unnecessary complexity, algorithm correctness, and migration alignment. Use after planning or before committing multi-file changes.
 tools: Read, Grep, Glob
 model: opus
+effort: xhigh
 permissionMode: plan
 maxTurns: 10
 ---
