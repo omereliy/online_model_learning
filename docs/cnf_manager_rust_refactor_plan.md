@@ -1,6 +1,6 @@
 # CNF Manager → Rust: Refactor Plan
 
-Status: proposal, not started. Branch: `claude/cnf-manager-python-rust-42oyv0`.
+Status: decisions D1–D4 taken (§8), D5 under discussion (§10). Branch: `claude/cnf-manager-python-rust-42oyv0`.
 Reviewed once by the project's simplifier agent; its findings are folded in (§3.2, §3.4, §4, §8).
 
 ## 1. Recommendation
@@ -249,7 +249,7 @@ hard dependency of the package. The TestPyPI dry run in `docs/releasing.md` is t
 |---|---|---|---|
 | 0. Prepare in Python (mergeable on its own) | add `scripts/profile_learning_loop.py` (the §2 driver; CLAUDE.md asks for profiling before optimisation work and §9 needs it again); delete the pre-population loop and the `blocksworld_precond` fixture; add the `clauses` property to `CNFManager` and migrate the §4 call sites; align the fallback; add `tests/core/test_cnf_manager.py::test_counts_match_truth_table`, a random-formula property test (≤ 10 variables) against brute force with the §2.3 cases as `xfail(strict=True)` on the current class; record D1–D5 | pytest + mypy green; the xfails document today's divergences | ½ day |
 | 1. Rust core | crate, counter, bindings, `.pyi`, `maturin develop`; the Phase 0 property test parametrised over both classes; micro-benchmark on the §2.2 formulas | property test passes on Rust with the §2.3 xfails removed; 245k-model case under 1 ms | 2–3 days |
-| 2. Integrate and evaluate | §4 changes; full `uv run pytest tests/ -v` and `uv run mypy information_gain_aml/`; runs with a fixed seed on blocksworld/depots p01 (greedy) and one MCTS run, before and after, via `run-local-experiment` / `run-aml-gym-experiment`; measure `num_workers` on/off (D5) | all tests green; learned models identical except where a §2.3 case fired, each difference explained; profile shows `_sat_kb` ≤ 3% of runtime; ms/iter before/after recorded in the PR | 1 day |
+| 2. Integrate and evaluate | §4 changes; full `uv run pytest tests/ -v` and `uv run mypy information_gain_aml/`; runs with a fixed seed on blocksworld/depots p01 (greedy) and one MCTS run, before and after, via `run-local-experiment` / `run-aml-gym-experiment`; apply D5 (§10) | all tests green; learned models identical except where a §2.3 case fired, each difference explained; profile shows `_sat_kb` ≤ 3% of runtime; ms/iter before/after recorded in the PR | 1 day |
 | 3. Package and release | maturin backend, wheel matrix, CI steps, docs, remove `python-sat` and `cnf_manager.py`, bump to 0.4.0, TestPyPI dry run, install check on macOS arm64 | `pip install information-gain-aml==0.4.0` works without a Rust toolchain on macOS and Linux; CI green on 3.10/3.11/3.12 | 1 day |
 
 Total ≈ 5–6 working days. Phase 0 can merge before D1 is decided; it is useful under every option.
@@ -266,15 +266,15 @@ Total ≈ 5–6 working days. Phase 0 can merge before D1 is decided; it is usef
 | Panics crossing into Python | `PyResult` everywhere; `cargo clippy -D warnings` |
 | Speedup oversold | §2 numbers in the PR; Phase 2 exit criterion requires measured before/after |
 
-## 8. Decisions needed
+## 8. Decisions
 
-| # | Decision | Recommendation |
+| # | Decision | Outcome |
 |---|---|---|
-| D1 | Engine and language: (a) Rust exact counter; (b) pure-Python exact counter inside `cnf_manager.py`, no new toolchain; (c) faithful Rust port of enumeration + cache behind a CDCL crate | (a), as requested, and (b) is the fallback. Measured per query at MCTS size: today 130–720 µs, (b) 210 µs, (a) 18 µs. (b) fixes §2.3 and the cliff but leaves the manager at ~5–10% of runtime; (a) takes it to ~1%. (c) keeps the cliff, the cache and the bugs |
-| D2 | Distribution: single maturin-built package vs separate accelerator package with a pure-Python fallback | Single package. A permanent fallback is two implementations to keep identical forever |
-| D3 | Naming: `SATKnowledgeBase` + one-release `CNFManager` alias vs keep `CNFManager` | `SATKnowledgeBase` + alias |
-| D4 | Counting universe = fluents of `La` for every count (§3.2) | Yes. It is what the algorithm doc's formulas assume, it removes the clamp, and the measured footprint is small |
-| D5 | `ProcessPoolExecutor` path: keep (then add `__reduce__`, collapse the two caches) or delete `parallel_gain.py`'s worker machinery | Measure in Phase 2. With counts this cheap the per-iteration context pickling likely costs more than it saves on small problems; delete if so |
+| D1 | Engine and language: (a) Rust exact counter; (b) pure-Python exact counter inside `cnf_manager.py`, no new toolchain; (c) faithful Rust port of enumeration + cache behind a CDCL crate | **Decided: Rust.** The counter replaces enumeration rather than porting it: rover's 33-literal clause has 2^33 − 1 models, which is 2.4 hours at 1 µs per model even in Rust, while the counter answers it in microseconds. Measured per query at MCTS size: today 130–720 µs, pure-Python counter 210 µs, Rust counter 18 µs |
+| D2 | Distribution: single maturin-built package vs separate accelerator package with a pure-Python fallback | **Decided: no Python fallback; the knowledge base is a standalone Rust module.** It lives in its own crate (`rust/`) with no dependency on the rest of the package, so it can be published as its own PyPI package later if aml-gym or KG-AML want to reuse it. It ships inside the `information-gain-aml` wheel for now (one release pipeline); splitting it out is a packaging change only |
+| D3 | Naming: `SATKnowledgeBase` + one-release `CNFManager` alias vs keep `CNFManager` | **Decided:** `SATKnowledgeBase` + alias |
+| D4 | Counting universe = fluents of `La` for every count (§3.2) | **Decided: accepted.** It is what the algorithm doc's formulas assume, it removes the clamp, and the measured footprint is small |
+| D5 | `ProcessPoolExecutor` path: keep (then add `__reduce__`, collapse the two caches) or delete `parallel_gain.py`'s worker machinery | **Open.** Measurements and trade-offs in §10 |
 
 ## 9. Out of scope, worth knowing
 
@@ -285,3 +285,76 @@ Total ≈ 5–6 working days. Phase 0 can merge before D1 is decided; it is usef
 - The hypothesis-space denominators (`3^n` for failure gain, `|La|` for success gain) and the
   2-valued CNF encoding are left exactly as they are; this plan only makes the counts consistent with
   each other.
+
+## 10. D5: the process-pool path
+
+### 10.1 Measurements
+
+30 iterations each, this container (4 cores, Linux `fork`; macOS uses `spawn`, which makes pool
+start-up slower but does not change the per-iteration picture). "Grounded" is the size of the full
+grounding, the number of gain computations an iteration can issue. The context pickle is what the
+learner ships to every worker on every iteration; the lean figure is the same context without the
+clause, variable-map and solution-cache fields, which is what it becomes after the Rust port.
+
+| Problem | grounded | sequential | 4 workers | speedup | context pickle today → lean |
+|---|---|---|---|---|---|
+| blocksworld p01 | 40 | 30 ms/iter | 50 ms/iter | 0.60x | 27 KB → 2 KB |
+| depots p00 | 84 | 28 ms/iter | 34 ms/iter | 0.82x | 17 KB → 3 KB |
+| blocksworld p05 | 144 | 135 ms/iter | 174 ms/iter | 0.77x | 38 KB → 2 KB |
+| depots p03 | 3,528 | 624 ms/iter | 293 ms/iter | 2.13x | 18 KB → 3 KB |
+
+The fixed cost of a parallel iteration is about 20 ms here: four chunk submissions, four context
+pickles, worker-side reconstruction of every `CNFManager` from clauses and caches
+(`WorkerCNFCache.update_context` throws the previous ones away), result transfer and scheduling. The
+pool pays for itself only when the per-iteration work is large, which today means thousands of
+grounded actions. The default is `num_workers=None` (auto), so every small and medium run, including
+the AMLGym runs and the `quick`/`standard` experiment modes on small problems, is slower than it
+needs to be today.
+
+### 10.2 What changes after the Rust port
+
+- The CNF part of a gain computation drops from 20–45% of the work to ~1%. What remains per
+  grounded action is Python grounding and bookkeeping, which is still parallelisable across
+  processes, so the 2x on large problems survives the port.
+- The worker-side reconstruction disappears if `SATKnowledgeBase` pickles itself (`__reduce__`,
+  ~10 lines of Rust); the lean context is 2–3 KB. The fixed cost per iteration shrinks but does
+  not vanish; the crossover stays in the hundreds of grounded actions.
+- The next refactor (§9) moves grounding into the same crate. At that point the right parallelism
+  is inside Rust: a thread pool over grounded actions with the GIL released, no pickling and no
+  worker processes. A `ProcessPoolExecutor` adds nothing once that exists.
+
+### 10.3 Trade-offs
+
+Keep the pool (simplified: pickle the Rust object, one worker cache class):
+
+- Pro: ~2x on problems with thousands of grounded actions, today and after the port; MCTS and
+  lookahead call the gain computation many times per step and reuse the pool.
+- Con: a net loss by default on every problem measured except the largest; needs a size threshold
+  or an opt-in default to stop hurting small runs.
+- Con: two execution paths to keep identical, 531 lines in `parallel_gain.py` plus ~200 in the
+  learner plus 352 test lines, per-task exceptions swallowed into a 0.0 gain, a 120 s chunk
+  timeout that silently drops results, and a fallback to sequential on pool failure.
+- Con: a process pool inside a library is awkward for the aml-gym target (host frameworks may run
+  their own multiprocessing; `spawn` on macOS re-imports the package in every worker).
+- Con: it is the main source of the caching-and-referencing complexity that motivated this refactor.
+
+Delete the pool (one sequential path; the shared gain functions move back into
+`information_gain.py`, `ActionGainContext` and the worker cache go away):
+
+- Pro: one deterministic path, no pickling contract on `SATKnowledgeBase`, ~900 fewer lines
+  including tests, simpler aml-gym integration, and it matches the 3-class target.
+- Pro: faster by default on every problem under a few hundred grounded actions.
+- Con: large problems lose the 2x until grounding moves to Rust (depots p03: 0.62 s/iter instead
+  of 0.29 s; a 500-iteration run takes 5 minutes instead of 2.5).
+
+Middle ground: keep the pool as explicit opt-in (`num_workers` default 0, parallel only when asked
+for and only above a grounded-action threshold). Smallest change, but all of the code and both
+paths stay.
+
+### 10.4 Recommendation
+
+Delete it in Phase 2, keep the `num_workers` keyword for one release so existing scripts and the
+README example keep working, and put the parallelism inside Rust when grounding is ported. The
+interim cost is confined to problems with thousands of grounded actions, and even there it is a
+factor of two on wall-clock, not a capability loss.
+
