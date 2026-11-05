@@ -1,6 +1,6 @@
 # CNF Manager → Rust: Refactor Plan
 
-Status: decisions D1–D4 taken (§8), D5 under discussion (§10). Branch: `claude/cnf-manager-python-rust-42oyv0`.
+Status: decisions D1–D6 taken (§8). Branch: `claude/cnf-manager-python-rust-42oyv0`.
 Reviewed once by the project's simplifier agent; its findings are folded in (§3.2, §3.4, §4, §8).
 
 ## 1. Recommendation
@@ -23,9 +23,11 @@ the counter takes tens to hundreds of microseconds; rover p00 cannot get past it
 today for exactly this reason (§2.4). The largest hotspot overall is `grounding.py`
 (40–58%), which this refactor does not touch (§9).
 
-A pure-Python counter gets the correctness fixes and the cliff removal without any new toolchain, at
-about 12x the per-query cost of the Rust prototype (§2.2). That is the fallback if the Rust tooling is
-judged not worth it; see D1.
+Decided direction (§8): one Rust crate with two parts, `SATKnowledgeBase` (Phases 0–3) and a gain
+kernel that owns grounding and the per-grounded-action gain loop with parallelism inside Rust
+(Phase 4, §11). The `ProcessPoolExecutor` path is deleted in Phase 2 (§10). The CNF part alone is
+worth 1.3–1.8x end to end; the kernel is where the 10x lives, because the per-action loop is
+65–95% of runtime and most of it is string grounding (§11.1).
 
 ## 2. Evidence
 
@@ -249,10 +251,13 @@ hard dependency of the package. The TestPyPI dry run in `docs/releasing.md` is t
 |---|---|---|---|
 | 0. Prepare in Python (mergeable on its own) | add `scripts/profile_learning_loop.py` (the §2 driver; CLAUDE.md asks for profiling before optimisation work and §9 needs it again); delete the pre-population loop and the `blocksworld_precond` fixture; add the `clauses` property to `CNFManager` and migrate the §4 call sites; align the fallback; add `tests/core/test_cnf_manager.py::test_counts_match_truth_table`, a random-formula property test (≤ 10 variables) against brute force with the §2.3 cases as `xfail(strict=True)` on the current class; record D1–D5 | pytest + mypy green; the xfails document today's divergences | ½ day |
 | 1. Rust core | crate, counter, bindings, `.pyi`, `maturin develop`; the Phase 0 property test parametrised over both classes; micro-benchmark on the §2.2 formulas | property test passes on Rust with the §2.3 xfails removed; 245k-model case under 1 ms | 2–3 days |
-| 2. Integrate and evaluate | §4 changes; full `uv run pytest tests/ -v` and `uv run mypy information_gain_aml/`; runs with a fixed seed on blocksworld/depots p01 (greedy) and one MCTS run, before and after, via `run-local-experiment` / `run-aml-gym-experiment`; apply D5 (§10) | all tests green; learned models identical except where a §2.3 case fired, each difference explained; profile shows `_sat_kb` ≤ 3% of runtime; ms/iter before/after recorded in the PR | 1 day |
+| 2. Integrate and evaluate | §4 changes; delete the process-pool path (D5, §10): `parallel_gain.py`'s worker machinery, the pool methods and `_create_parallel_context` in the learner, `test_parallel_gain.py`; the gain functions move into the learner as the single path; `num_workers` kept as an accepted no-op for one release; full `uv run pytest tests/ -v` and `uv run mypy information_gain_aml/`; runs with a fixed seed on blocksworld/depots p01 (greedy) and one MCTS run, before and after, via `run-local-experiment` / `run-aml-gym-experiment` | all tests green; learned models identical except where a §2.3 case fired, each difference explained; profile shows `_sat_kb` ≤ 3% of runtime; ms/iter before/after recorded in the PR | 1 day |
 | 3. Package and release | maturin backend, wheel matrix, CI steps, docs, remove `python-sat` and `cnf_manager.py`, bump to 0.4.0, TestPyPI dry run, install check on macOS arm64 | `pip install information-gain-aml==0.4.0` works without a Rust toolchain on macOS and Linux; CI green on 3.10/3.11/3.12 | 1 day |
 
-Total ≈ 5–6 working days. Phase 0 can merge before D1 is decided; it is useful under every option.
+| 4. Gain kernel in Rust (§11) | interner, templates, binding cache, bitset state, `compute_gains` with rayon, `applicability`; learner pushes model-set changes to the kernel after each observation; hot-path grounding functions in `grounding.py` lose their callers; differential test of gains against the Python functions over 50 iterations on blocksworld/depots before those functions are deleted; update `.claude/rules/migration.md` | gains identical to the Python path on the differential run; blocksworld p01 and depots p03 ms/iter recorded with 1 and 4 threads; `parallel_gain.py` gone | 3–4 days |
+
+Total ≈ 9–10 working days. Phase 0 can merge on its own. Between Phase 2 and Phase 4, problems with
+thousands of grounded actions run about 2x slower than today (§10.1); everything else runs faster.
 
 ## 7. Risks and mitigations
 
@@ -274,19 +279,20 @@ Total ≈ 5–6 working days. Phase 0 can merge before D1 is decided; it is usef
 | D2 | Distribution: single maturin-built package vs separate accelerator package with a pure-Python fallback | **Decided: no Python fallback; the knowledge base is a standalone Rust module.** It lives in its own crate (`rust/`) with no dependency on the rest of the package, so it can be published as its own PyPI package later if aml-gym or KG-AML want to reuse it. It ships inside the `information-gain-aml` wheel for now (one release pipeline); splitting it out is a packaging change only |
 | D3 | Naming: `SATKnowledgeBase` + one-release `CNFManager` alias vs keep `CNFManager` | **Decided:** `SATKnowledgeBase` + alias |
 | D4 | Counting universe = fluents of `La` for every count (§3.2) | **Decided: accepted.** It is what the algorithm doc's formulas assume, it removes the clamp, and the measured footprint is small |
-| D5 | `ProcessPoolExecutor` path: keep (then add `__reduce__`, collapse the two caches) or delete `parallel_gain.py`'s worker machinery | **Open.** Measurements and trade-offs in §10 |
+| D5 | `ProcessPoolExecutor` path: keep (then add `__reduce__`, collapse the two caches) or delete `parallel_gain.py`'s worker machinery | **Decided: delete it; parallelism lives inside Rust** (rayon over grounded actions, GIL released, no pickling). Measurements in §10 |
+| D6 | Move grounding and the per-grounded-action gain loop to Rust | **Decided: yes.** It is heavy lifting: string grounding alone is 36–53% of runtime and the loop it sits in is 65–95%. Scope and design in §11 |
 
-## 9. Out of scope, worth knowing
+## 9. Out of scope
 
-- `grounding.py` is 40–58% of runtime: `ground_literal_set` is called 240k–450k times per 100–150
-  iterations (about 40 calls per grounded action per step) from `_get_satisfied_literals` and
-  `_calculate_potential_gain_success`. Caching groundings per `(action, objects)` or moving that path
-  to the same Rust crate is the next refactor, with a larger payoff than this one.
 - The hypothesis-space denominators (`3^n` for failure gain, `|La|` for success gain) and the
   2-valued CNF encoding are left exactly as they are; this plan only makes the counts consistent with
   each other.
+- PDDL parsing, the domain representation and the environment (`pddl_io.py`, `up_adapter.py`,
+  `lifted_domain.py`, `active_environment.py`) stay on their PDDLGym/AMLGym migration path. The Rust
+  crate consumes strings and never sees PDDL.
+- `ObjectSubsetManager` and `ground_all_actions*` (2–4% of runtime) stay in Python for now.
 
-## 10. D5: the process-pool path
+## 10. D5: the process-pool path (decided: delete)
 
 ### 10.1 Measurements
 
@@ -351,10 +357,86 @@ Middle ground: keep the pool as explicit opt-in (`num_workers` default 0, parall
 for and only above a grounded-action threshold). Smallest change, but all of the code and both
 paths stay.
 
-### 10.4 Recommendation
+### 10.4 Decision
 
-Delete it in Phase 2, keep the `num_workers` keyword for one release so existing scripts and the
-README example keep working, and put the parallelism inside Rust when grounding is ported. The
-interim cost is confined to problems with thousands of grounded actions, and even there it is a
-factor of two on wall-clock, not a capability loss.
+Deleted in Phase 2. The `num_workers` keyword stays accepted for one release so existing scripts and
+the README example keep working. Parallelism returns inside Rust in Phase 4 (§11). The interim cost is
+confined to problems with thousands of grounded actions, and even there it is a factor of two on
+wall-clock, not a capability loss.
+
+## 11. Phase 4: the gain kernel in Rust (D6)
+
+### 11.1 What the hot path does today
+
+Every call to `_compute_single_action_gain` (one per grounded action per `select_action`, and per
+MCTS/lookahead node) grounds the lifted literals of `pre(a)` by string parsing three times: once for
+the early-termination check, once in `_calculate_applicability_probability`, once in
+`_calculate_potential_gain_success` (which also grounds `eff?+` and `eff?-`). Each grounding of one
+literal is `ground_parameter_bound_literal`: split on `(`, `,`, `)`, decode `?x`/`?y`/`?p10` with
+`_parameter_index_from_name`, join with `_`, then a set lookup.
+
+| | blocksworld p01 greedy, 150 it | depots p00 greedy, 120 it | blocksworld p01 MCTS, 12 it |
+|---|---|---|---|
+| gain computations | 6,000 | 10,080 | 29,280 |
+| `_get_satisfied_literals` calls | 17,876 | 29,924 | 80,276 |
+| `ground_parameter_bound_literal` calls | 347k | 769k | 2.94M |
+| runtime under the gain loop | 65% | 80% | 95% |
+| of which string grounding | 36% | 53% | 40% |
+| of which CNF queries | 27% | 16% | 45% |
+| per gain computation | 0.85 ms | 1.1 ms | 1.95 ms |
+
+Nothing in this loop needs strings. The lifted literal templates are already positional:
+`LiftedDomainKnowledge.get_parameter_bound_literals` generates parameter names with
+`_generate_parameter_names` (`?x ?y ?z ?u ?v ?w ?p ?q ?r ?s ?t ?p11 …`) and
+`_parameter_index_from_name` decodes the same convention, so a template is a predicate plus a tuple
+of parameter positions and a sign.
+
+### 11.2 Design
+
+- **Interning at the boundary.** Predicates, objects and grounded fluents get `u32` ids; a grounded
+  fluent is `(predicate, object ids)`. Per action schema, the `La` templates become
+  `(predicate, positions, sign)` ids. Strings cross the boundary once: when the domain is loaded,
+  when a state arrives, and when the learner pushes a model update.
+- **Model state per action**, pushed by the learner after each observation (`set_model(action,
+  pre, eff_add, eff_del, eff_maybe_add, eff_maybe_del, has_success)`): bitsets over the action's
+  template ids. `pre?(a)` already lives in the `SATKnowledgeBase`; the kernel keeps the union of its
+  literals as a bitset and the base model count cached until the knowledge base changes.
+- **Binding table** per distinct `(schema, object tuple)`: template id → grounded fluent id, built
+  once and cached. Object-subset rotation adds entries, never invalidates them.
+- **State** as a bitset over grounded fluent ids, built once per call from the Python `set[str]`.
+- **`compute_gains(state, grounded_actions) -> list[(name, objects, gain)]`**: rayon `par_iter`
+  over grounded actions with the GIL released. Per action: satisfied literals by bitset ops; the
+  early-termination test; applicability = `count_with_assumptions / base`; success potential;
+  failure potential = `count_with_temporary_clause`; expected gain. The knowledge base is read-only
+  during the call and counting is pure, so sharing it across threads is `&self` with no locking.
+  Results sorted by `(-gain, name, objects)` as today, so the output is deterministic regardless of
+  thread count.
+- **`applicability(action, objects, state) -> float`** for `_filter_applicable_actions` and for
+  MCTS `simulate_action`.
+- **Stays in Python**: `observe`/`update_model` with `lift_fluent_set` (1% of runtime), constraint
+  bookkeeping and knowledge-base updates, `ground_all_actions*` and `ObjectSubsetManager` (2–4%),
+  every selection strategy including lookahead and MCTS (they call `compute_gains`),
+  `_apply_injective_binding_filter`, export and metrics.
+
+Files: `rust/src/intern.rs`, `rust/src/gain.rs`; `parallel_gain.py` and the pool code are already gone
+after Phase 2; the learner's `_calculate_applicability_probability`, `_calculate_potential_gain_*`
+and `_get_satisfied_literals` are replaced by kernel calls; `grounding.py` keeps the cold-path
+functions (`ground_all_actions*`, `lift_grounded_fluent`, `is_injective_binding`) until PDDLGym
+replaces them. `.claude/rules/migration.md` changes its line for `grounding.py`: the hot path goes to
+the Rust kernel, PDDLGym may still replace the cold path, and the 3-class target becomes
+`SATKnowledgeBase` + gain kernel in Rust, `InformationGainLearner` as Python orchestration over them,
+`Agent` unchanged.
+
+### 11.3 Expected effect and evidence required
+
+Estimate, to be measured in Phase 4: a gain computation drops from 0.85–1.95 ms to a few tens of
+microseconds (bitset work is about a microsecond; one or two counter queries at 18 µs each on the
+untuned prototype). With the loop at 65–95% of runtime that is 10x or more single-threaded, and
+near-linear scaling across cores on problems like depots p03 (3,528 grounded actions). The Phase 4
+exit criteria in §6 require the before/after numbers, not the estimate.
+
+Risks: gain parity (floating-point equality against the Python functions over a 50-iteration
+differential run before deletion); the early-termination and certain-precondition logic must be
+replicated exactly; the binding cache for large problems is small (3,528 actions × ~60 templates of
+`u32`).
 
